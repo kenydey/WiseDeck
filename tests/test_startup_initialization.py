@@ -15,7 +15,7 @@ def _follower_gate(*args, **kwargs):
 
 @pytest.mark.asyncio
 async def test_run_startup_initialization_runs_once_for_owner(monkeypatch):
-    import landppt.database.startup_initialization as mod
+    import wisedeck.database.startup_initialization as mod
 
     calls = []
 
@@ -43,7 +43,7 @@ async def test_run_startup_initialization_runs_once_for_owner(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_startup_initialization_skips_for_follower(monkeypatch):
-    import landppt.database.startup_initialization as mod
+    import wisedeck.database.startup_initialization as mod
 
     calls = []
 

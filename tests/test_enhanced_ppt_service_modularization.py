@@ -5,12 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from landppt.services.slide.creative_design_service import CreativeDesignService
-from landppt.services.template.global_master_template_service import GlobalMasterTemplateService
-from landppt.services.slide.layout_repair_service import LayoutRepairService
-from landppt.services.slide.slide_html_cleanup_service import SlideHtmlCleanupService
-from landppt.services.slide.slide_generation_service import SlideGenerationService
-from landppt.services.template.template_selection_service import TemplateSelectionService
+from wisedeck.services.slide.creative_design_service import CreativeDesignService
+from wisedeck.services.template.global_master_template_service import GlobalMasterTemplateService
+from wisedeck.services.slide.layout_repair_service import LayoutRepairService
+from wisedeck.services.slide.slide_html_cleanup_service import SlideHtmlCleanupService
+from wisedeck.services.slide.slide_generation_service import SlideGenerationService
+from wisedeck.services.template.template_selection_service import TemplateSelectionService
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,18 +64,18 @@ def _load_class_method(relative_path: str, class_name: str, method_name: str):
 
 
 def test_enhanced_ppt_service_delegates_extracted_service_logic():
-    service_text = _read("src/landppt/services/enhanced_ppt_service.py")
-    creative_text = _read("src/landppt/services/slide/creative_design_service.py")
-    layout_text = _read("src/landppt/services/slide/layout_repair_service.py")
-    outline_text = _read("src/landppt/services/outline/project_outline_workflow_service.py")
-    outline_generation_text = _read("src/landppt/services/outline/project_outline_generation_service.py")
-    outline_creation_text = _read("src/landppt/services/outline/project_outline_creation_service.py")
-    outline_research_text = _read("src/landppt/services/outline/project_outline_research_service.py")
-    runtime_text = _read("src/landppt/services/runtime/runtime_support_service.py")
-    slide_authoring_text = _read("src/landppt/services/slide/slide_authoring_service.py")
-    slide_stream_text = _read("src/landppt/services/slide/slide_streaming_service.py")
-    slide_generation_text = _read("src/landppt/services/slide/slide_generation_service.py")
-    template_text = _read("src/landppt/services/template/template_selection_service.py")
+    service_text = _read("src/wisedeck/services/enhanced_ppt_service.py")
+    creative_text = _read("src/wisedeck/services/slide/creative_design_service.py")
+    layout_text = _read("src/wisedeck/services/slide/layout_repair_service.py")
+    outline_text = _read("src/wisedeck/services/outline/project_outline_workflow_service.py")
+    outline_generation_text = _read("src/wisedeck/services/outline/project_outline_generation_service.py")
+    outline_creation_text = _read("src/wisedeck/services/outline/project_outline_creation_service.py")
+    outline_research_text = _read("src/wisedeck/services/outline/project_outline_research_service.py")
+    runtime_text = _read("src/wisedeck/services/runtime/runtime_support_service.py")
+    slide_authoring_text = _read("src/wisedeck/services/slide/slide_authoring_service.py")
+    slide_stream_text = _read("src/wisedeck/services/slide/slide_streaming_service.py")
+    slide_generation_text = _read("src/wisedeck/services/slide/slide_generation_service.py")
+    template_text = _read("src/wisedeck/services/template/template_selection_service.py")
 
     assert "from .slide.creative_design_service import CreativeDesignService" in service_text
     assert "from .slide.layout_repair_service import LayoutRepairService" in service_text
@@ -137,17 +137,17 @@ def test_enhanced_ppt_service_delegates_extracted_service_logic():
 
 
 def test_split_workflow_runtime_and_slide_services_are_class_based_and_delegated():
-    project_wrapper_text = _read("src/landppt/services/outline/project_outline_workflow_service.py")
-    project_generation_text = _read("src/landppt/services/outline/project_outline_generation_service.py")
-    project_stage_text = _read("src/landppt/services/project_workflow_stage_service.py")
-    slide_wrapper_text = _read("src/landppt/services/slide/slide_authoring_service.py")
-    slide_html_text = _read("src/landppt/services/slide/slide_html_service.py")
-    slide_cleanup_text = _read("src/landppt/services/slide/slide_html_cleanup_service.py")
-    slide_stream_text = _read("src/landppt/services/slide/slide_streaming_service.py")
-    runtime_wrapper_text = _read("src/landppt/services/runtime/runtime_support_service.py")
-    runtime_research_text = _read("src/landppt/services/runtime/runtime_research_service.py")
-    runtime_ai_text = _read("src/landppt/services/runtime/runtime_ai_service.py")
-    runtime_image_text = _read("src/landppt/services/runtime/runtime_image_service.py")
+    project_wrapper_text = _read("src/wisedeck/services/outline/project_outline_workflow_service.py")
+    project_generation_text = _read("src/wisedeck/services/outline/project_outline_generation_service.py")
+    project_stage_text = _read("src/wisedeck/services/project_workflow_stage_service.py")
+    slide_wrapper_text = _read("src/wisedeck/services/slide/slide_authoring_service.py")
+    slide_html_text = _read("src/wisedeck/services/slide/slide_html_service.py")
+    slide_cleanup_text = _read("src/wisedeck/services/slide/slide_html_cleanup_service.py")
+    slide_stream_text = _read("src/wisedeck/services/slide/slide_streaming_service.py")
+    runtime_wrapper_text = _read("src/wisedeck/services/runtime/runtime_support_service.py")
+    runtime_research_text = _read("src/wisedeck/services/runtime/runtime_research_service.py")
+    runtime_ai_text = _read("src/wisedeck/services/runtime/runtime_ai_service.py")
+    runtime_image_text = _read("src/wisedeck/services/runtime/runtime_image_service.py")
 
     assert "from .project_outline_generation_service import ProjectOutlineGenerationService" in project_wrapper_text
     assert "from ..project_workflow_stage_service import ProjectWorkflowStageService" in project_wrapper_text
@@ -182,15 +182,15 @@ def test_split_workflow_runtime_and_slide_services_are_class_based_and_delegated
     assert len(runtime_wrapper_text.splitlines()) < 220
 
     project_methods = _direct_class_methods(
-        "src/landppt/services/outline/project_outline_workflow_service.py",
+        "src/wisedeck/services/outline/project_outline_workflow_service.py",
         "ProjectOutlineWorkflowService",
     )
     slide_methods = _direct_class_methods(
-        "src/landppt/services/slide/slide_authoring_service.py",
+        "src/wisedeck/services/slide/slide_authoring_service.py",
         "SlideAuthoringService",
     )
     runtime_methods = _direct_class_methods(
-        "src/landppt/services/runtime/runtime_support_service.py",
+        "src/wisedeck/services/runtime/runtime_support_service.py",
         "RuntimeSupportService",
     )
 
@@ -209,23 +209,23 @@ def test_split_workflow_runtime_and_slide_services_are_class_based_and_delegated
 
 
 def test_second_level_service_splits_are_facades_and_subservices_are_class_based():
-    project_generation_text = _read("src/landppt/services/outline/project_outline_generation_service.py")
-    project_creation_text = _read("src/landppt/services/outline/project_outline_creation_service.py")
-    project_streaming_text = _read("src/landppt/services/outline/project_outline_streaming_service.py")
-    project_validation_text = _read("src/landppt/services/outline/project_outline_validation_service.py")
-    project_page_count_text = _read("src/landppt/services/outline/project_outline_page_count_service.py")
+    project_generation_text = _read("src/wisedeck/services/outline/project_outline_generation_service.py")
+    project_creation_text = _read("src/wisedeck/services/outline/project_outline_creation_service.py")
+    project_streaming_text = _read("src/wisedeck/services/outline/project_outline_streaming_service.py")
+    project_validation_text = _read("src/wisedeck/services/outline/project_outline_validation_service.py")
+    project_page_count_text = _read("src/wisedeck/services/outline/project_outline_page_count_service.py")
 
-    slide_html_text = _read("src/landppt/services/slide/slide_html_service.py")
-    slide_cleanup_text = _read("src/landppt/services/slide/slide_html_cleanup_service.py")
-    slide_content_text = _read("src/landppt/services/slide/slide_content_service.py")
-    slide_media_text = _read("src/landppt/services/slide/slide_media_service.py")
-    slide_validation_text = _read("src/landppt/services/slide/slide_html_validation_service.py")
-    slide_document_text = _read("src/landppt/services/slide/slide_document_service.py")
+    slide_html_text = _read("src/wisedeck/services/slide/slide_html_service.py")
+    slide_cleanup_text = _read("src/wisedeck/services/slide/slide_html_cleanup_service.py")
+    slide_content_text = _read("src/wisedeck/services/slide/slide_content_service.py")
+    slide_media_text = _read("src/wisedeck/services/slide/slide_media_service.py")
+    slide_validation_text = _read("src/wisedeck/services/slide/slide_html_validation_service.py")
+    slide_document_text = _read("src/wisedeck/services/slide/slide_document_service.py")
 
-    runtime_ai_text = _read("src/landppt/services/runtime/runtime_ai_service.py")
-    runtime_provider_text = _read("src/landppt/services/runtime/runtime_provider_service.py")
-    runtime_config_text = _read("src/landppt/services/runtime/runtime_config_service.py")
-    runtime_maintenance_text = _read("src/landppt/services/runtime/runtime_maintenance_service.py")
+    runtime_ai_text = _read("src/wisedeck/services/runtime/runtime_ai_service.py")
+    runtime_provider_text = _read("src/wisedeck/services/runtime/runtime_provider_service.py")
+    runtime_config_text = _read("src/wisedeck/services/runtime/runtime_config_service.py")
+    runtime_maintenance_text = _read("src/wisedeck/services/runtime/runtime_maintenance_service.py")
 
     assert "from .project_outline_creation_service import ProjectOutlineCreationService" in project_generation_text
     assert "from .project_outline_streaming_service import ProjectOutlineStreamingService" in project_generation_text
@@ -263,15 +263,15 @@ def test_second_level_service_splits_are_facades_and_subservices_are_class_based
     assert len(runtime_ai_text.splitlines()) < 160
 
     project_generation_methods = _direct_class_methods(
-        "src/landppt/services/outline/project_outline_generation_service.py",
+        "src/wisedeck/services/outline/project_outline_generation_service.py",
         "ProjectOutlineGenerationService",
     )
     slide_html_methods = _direct_class_methods(
-        "src/landppt/services/slide/slide_html_service.py",
+        "src/wisedeck/services/slide/slide_html_service.py",
         "SlideHtmlService",
     )
     runtime_ai_methods = _direct_class_methods(
-        "src/landppt/services/runtime/runtime_ai_service.py",
+        "src/wisedeck/services/runtime/runtime_ai_service.py",
         "RuntimeAIService",
     )
 
@@ -294,32 +294,32 @@ def test_second_level_service_splits_are_facades_and_subservices_are_class_based
     assert "async def _get_current_ai_config_async" in runtime_config_text
     assert "def get_cache_stats" in runtime_maintenance_text
 
-    _direct_class_methods("src/landppt/services/outline/project_outline_creation_service.py", "ProjectOutlineCreationService")
-    _direct_class_methods("src/landppt/services/outline/project_outline_streaming_service.py", "ProjectOutlineStreamingService")
-    _direct_class_methods("src/landppt/services/outline/project_outline_validation_service.py", "ProjectOutlineValidationService")
-    _direct_class_methods("src/landppt/services/outline/project_outline_page_count_service.py", "ProjectOutlinePageCountService")
-    _direct_class_methods("src/landppt/services/slide/slide_content_service.py", "SlideContentService")
-    _direct_class_methods("src/landppt/services/slide/slide_media_service.py", "SlideMediaService")
-    _direct_class_methods("src/landppt/services/slide/slide_html_cleanup_service.py", "SlideHtmlCleanupService")
-    _direct_class_methods("src/landppt/services/slide/slide_html_validation_service.py", "SlideHtmlValidationService")
-    _direct_class_methods("src/landppt/services/slide/slide_document_service.py", "SlideDocumentService")
-    _direct_class_methods("src/landppt/services/runtime/runtime_provider_service.py", "RuntimeProviderService")
-    _direct_class_methods("src/landppt/services/runtime/runtime_config_service.py", "RuntimeConfigService")
-    _direct_class_methods("src/landppt/services/runtime/runtime_maintenance_service.py", "RuntimeMaintenanceService")
+    _direct_class_methods("src/wisedeck/services/outline/project_outline_creation_service.py", "ProjectOutlineCreationService")
+    _direct_class_methods("src/wisedeck/services/outline/project_outline_streaming_service.py", "ProjectOutlineStreamingService")
+    _direct_class_methods("src/wisedeck/services/outline/project_outline_validation_service.py", "ProjectOutlineValidationService")
+    _direct_class_methods("src/wisedeck/services/outline/project_outline_page_count_service.py", "ProjectOutlinePageCountService")
+    _direct_class_methods("src/wisedeck/services/slide/slide_content_service.py", "SlideContentService")
+    _direct_class_methods("src/wisedeck/services/slide/slide_media_service.py", "SlideMediaService")
+    _direct_class_methods("src/wisedeck/services/slide/slide_html_cleanup_service.py", "SlideHtmlCleanupService")
+    _direct_class_methods("src/wisedeck/services/slide/slide_html_validation_service.py", "SlideHtmlValidationService")
+    _direct_class_methods("src/wisedeck/services/slide/slide_document_service.py", "SlideDocumentService")
+    _direct_class_methods("src/wisedeck/services/runtime/runtime_provider_service.py", "RuntimeProviderService")
+    _direct_class_methods("src/wisedeck/services/runtime/runtime_config_service.py", "RuntimeConfigService")
+    _direct_class_methods("src/wisedeck/services/runtime/runtime_maintenance_service.py", "RuntimeMaintenanceService")
 
 
 def test_third_level_service_splits_keep_creation_validation_and_html_validation_thin():
-    project_creation_text = _read("src/landppt/services/outline/project_outline_creation_service.py")
-    project_prompt_text = _read("src/landppt/services/outline/project_outline_prompt_service.py")
-    project_research_text = _read("src/landppt/services/outline/project_outline_research_service.py")
+    project_creation_text = _read("src/wisedeck/services/outline/project_outline_creation_service.py")
+    project_prompt_text = _read("src/wisedeck/services/outline/project_outline_prompt_service.py")
+    project_research_text = _read("src/wisedeck/services/outline/project_outline_research_service.py")
 
-    project_validation_text = _read("src/landppt/services/outline/project_outline_validation_service.py")
-    project_repair_text = _read("src/landppt/services/outline/project_outline_repair_service.py")
-    project_normalization_text = _read("src/landppt/services/outline/project_outline_normalization_service.py")
+    project_validation_text = _read("src/wisedeck/services/outline/project_outline_validation_service.py")
+    project_repair_text = _read("src/wisedeck/services/outline/project_outline_repair_service.py")
+    project_normalization_text = _read("src/wisedeck/services/outline/project_outline_normalization_service.py")
 
-    slide_validation_text = _read("src/landppt/services/slide/slide_html_validation_service.py")
-    slide_inspection_text = _read("src/landppt/services/slide/slide_html_inspection_service.py")
-    slide_recovery_text = _read("src/landppt/services/slide/slide_html_recovery_service.py")
+    slide_validation_text = _read("src/wisedeck/services/slide/slide_html_validation_service.py")
+    slide_inspection_text = _read("src/wisedeck/services/slide/slide_html_inspection_service.py")
+    slide_recovery_text = _read("src/wisedeck/services/slide/slide_html_recovery_service.py")
 
     assert "from .project_outline_prompt_service import ProjectOutlinePromptService" in project_creation_text
     assert "from .project_outline_research_service import ProjectOutlineResearchService" in project_creation_text
@@ -341,15 +341,15 @@ def test_third_level_service_splits_keep_creation_validation_and_html_validation
     assert len(slide_validation_text.splitlines()) < 100
 
     project_creation_methods = _direct_class_methods(
-        "src/landppt/services/outline/project_outline_creation_service.py",
+        "src/wisedeck/services/outline/project_outline_creation_service.py",
         "ProjectOutlineCreationService",
     )
     project_validation_methods = _direct_class_methods(
-        "src/landppt/services/outline/project_outline_validation_service.py",
+        "src/wisedeck/services/outline/project_outline_validation_service.py",
         "ProjectOutlineValidationService",
     )
     slide_validation_methods = _direct_class_methods(
-        "src/landppt/services/slide/slide_html_validation_service.py",
+        "src/wisedeck/services/slide/slide_html_validation_service.py",
         "SlideHtmlValidationService",
     )
 
@@ -364,12 +364,12 @@ def test_third_level_service_splits_keep_creation_validation_and_html_validation
     assert "def _validate_html_completeness" in slide_inspection_text
     assert "async def _generate_html_with_retry" in slide_recovery_text
 
-    _direct_class_methods("src/landppt/services/outline/project_outline_prompt_service.py", "ProjectOutlinePromptService")
-    _direct_class_methods("src/landppt/services/outline/project_outline_research_service.py", "ProjectOutlineResearchService")
-    _direct_class_methods("src/landppt/services/outline/project_outline_repair_service.py", "ProjectOutlineRepairService")
-    _direct_class_methods("src/landppt/services/outline/project_outline_normalization_service.py", "ProjectOutlineNormalizationService")
-    _direct_class_methods("src/landppt/services/slide/slide_html_inspection_service.py", "SlideHtmlInspectionService")
-    _direct_class_methods("src/landppt/services/slide/slide_html_recovery_service.py", "SlideHtmlRecoveryService")
+    _direct_class_methods("src/wisedeck/services/outline/project_outline_prompt_service.py", "ProjectOutlinePromptService")
+    _direct_class_methods("src/wisedeck/services/outline/project_outline_research_service.py", "ProjectOutlineResearchService")
+    _direct_class_methods("src/wisedeck/services/outline/project_outline_repair_service.py", "ProjectOutlineRepairService")
+    _direct_class_methods("src/wisedeck/services/outline/project_outline_normalization_service.py", "ProjectOutlineNormalizationService")
+    _direct_class_methods("src/wisedeck/services/slide/slide_html_inspection_service.py", "SlideHtmlInspectionService")
+    _direct_class_methods("src/wisedeck/services/slide/slide_html_recovery_service.py", "SlideHtmlRecoveryService")
 
 
 class _DummyProjectManager:
@@ -591,7 +591,7 @@ def test_slide_generation_service_delegates_owner_attributes():
 
 def test_slide_html_service_cleans_markdown_wrapped_html_response():
     clean_html_response = _load_class_method(
-        "src/landppt/services/slide/slide_html_cleanup_service.py",
+        "src/wisedeck/services/slide/slide_html_cleanup_service.py",
         "SlideHtmlCleanupService",
         "_clean_html_response",
     )
@@ -619,7 +619,7 @@ def test_slide_html_cleanup_does_not_warn_for_valid_html_with_error_like_text(ca
 </html>
 ```"""
 
-    with caplog.at_level("WARNING", logger="landppt.services.slide.slide_html_cleanup_service"):
+    with caplog.at_level("WARNING", logger="wisedeck.services.slide.slide_html_cleanup_service"):
         cleaned = service._clean_html_response(response)
 
     assert "Runtime error rate dropped" in cleaned
@@ -630,7 +630,7 @@ def test_slide_html_cleanup_warns_for_plain_error_text(caplog):
     owner = SimpleNamespace(_strip_think_tags=lambda raw: raw.strip())
     service = SlideHtmlCleanupService(owner)
 
-    with caplog.at_level("WARNING", logger="landppt.services.slide.slide_html_cleanup_service"):
+    with caplog.at_level("WARNING", logger="wisedeck.services.slide.slide_html_cleanup_service"):
         cleaned = service._clean_html_response("Sorry, I cannot generate HTML for this slide.")
 
     assert cleaned == ""

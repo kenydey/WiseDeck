@@ -3,8 +3,8 @@ from sqlalchemy.orm import sessionmaker
 
 
 def test_deactivated_user_session_is_revoked():
-    from landppt.auth.auth_service import AuthService
-    from landppt.database.models import Base, User, UserSession
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.database.models import Base, User, UserSession
 
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine, tables=[User.__table__, UserSession.__table__])

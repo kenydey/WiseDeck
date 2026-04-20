@@ -28,8 +28,8 @@ def _import_auth_routes(monkeypatch):
             raise AssertionError("测试中应替换为捕获模板对象")
 
     monkeypatch.setattr(fastapi.templating, "Jinja2Templates", _DummyTemplates)
-    sys.modules.pop("landppt.auth.routes", None)
-    return importlib.import_module("landppt.auth.routes")
+    sys.modules.pop("wisedeck.auth.routes", None)
+    return importlib.import_module("wisedeck.auth.routes")
 
 
 def _build_request(path: str) -> Request:
@@ -50,8 +50,8 @@ def _build_request(path: str) -> Request:
 
 
 def _patch_common_dependencies(monkeypatch, auth_routes, config):
-    from landppt.database import database as database_module
-    from landppt.database import repositories as repositories_module
+    from wisedeck.database import database as database_module
+    from wisedeck.database import repositories as repositories_module
 
     templates = _CaptureTemplates()
     monkeypatch.setattr(auth_routes, "templates", templates)

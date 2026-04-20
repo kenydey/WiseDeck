@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from landppt.services.outline.outline_workflow_service import OutlineWorkflowService
-from landppt.services.outline.outline_workflow_support import (
+from wisedeck.services.outline.outline_workflow_service import OutlineWorkflowService
+from wisedeck.services.outline.outline_workflow_support import (
     create_outline_from_file_content,
     get_chunk_size_from_request,
     get_slides_range_from_request,

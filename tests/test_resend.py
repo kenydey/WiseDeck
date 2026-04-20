@@ -4,8 +4,8 @@ import pytest
 @pytest.mark.asyncio
 async def test_send_email_uses_resend_provider(monkeypatch):
     # Import inside test so conftest adds src/ to sys.path first.
-    from landppt.core.config import app_config
-    from landppt.services.email_service import send_email
+    from wisedeck.core.config import app_config
+    from wisedeck.services.email_service import send_email
 
     monkeypatch.setattr(app_config, "email_provider", "resend")
     monkeypatch.setattr(app_config, "resend_api_key", "re_test_key")

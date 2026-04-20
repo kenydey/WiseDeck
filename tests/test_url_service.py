@@ -1,4 +1,4 @@
-from landppt.services.url_service import URLService
+from wisedeck.services.url_service import URLService
 
 
 def test_build_image_url_includes_dimensions(monkeypatch):

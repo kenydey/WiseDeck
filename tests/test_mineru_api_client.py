@@ -77,11 +77,11 @@ async def test_upload_zip_images_rewrites_markdown_image_with_size(monkeypatch):
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
 
-    image_service_module = types.ModuleType("landppt.services.image.image_service")
+    image_service_module = types.ModuleType("wisedeck.services.image.image_service")
     image_service_module.get_image_service = lambda: FakeImageService()
-    image_models_module = types.ModuleType("landppt.services.image.models")
+    image_models_module = types.ModuleType("wisedeck.services.image.models")
     image_models_module.ImageUploadRequest = FakeImageUploadRequest
-    url_service_module = types.ModuleType("landppt.services.url_service")
+    url_service_module = types.ModuleType("wisedeck.services.url_service")
     url_service_module.build_image_url = (
         lambda image_id, width=None, height=None:
         f"http://localhost:8001/api/image/view/{image_id}"
@@ -92,9 +92,9 @@ async def test_upload_zip_images_rewrites_markdown_image_with_size(monkeypatch):
         )
     )
 
-    monkeypatch.setitem(sys.modules, "landppt.services.image.image_service", image_service_module)
-    monkeypatch.setitem(sys.modules, "landppt.services.image.models", image_models_module)
-    monkeypatch.setitem(sys.modules, "landppt.services.url_service", url_service_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.image.image_service", image_service_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.image.models", image_models_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.url_service", url_service_module)
 
     client = MineruAPIClient(api_key="abc")
     markdown = "段落\n![感知与指令腐蚀概况](images/demo.png)\n结尾"

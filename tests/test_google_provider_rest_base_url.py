@@ -4,7 +4,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_google_provider_uses_configured_base_url_for_rest(monkeypatch):
     # Import inside test so conftest adds src/ to sys.path first.
-    from landppt.ai.providers import GoogleProvider
+    from wisedeck.ai.providers import GoogleProvider
 
     calls = []
 

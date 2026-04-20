@@ -1,7 +1,7 @@
 """测试新版设计提示词的方向性结构。"""
 
-from landppt.services.prompts import design_prompts as prompts_module
-from landppt.services.prompts.design_prompts import DesignPrompts
+from wisedeck.services.prompts import design_prompts as prompts_module
+from wisedeck.services.prompts.design_prompts import DesignPrompts
 
 
 SAMPLE_TEMPLATE = "<div class='slide-header'><h1>{{ main_heading }}</h1></div><main>{{ page_content }}</main><div class='slide-footer'>{{ current_page_number }}</div>"

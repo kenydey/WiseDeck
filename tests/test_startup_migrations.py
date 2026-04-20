@@ -9,7 +9,7 @@ def _noop_lock(*args, **kwargs):
 
 
 def test_app_config_parses_startup_migration_settings(monkeypatch):
-    from landppt.core.config import AppConfig
+    from wisedeck.core.config import AppConfig
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
@@ -24,7 +24,7 @@ def test_app_config_parses_startup_migration_settings(monkeypatch):
     )
 
     assert config.port == 8000
-    assert config.database_url == "sqlite:///./landppt.db"
+    assert config.database_url == "sqlite:///./wisedeck.db"
     assert config.auto_migrate_on_startup is False
     assert config.auto_migrate_fail_fast is True
     assert config.auto_migrate_lock_timeout_seconds == 15
@@ -36,8 +36,8 @@ def test_app_config_parses_startup_migration_settings(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_startup_migrations_skips_when_disabled(monkeypatch):
-    import landppt.database.startup_migrations as mod
-    from landppt.core.config import app_config
+    import wisedeck.database.startup_migrations as mod
+    from wisedeck.core.config import app_config
 
     monkeypatch.setattr(app_config, "auto_migrate_on_startup", False)
 
@@ -48,8 +48,8 @@ async def test_run_startup_migrations_skips_when_disabled(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_startup_migrations_runs_pending_migrations(monkeypatch):
-    import landppt.database.startup_migrations as mod
-    from landppt.core.config import app_config
+    import wisedeck.database.startup_migrations as mod
+    from wisedeck.core.config import app_config
 
     class FakeManager:
         def __init__(self):
@@ -80,8 +80,8 @@ async def test_run_startup_migrations_runs_pending_migrations(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_startup_migrations_can_fail_soft(monkeypatch):
-    import landppt.database.startup_migrations as mod
-    from landppt.core.config import app_config
+    import wisedeck.database.startup_migrations as mod
+    from wisedeck.core.config import app_config
 
     class FakeManager:
         async def get_migration_status(self):

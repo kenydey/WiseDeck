@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 
 def test_config_service_defaults_enable_per_slide_creative_guidance():
-    from landppt.services.config_service import ConfigService
+    from wisedeck.services.config_service import ConfigService
 
     service = ConfigService(env_file=".env.example")
 
@@ -13,7 +13,7 @@ def test_config_service_defaults_enable_per_slide_creative_guidance():
 
 
 def test_db_config_service_defaults_enable_per_slide_creative_guidance():
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     service = DatabaseConfigService()
 
@@ -21,8 +21,8 @@ def test_db_config_service_defaults_enable_per_slide_creative_guidance():
 
 
 def test_tavily_base_url_exists_in_config_schemas():
-    from landppt.services.config_service import ConfigService
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.config_service import ConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     env_service = ConfigService(env_file=".env.example")
     db_service = DatabaseConfigService()
@@ -36,7 +36,7 @@ def test_tavily_base_url_exists_in_config_schemas():
 
 
 def test_db_config_service_resolves_blank_tavily_base_url_to_official_default():
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     service = DatabaseConfigService()
     resolved = service._resolve_config_values(
@@ -55,8 +55,8 @@ def test_db_config_service_resolves_blank_tavily_base_url_to_official_default():
 
 
 def test_apryse_standard_pptx_export_is_admin_only_in_config_schema():
-    from landppt.services.config_service import ConfigService
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.config_service import ConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     env_service = ConfigService(env_file=".env.example")
     db_service = DatabaseConfigService()
@@ -70,7 +70,7 @@ def test_apryse_standard_pptx_export_is_admin_only_in_config_schema():
 
 
 def test_db_config_service_filters_and_resolves_admin_only_apryse_config(monkeypatch):
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     service = DatabaseConfigService()
     public_schema = service.get_config_schema(include_admin_only=False)
@@ -105,7 +105,7 @@ def test_db_config_service_filters_and_resolves_admin_only_apryse_config(monkeyp
 
 
 def test_db_config_service_resolves_system_scope_admin_only_config_from_merged_rows():
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     service = DatabaseConfigService()
     resolved = service._resolve_config_values(
@@ -131,7 +131,7 @@ def test_db_config_service_resolves_system_scope_admin_only_config_from_merged_r
 
 
 def test_db_config_service_ignores_user_override_for_admin_only_when_no_system_default():
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     service = DatabaseConfigService()
     resolved = service._resolve_config_values(
@@ -157,9 +157,9 @@ def test_db_config_service_ignores_user_override_for_admin_only_when_no_system_d
 
 
 def test_db_config_service_migrates_legacy_system_default_to_true(monkeypatch):
-    import landppt.database.database as database_mod
-    import landppt.database.repositories as repo_mod
-    from landppt.services.db_config_service import DatabaseConfigService
+    import wisedeck.database.database as database_mod
+    import wisedeck.database.repositories as repo_mod
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     captured = {"set_calls": []}
 
@@ -199,7 +199,7 @@ def test_db_config_service_migrates_legacy_system_default_to_true(monkeypatch):
 
 
 def test_creative_design_service_uses_slide_prompt_when_per_slide_guidance_enabled(tmp_path):
-    from landppt.services.slide.creative_design_service import CreativeDesignService
+    from wisedeck.services.slide.creative_design_service import CreativeDesignService
 
     class _DummyService:
         def __init__(self):
@@ -253,7 +253,7 @@ def test_creative_design_service_uses_slide_prompt_when_per_slide_guidance_enabl
 
 
 def test_creative_design_service_uses_page_type_briefs_when_per_slide_guidance_disabled(tmp_path):
-    from landppt.services.slide.creative_design_service import CreativeDesignService
+    from wisedeck.services.slide.creative_design_service import CreativeDesignService
 
     class _DummyService:
         def __init__(self):
@@ -310,7 +310,7 @@ def test_creative_design_service_uses_page_type_briefs_when_per_slide_guidance_d
 
 
 def test_creative_design_service_persists_slide_creative_guide_cache(tmp_path, monkeypatch):
-    from landppt.services.slide.creative_design_service import CreativeDesignService
+    from wisedeck.services.slide.creative_design_service import CreativeDesignService
 
     class _DummyService:
         def __init__(self):
@@ -352,7 +352,7 @@ def test_creative_design_service_persists_slide_creative_guide_cache(tmp_path, m
 
 def test_creative_guidance_runtime_pipeline_wires_per_slide_prompt_and_cache_cleanup():
     root = Path(__file__).resolve().parents[1]
-    service_text = (root / "src/landppt/services/slide/creative_design_service.py").read_text(encoding="utf-8")
+    service_text = (root / "src/wisedeck/services/slide/creative_design_service.py").read_text(encoding="utf-8")
 
     assert 'enable_per_slide_creative_guidance' in service_text
     assert 'get_slide_design_guide_prompt(' in service_text

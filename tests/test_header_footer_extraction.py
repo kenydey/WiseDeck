@@ -1,5 +1,5 @@
 """Tests for header/footer extraction and locked zones context."""
-from landppt.services.prompts.design_prompts import DesignPrompts
+from wisedeck.services.prompts.design_prompts import DesignPrompts
 
 
 # --- Default template HTML with slide-header and slide-footer classes ---

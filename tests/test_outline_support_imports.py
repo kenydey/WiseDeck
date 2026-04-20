@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTLINE_SUPPORT_PATH = ROOT / "src/landppt/web/route_modules/outline_support.py"
+OUTLINE_SUPPORT_PATH = ROOT / "src/wisedeck/web/route_modules/outline_support.py"
 
 
 def test_outline_support_imports_re_when_using_regex_helpers():

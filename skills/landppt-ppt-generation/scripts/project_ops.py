@@ -93,7 +93,7 @@ def resolve_api_key(cli_key: str) -> str:
     key = (cli_key or "").strip()
     if key:
         return key
-    return (os.environ.get("LANDPPT_USER_API_KEY") or os.environ.get("LANDPPT_API_KEY") or "").strip()
+    return (os.environ.get("WISEDECK_USER_API_KEY") or os.environ.get("WISEDECK_API_KEY") or "").strip()
 
 
 def headers(api_key: str, auth_mode: str, content_type: Optional[str] = None) -> Dict[str, str]:
@@ -229,7 +229,7 @@ def save_binary(
 
 
 def resolve_public_static_dir(cli_value: str) -> Path:
-    from_env = (os.environ.get("LANDPPT_PUBLIC_STATIC_DIR") or "").strip()
+    from_env = (os.environ.get("WISEDECK_PUBLIC_STATIC_DIR") or "").strip()
     if from_env:
         return Path(from_env).resolve()
 
@@ -295,7 +295,7 @@ def wait_task(
     last_heartbeat = -1
     events: List[Dict[str, Any]] = []
     while True:
-        task = call_json("GET", base_url, f"/api/landppt/tasks/{task_id}", api_key, auth_mode, timeout=600)
+        task = call_json("GET", base_url, f"/api/wisedeck/tasks/{task_id}", api_key, auth_mode, timeout=600)
         status = task.get("status")
         progress = task.get("progress")
         if isinstance(progress, dict):
@@ -335,7 +335,7 @@ def download_task(
     public_static_dir: Path,
     public_static_subdir: str,
 ) -> Dict[str, Any]:
-    data, hdrs = request_raw("GET", base_url, f"/api/landppt/tasks/{task_id}/download", api_key, auth_mode, timeout=1200)
+    data, hdrs = request_raw("GET", base_url, f"/api/wisedeck/tasks/{task_id}/download", api_key, auth_mode, timeout=1200)
     saved = save_binary(data, hdrs, output_dir, out, f"task_{task_id}.bin")
     published = publish_to_static(
         saved_file=saved,
@@ -358,7 +358,7 @@ def normalize_slides_payload(slides_data: List[Dict[str, Any]]) -> List[Dict[str
 def run_command(args: argparse.Namespace) -> Dict[str, Any]:
     api_key = resolve_api_key(args.api_key)
     if not api_key:
-        raise ApiError("Missing API key. Pass --api-key or set LANDPPT_USER_API_KEY/LANDPPT_API_KEY.")
+        raise ApiError("Missing API key. Pass --api-key or set WISEDECK_USER_API_KEY/WISEDECK_API_KEY.")
 
     base_url = args.base_url.rstrip("/")
     auth_mode = args.auth_mode
@@ -743,7 +743,7 @@ def run_command(args: argparse.Namespace) -> Dict[str, Any]:
         return call_json(
             "GET",
             base_url,
-            f"/api/landppt/tasks/{args.task_id}",
+            f"/api/wisedeck/tasks/{args.task_id}",
             api_key,
             auth_mode,
             timeout=600,
@@ -776,7 +776,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--public-static-dir",
         default="",
-        help="Static root directory used to publish downloadable files. Defaults to <repo>/src/landppt/web/static or LANDPPT_PUBLIC_STATIC_DIR.",
+        help="Static root directory used to publish downloadable files. Defaults to <repo>/src/wisedeck/web/static or WISEDECK_PUBLIC_STATIC_DIR.",
     )
     p.add_argument(
         "--public-static-subdir",

@@ -1,7 +1,7 @@
 import traceback
 from jinja2 import Environment, FileSystemLoader
 
-env = Environment(loader=FileSystemLoader('src/landppt/web/templates'))
+env = Environment(loader=FileSystemLoader('src/wisedeck/web/templates'))
 try:
     env.get_template('pages/account/profile.html')
     print('OK')

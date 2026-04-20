@@ -1,12 +1,12 @@
 [project]
-name = "landppt"
+name = "wisedeck"
 version = "0.1.8"
-description = "AI-powered PPT generation platform with OpenAI-compatible API"
+description = "WiseDeck — AI-powered PPT generation platform with OpenAI-compatible API"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "LandPPT Team", email = "contact@landppt.com"},
+    {name = "WiseDeck", email = "contact@landppt.com"},
 ]
 keywords = ["ai", "ppt", "presentation", "fastapi", "openai"]
 classifiers = [
@@ -71,6 +71,9 @@ dependencies = [
     "langchain-community>=0.3.27",
     "edge-tts>=6.1.0",
     "resend>=2.21.0",
+    "python-pptx>=0.6.23",
+    "lxml>=5.0.0",
+    "pathvalidate>=3.2.0",
 ]
 
 
@@ -93,7 +96,8 @@ test = [
 ]
 
 [project.scripts]
-landppt = "landppt.main:main"
+wisedeck = "wisedeck.main:main"
+landppt = "wisedeck.main:main"
 
 [project.urls]
 Homepage = "https://github.com/sligter/LandPPT"
@@ -106,5 +110,5 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/landppt"]
+packages = ["src/wisedeck"]
 sources = ["src"]

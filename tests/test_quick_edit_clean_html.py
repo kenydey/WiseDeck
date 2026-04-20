@@ -2,9 +2,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-QUICK_EDIT_JS = ROOT / "src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.quickEdit.js"
-QUICK_EDIT_STYLING_JS = ROOT / "src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.quickEditStyling.js"
-QUICK_AI_JS = ROOT / "src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.quickAi.js"
+QUICK_EDIT_JS = ROOT / "src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.quickEdit.js"
+QUICK_EDIT_STYLING_JS = ROOT / "src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.quickEditStyling.js"
+QUICK_AI_JS = ROOT / "src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.quickAi.js"
 
 
 def _read(path: Path) -> str:

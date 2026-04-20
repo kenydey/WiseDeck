@@ -3,8 +3,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_get_cache_service_disables_valkey_after_connection_failure(monkeypatch):
-    import landppt.services.cache_service as mod
-    from landppt.core.config import app_config
+    import wisedeck.services.cache_service as mod
+    from wisedeck.core.config import app_config
 
     await mod.close_cache_service()
     monkeypatch.setattr(app_config, "cache_backend", "valkey")
@@ -34,8 +34,8 @@ async def test_get_cache_service_disables_valkey_after_connection_failure(monkey
 
 @pytest.mark.asyncio
 async def test_get_cache_service_keeps_memory_backend_without_connect_attempt(monkeypatch):
-    import landppt.services.cache_service as mod
-    from landppt.core.config import app_config
+    import wisedeck.services.cache_service as mod
+    from wisedeck.core.config import app_config
 
     await mod.close_cache_service()
     monkeypatch.setattr(app_config, "cache_backend", "memory")

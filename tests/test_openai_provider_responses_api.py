@@ -6,8 +6,8 @@ import pytest
 
 os.environ["DEBUG"] = "false"
 
-from landppt.ai.base import AIMessage, MessageRole
-from landppt.ai.providers import OpenAIProvider
+from wisedeck.ai.base import AIMessage, MessageRole
+from wisedeck.ai.providers import OpenAIProvider
 
 
 class _FailingChatCompletions:

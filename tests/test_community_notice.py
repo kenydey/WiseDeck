@@ -1,4 +1,4 @@
-from landppt.services.community_service import CommunityService
+from wisedeck.services.community_service import CommunityService
 
 
 def test_build_public_site_notice_returns_active_notice_within_window():

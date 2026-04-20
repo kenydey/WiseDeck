@@ -3,11 +3,11 @@ import sys
 
 
 def _reload_main_module(monkeypatch, enabled: bool):
-    from landppt.core.config import app_config
+    from wisedeck.core.config import app_config
 
     monkeypatch.setattr(app_config, "enable_api_docs", enabled)
-    sys.modules.pop("landppt.main", None)
-    return importlib.import_module("landppt.main")
+    sys.modules.pop("wisedeck.main", None)
+    return importlib.import_module("wisedeck.main")
 
 
 def test_main_app_enables_api_docs_by_default(monkeypatch):

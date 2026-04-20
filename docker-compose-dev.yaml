@@ -1,5 +1,5 @@
 services:
-  landppt:
+  wisedeck:
     build:
       context: .
       dockerfile: Dockerfile
@@ -7,17 +7,17 @@ services:
         - APT_DEBIAN_URL=${APT_DEBIAN_URL:-http://deb.debian.org/debian}
         - APT_SECURITY_URL=${APT_SECURITY_URL:-http://deb.debian.org/debian-security}
     image: landppt-dev:latest
-    container_name: landppt-dev
+    container_name: wisedeck-dev
     shm_size: '2gb'
     ports:
       - "8000:8000"
     volumes:
       - ./:/app
-      - landppt_data:/app/data
-      - landppt_uploads:/app/uploads
-      - landppt_reports:/app/research_reports
-      - landppt_cache:/app/temp
-      - landppt_lib:/app/lib
+      - wisedeck_data:/app/data
+      - wisedeck_uploads:/app/uploads
+      - wisedeck_reports:/app/research_reports
+      - wisedeck_cache:/app/temp
+      - wisedeck_lib:/app/lib
     environment:
       - PYTHONPATH=/opt/venv/lib/python3.11/site-packages:/app/src
       - PYTHONUNBUFFERED=1
@@ -30,14 +30,14 @@ services:
       - OPENAI_ENABLE_REASONING=${OPENAI_ENABLE_REASONING:-false}
       - OPENAI_REASONING_EFFORT=${OPENAI_REASONING_EFFORT:-medium}
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-me}
-      - LANDPPT_API_KEY=${LANDPPT_API_KEY:-}
-      - LANDPPT_API_KEY_USER=${LANDPPT_API_KEY_USER:-admin}
-      - LANDPPT_API_KEYS=${LANDPPT_API_KEYS:-}
-      - LANDPPT_BOOTSTRAP_ADMIN_ENABLED=${LANDPPT_BOOTSTRAP_ADMIN_ENABLED:-false}
-      - LANDPPT_BOOTSTRAP_ADMIN_USERNAME=${LANDPPT_BOOTSTRAP_ADMIN_USERNAME:-}
-      - LANDPPT_BOOTSTRAP_ADMIN_PASSWORD=${LANDPPT_BOOTSTRAP_ADMIN_PASSWORD:-}
-      - LANDPPT_ENABLE_API_DOCS=${LANDPPT_ENABLE_API_DOCS:-true}
-      - LANDPPT_ALLOW_HEADER_SESSION_AUTH=${LANDPPT_ALLOW_HEADER_SESSION_AUTH:-false}
+      - WISEDECK_API_KEY=${WISEDECK_API_KEY:-}
+      - WISEDECK_API_KEY_USER=${WISEDECK_API_KEY_USER:-admin}
+      - WISEDECK_API_KEYS=${WISEDECK_API_KEYS:-}
+      - WISEDECK_BOOTSTRAP_ADMIN_ENABLED=${WISEDECK_BOOTSTRAP_ADMIN_ENABLED:-false}
+      - WISEDECK_BOOTSTRAP_ADMIN_USERNAME=${WISEDECK_BOOTSTRAP_ADMIN_USERNAME:-}
+      - WISEDECK_BOOTSTRAP_ADMIN_PASSWORD=${WISEDECK_BOOTSTRAP_ADMIN_PASSWORD:-}
+      - WISEDECK_ENABLE_API_DOCS=${WISEDECK_ENABLE_API_DOCS:-true}
+      - WISEDECK_ALLOW_HEADER_SESSION_AUTH=${WISEDECK_ALLOW_HEADER_SESSION_AUTH:-false}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-landppt}:${POSTGRES_PASSWORD:-landppt}@postgres:5432/${POSTGRES_DB:-landppt}
       - CACHE_BACKEND=valkey
       - VALKEY_URL=valkey://valkey:${VALKEY_PORT:-6379}
@@ -56,11 +56,11 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - landppt_network
+      - wisedeck_network
 
   postgres:
     image: postgres:16-alpine
-    container_name: landppt-postgres
+    container_name: wisedeck-postgres
     ports:
       - "5432:5432"
     environment:
@@ -75,12 +75,12 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - landppt_network
+      - wisedeck_network
     restart: unless-stopped
 
   valkey:
     image: valkey/valkey:8-alpine
-    container_name: landppt-valkey
+    container_name: wisedeck-valkey
     command: valkey-server --appendonly yes
     volumes:
       - valkey_data:/data
@@ -90,19 +90,19 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - landppt_network
+      - wisedeck_network
     restart: unless-stopped
 
 volumes:
-  landppt_data:
+  wisedeck_data:
     driver: local
-  landppt_uploads:
+  wisedeck_uploads:
     driver: local
-  landppt_reports:
+  wisedeck_reports:
     driver: local
-  landppt_cache:
+  wisedeck_cache:
     driver: local
-  landppt_lib:
+  wisedeck_lib:
     driver: local
   postgres_data:
     driver: local
@@ -110,5 +110,5 @@ volumes:
     driver: local
 
 networks:
-  landppt_network:
+  wisedeck_network:
     driver: bridge

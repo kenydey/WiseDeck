@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from landppt.services.outline.project_outline_normalization_service import (
+from wisedeck.services.outline.project_outline_normalization_service import (
     ProjectOutlineNormalizationService,
 )
 
@@ -187,7 +187,7 @@ def test_parse_outline_content_no_longer_fabricates_default_slides():
 @pytest.mark.asyncio
 async def test_update_project_outline_uses_normalized_parser():
     update_project_outline = _load_class_method(
-        "src/landppt/services/project_workflow_stage_service.py",
+        "src/wisedeck/services/project_workflow_stage_service.py",
         "ProjectWorkflowStageService",
         "update_project_outline",
     )

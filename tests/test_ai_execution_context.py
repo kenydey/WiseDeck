@@ -1,4 +1,4 @@
-from landppt.services.runtime.ai_execution import ExecutionContext, ProviderConfig
+from wisedeck.services.runtime.ai_execution import ExecutionContext, ProviderConfig
 
 
 def test_execution_context_maps_processing_config_kwargs():

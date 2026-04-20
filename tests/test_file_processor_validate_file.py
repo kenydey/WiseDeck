@@ -1,4 +1,4 @@
-from landppt.services import file_processor as mod
+from wisedeck.services import file_processor as mod
 
 
 def test_validate_file_accepts_pdf_when_supported(monkeypatch):

@@ -46,7 +46,7 @@ class _FakeCache:
 
 
 def _create_db():
-    from landppt.database.models import Base, User, UserSession
+    from wisedeck.database.models import Base, User, UserSession
 
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine, tables=[User.__table__, UserSession.__table__])
@@ -55,7 +55,7 @@ def _create_db():
 
 
 def _create_user(db, username: str, email: str):
-    from landppt.database.models import User
+    from wisedeck.database.models import User
 
     user = User(username=username, email=email, is_admin=False, is_active=True, credits_balance=0)
     user.set_password("pw")
@@ -69,10 +69,10 @@ def test_auth_middleware_uses_cached_session_without_opening_db(monkeypatch):
     pytest.importorskip("fastapi")
     from starlette.responses import Response
 
-    import landppt.auth.middleware as auth_middleware_module
-    import landppt.services.cache_service as cache_service_module
-    from landppt.auth.auth_service import AuthService
-    from landppt.auth.middleware import AuthMiddleware
+    import wisedeck.auth.middleware as auth_middleware_module
+    import wisedeck.services.cache_service as cache_service_module
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.auth.middleware import AuthMiddleware
 
     db = _create_db()
     try:
@@ -110,8 +110,8 @@ def test_auth_middleware_uses_cached_session_without_opening_db(monkeypatch):
 
 
 def test_update_user_password_supports_cached_user_objects():
-    from landppt.auth.auth_service import AuthService
-    from landppt.database.models import User
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.database.models import User
 
     db = _create_db()
     try:

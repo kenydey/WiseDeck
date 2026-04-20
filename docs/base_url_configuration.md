@@ -33,7 +33,7 @@ BASE_URL=https://your-domain.com
 启动服务时指定：
 
 ```bash
-BASE_URL=https://your-domain.com python -m uvicorn src.landppt.main:app --host 0.0.0.0 --port 8000
+BASE_URL=https://your-domain.com python -m uvicorn src.wisedeck.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## 配置示例

@@ -1,4 +1,4 @@
-from landppt.services.prompts import design_prompts as prompts_module
+from wisedeck.services.prompts import design_prompts as prompts_module
 
 
 def test_project_design_guide_prompt_includes_layout_priority_context():

@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_temp_route_is_public_and_uses_real_file_content_type():
-    route_text = (ROOT / "src/landppt/web/route_modules/project_workspace_routes.py").read_text(encoding="utf-8")
+    route_text = (ROOT / "src/wisedeck/web/route_modules/project_workspace_routes.py").read_text(encoding="utf-8")
     temp_route_block = route_text.split('@router.get("/temp/{file_path:path}")', 1)[1]
 
     assert '@router.get("/temp/{file_path:path}")' in route_text

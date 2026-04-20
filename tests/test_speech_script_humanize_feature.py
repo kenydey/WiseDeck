@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from landppt.services.prompts.speech_script_prompts import SpeechScriptPrompts
+from wisedeck.services.prompts.speech_script_prompts import SpeechScriptPrompts
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ROUTE_FILE = ROOT / "src/landppt/web/route_modules/speech_script_routes.py"
-SERVICE_FILE = ROOT / "src/landppt/services/speech_script_service.py"
-JS_FILE = ROOT / "src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.speechScriptsManage.js"
-TEMPLATE_FILE = ROOT / "src/landppt/web/templates/pages/project/project_slides_editor.html"
+ROUTE_FILE = ROOT / "src/wisedeck/web/route_modules/speech_script_routes.py"
+SERVICE_FILE = ROOT / "src/wisedeck/services/speech_script_service.py"
+JS_FILE = ROOT / "src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.speechScriptsManage.js"
+TEMPLATE_FILE = ROOT / "src/wisedeck/web/templates/pages/project/project_slides_editor.html"
 
 
 def _read(path: Path) -> str:

@@ -8,7 +8,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_run_subprocess_timeout_returns_124():
-    from landppt.services.video_export_service import _run_subprocess
+    from wisedeck.services.video_export_service import _run_subprocess
 
     code, out, err = await _run_subprocess(
         [sys.executable, "-c", "import time; time.sleep(2)"],
@@ -20,10 +20,10 @@ async def test_run_subprocess_timeout_returns_124():
 
 
 def test_calculate_safe_parallelism_respects_worker_slice(monkeypatch):
-    from landppt.services.video_export_service import _calculate_safe_parallelism
+    from wisedeck.services.video_export_service import _calculate_safe_parallelism
 
-    monkeypatch.setenv("LANDPPT_AVAILABLE_MEMORY_MB", "16384")
-    monkeypatch.setenv("LANDPPT_NARRATION_VIDEO_PARALLELISM", "8")
+    monkeypatch.setenv("WISEDECK_AVAILABLE_MEMORY_MB", "16384")
+    monkeypatch.setenv("WISEDECK_NARRATION_VIDEO_PARALLELISM", "8")
 
     monkeypatch.setenv("WORKERS", "1")
     p1 = _calculate_safe_parallelism(width=64, height=64, fps=30)
@@ -38,10 +38,10 @@ def test_calculate_safe_parallelism_respects_worker_slice(monkeypatch):
 def test_calculate_safe_screenshot_parallelism_respects_worker_slice(monkeypatch):
     import os
 
-    from landppt.services.video_export_service import _calculate_safe_screenshot_parallelism
+    from wisedeck.services.video_export_service import _calculate_safe_screenshot_parallelism
 
-    monkeypatch.setenv("LANDPPT_AVAILABLE_MEMORY_MB", "16384")
-    monkeypatch.setenv("LANDPPT_NARRATION_SCREENSHOT_PARALLELISM", "12")
+    monkeypatch.setenv("WISEDECK_AVAILABLE_MEMORY_MB", "16384")
+    monkeypatch.setenv("WISEDECK_NARRATION_SCREENSHOT_PARALLELISM", "12")
     monkeypatch.setattr(os, "cpu_count", lambda: 32)
 
     monkeypatch.setenv("WORKERS", "1")
@@ -55,7 +55,7 @@ def test_calculate_safe_screenshot_parallelism_respects_worker_slice(monkeypatch
 
 
 def test_normalize_audio_cache_path_matches_relative_and_absolute(tmp_path, monkeypatch):
-    from landppt.services.video_export_service import _normalize_audio_cache_path
+    from wisedeck.services.video_export_service import _normalize_audio_cache_path
 
     audio = tmp_path / "slide_0.mp3"
     audio.write_bytes(b"ok")
@@ -65,7 +65,7 @@ def test_normalize_audio_cache_path_matches_relative_and_absolute(tmp_path, monk
 
 
 def test_build_cues_by_audio_path_keeps_distinct_audio_versions():
-    from landppt.services.video_export_service import _build_cues_by_audio_path, _normalize_audio_cache_path
+    from wisedeck.services.video_export_service import _build_cues_by_audio_path, _normalize_audio_cache_path
 
     old_path = "uploads/narration/project/zh/slide_0_old.mp3"
     new_path = "uploads/narration/project/zh/slide_0_new.mp3"
@@ -81,7 +81,7 @@ def test_build_cues_by_audio_path_keeps_distinct_audio_versions():
 
 
 def test_build_subtitle_filter_pins_original_size():
-    from landppt.services.video_export_service import SubtitleStyle, _build_subtitle_filter
+    from wisedeck.services.video_export_service import SubtitleStyle, _build_subtitle_filter
 
     vf = _build_subtitle_filter(
         subtitle_path=r"C:\temp\subtitles.srt",
@@ -97,7 +97,7 @@ def test_build_subtitle_filter_pins_original_size():
 
 
 def test_resolve_subtitle_style_compacts_live_defaults_only():
-    from landppt.services.video_export_service import _resolve_subtitle_style
+    from wisedeck.services.video_export_service import _resolve_subtitle_style
 
     live_default = _resolve_subtitle_style(None, height=1080, render_mode="live")
     static_default = _resolve_subtitle_style(None, height=1080, render_mode="static")
@@ -116,7 +116,7 @@ def test_resolve_subtitle_style_compacts_live_defaults_only():
 
 
 def test_build_live_single_slide_html_waits_for_stable_frame():
-    from landppt.services.video_export_service import NarrationVideoExportService
+    from wisedeck.services.video_export_service import NarrationVideoExportService
 
     html = NarrationVideoExportService()._build_live_single_slide_html("<div>slide</div>", width=1920, height=1080)
 
@@ -130,8 +130,8 @@ def test_build_live_single_slide_html_waits_for_stable_frame():
 
 
 def test_prepare_slide_html_for_video_export_rewrites_image_resources(monkeypatch):
-    from landppt.services import video_export_service as ves
-    from landppt.services.video_export_service import NarrationVideoExportService
+    from wisedeck.services import video_export_service as ves
+    from wisedeck.services.video_export_service import NarrationVideoExportService
 
     monkeypatch.setattr(
         ves,
@@ -154,8 +154,8 @@ def test_prepare_slide_html_for_video_export_rewrites_image_resources(monkeypatc
 
 
 def test_prepare_slide_html_for_video_export_rewrites_absolute_localhost_image_urls(monkeypatch):
-    from landppt.services import video_export_service as ves
-    from landppt.services.video_export_service import NarrationVideoExportService
+    from wisedeck.services import video_export_service as ves
+    from wisedeck.services.video_export_service import NarrationVideoExportService
 
     monkeypatch.setattr(
         ves,
@@ -176,9 +176,9 @@ def test_prepare_slide_html_for_video_export_rewrites_absolute_localhost_image_u
 
 
 def test_resolve_background_export_base_url_prefers_internal_port_for_localhost(monkeypatch):
-    from landppt.services.export_infra import file_export_html_preparer as preparer
+    from wisedeck.services.export_infra import file_export_html_preparer as preparer
 
-    monkeypatch.delenv("LANDPPT_BACKGROUND_EXPORT_BASE_URL", raising=False)
+    monkeypatch.delenv("WISEDECK_BACKGROUND_EXPORT_BASE_URL", raising=False)
     monkeypatch.setenv("PORT", "8000")
     monkeypatch.setattr(preparer, "get_current_base_url", lambda: "http://localhost:8001")
 
@@ -187,7 +187,7 @@ def test_resolve_background_export_base_url_prefers_internal_port_for_localhost(
 
 @pytest.mark.asyncio
 async def test_static_export_uses_fixed_stage_wrapper_without_content_crop(tmp_path, monkeypatch):
-    from landppt.services import video_export_service as ves
+    from wisedeck.services import video_export_service as ves
 
     audio_dir = tmp_path / "audio"
     audio_dir.mkdir()
@@ -244,16 +244,16 @@ async def test_static_export_uses_fixed_stage_wrapper_without_content_crop(tmp_p
         Path(args[-1]).write_bytes(b"ok")
         return 0, "", ""
 
-    fake_narration_service_module = ModuleType("landppt.services.narration_service")
+    fake_narration_service_module = ModuleType("wisedeck.services.narration_service")
     fake_narration_service_module.NarrationService = FakeNarrationService
-    fake_speech_repo_module = ModuleType("landppt.services.speech_script_repository")
+    fake_speech_repo_module = ModuleType("wisedeck.services.speech_script_repository")
     fake_speech_repo_module.SpeechScriptRepository = FakeSpeechScriptRepository
-    fake_audio_repo_module = ModuleType("landppt.services.narration_audio_repository")
+    fake_audio_repo_module = ModuleType("wisedeck.services.narration_audio_repository")
     fake_audio_repo_module.NarrationAudioRepository = FakeNarrationAudioRepository
 
-    monkeypatch.setitem(sys.modules, "landppt.services.narration_service", fake_narration_service_module)
-    monkeypatch.setitem(sys.modules, "landppt.services.speech_script_repository", fake_speech_repo_module)
-    monkeypatch.setitem(sys.modules, "landppt.services.narration_audio_repository", fake_audio_repo_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.narration_service", fake_narration_service_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.speech_script_repository", fake_speech_repo_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.narration_audio_repository", fake_audio_repo_module)
     monkeypatch.setattr(ves, "get_pdf_converter", lambda: fake_converter)
     monkeypatch.setattr(ves, "_run_subprocess", fake_run_subprocess)
 

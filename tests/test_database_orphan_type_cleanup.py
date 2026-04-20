@@ -1,4 +1,4 @@
-from landppt.database.database import (
+from wisedeck.database.database import (
     _drop_postgres_orphan_composite_type,
     _extract_duplicate_pg_type_name,
 )

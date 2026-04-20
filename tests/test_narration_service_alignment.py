@@ -7,7 +7,7 @@ os.environ["DEBUG"] = "false"
 
 
 def test_parse_silence_spans_and_speech_window():
-    from landppt.services.narration_service import _derive_speech_window_ms, _parse_silence_spans_ms
+    from wisedeck.services.narration_service import _derive_speech_window_ms, _parse_silence_spans_ms
 
     stderr = """
     [silencedetect @ 0x1] silence_start: 0
@@ -23,7 +23,7 @@ def test_parse_silence_spans_and_speech_window():
 
 
 def test_extract_cue_payload_version_defaults_for_legacy_payload():
-    from landppt.services.narration_service import _extract_cue_payload_version
+    from wisedeck.services.narration_service import _extract_cue_payload_version
 
     assert _extract_cue_payload_version(None) == 0
     assert _extract_cue_payload_version('[{"start_ms":0,"end_ms":1000,"text":"legacy"}]') == 1
@@ -32,13 +32,13 @@ def test_extract_cue_payload_version_defaults_for_legacy_payload():
 
 @pytest.mark.asyncio
 async def test_build_cues_json_for_audio_trims_edge_silence(monkeypatch):
-    from landppt.services.narration_service import build_cues_json_for_audio
+    from wisedeck.services.narration_service import build_cues_json_for_audio
 
     async def fake_detect_silence_spans_ms(_audio_path: str):
         return [(0, 180), (1300, 1500), (2900, 3200)]
 
     monkeypatch.setattr(
-        "landppt.services.narration_service.detect_silence_spans_ms",
+        "wisedeck.services.narration_service.detect_silence_spans_ms",
         fake_detect_silence_spans_ms,
     )
 

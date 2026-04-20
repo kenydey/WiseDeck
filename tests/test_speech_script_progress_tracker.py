@@ -1,4 +1,4 @@
-from landppt.services.progress_tracker import ProgressInfo
+from wisedeck.services.progress_tracker import ProgressInfo
 
 
 def test_progress_percentage_counts_failed_and_skipped_slides():

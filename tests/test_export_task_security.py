@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _user(user_id: int, *, is_admin: bool = False):
     return SimpleNamespace(id=user_id, is_admin=is_admin)
@@ -25,7 +27,7 @@ def _task(*, metadata=None, result=None, status="completed", task_type="pdf_gene
 
 
 def test_export_task_routes_require_authentication():
-    from landppt.web.route_modules import export_routes
+    from wisedeck.web.route_modules import export_routes
 
     app = FastAPI()
     app.include_router(export_routes.router)
@@ -34,16 +36,16 @@ def test_export_task_routes_require_authentication():
     )
     client = TestClient(app)
 
-    status_response = client.get("/api/landppt/tasks/task-1")
-    download_response = client.get("/api/landppt/tasks/task-1/download")
+    status_response = client.get("/api/wisedeck/tasks/task-1")
+    download_response = client.get("/api/wisedeck/tasks/task-1/download")
 
     assert status_response.status_code == 401
     assert download_response.status_code == 401
 
 
 def test_export_task_status_hides_other_users_tasks(monkeypatch):
-    from landppt.services import background_tasks as background_tasks_module
-    from landppt.web.route_modules import export_routes
+    from wisedeck.services import background_tasks as background_tasks_module
+    from wisedeck.web.route_modules import export_routes
 
     class FakeTaskManager:
         async def get_task_async(self, task_id: str):
@@ -56,15 +58,15 @@ def test_export_task_status_hides_other_users_tasks(monkeypatch):
     app.dependency_overrides[export_routes.get_current_user_required] = lambda: _user(11, is_admin=False)
     client = TestClient(app)
 
-    response = client.get("/api/landppt/tasks/task-1")
+    response = client.get("/api/wisedeck/tasks/task-1")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Task not found"
 
 
 def test_export_task_status_hides_ownerless_tasks_from_non_admin(monkeypatch):
-    from landppt.services import background_tasks as background_tasks_module
-    from landppt.web.route_modules import export_routes
+    from wisedeck.services import background_tasks as background_tasks_module
+    from wisedeck.web.route_modules import export_routes
 
     class FakeTaskManager:
         async def get_task_async(self, task_id: str):
@@ -77,15 +79,15 @@ def test_export_task_status_hides_ownerless_tasks_from_non_admin(monkeypatch):
     app.dependency_overrides[export_routes.get_current_user_required] = lambda: _user(11, is_admin=False)
     client = TestClient(app)
 
-    response = client.get("/api/landppt/tasks/task-1")
+    response = client.get("/api/wisedeck/tasks/task-1")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Task not found"
 
 
 def test_export_task_status_redacts_internal_paths(monkeypatch):
-    from landppt.services import background_tasks as background_tasks_module
-    from landppt.web.route_modules import export_routes
+    from wisedeck.services import background_tasks as background_tasks_module
+    from wisedeck.web.route_modules import export_routes
 
     class FakeTaskManager:
         async def get_task_async(self, task_id: str):
@@ -114,12 +116,12 @@ def test_export_task_status_redacts_internal_paths(monkeypatch):
     app.dependency_overrides[export_routes.get_current_user_required] = lambda: _user(11, is_admin=False)
     client = TestClient(app)
 
-    response = client.get("/api/landppt/tasks/task-1")
+    response = client.get("/api/wisedeck/tasks/task-1")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["message"] == "working"
-    assert payload["download_url"] == "/api/landppt/tasks/task-1/download"
+    assert payload["download_url"] == "/api/wisedeck/tasks/task-1/download"
     assert payload["metadata"] == {
         "project_id": "proj-1",
         "project_topic": "Demo",
@@ -133,8 +135,8 @@ def test_export_task_status_redacts_internal_paths(monkeypatch):
 
 
 def test_export_task_download_allows_admin_bypass(monkeypatch, tmp_path):
-    from landppt.services import background_tasks as background_tasks_module
-    from landppt.web.route_modules import export_routes
+    from wisedeck.services import background_tasks as background_tasks_module
+    from wisedeck.web.route_modules import export_routes
 
     pdf_path = tmp_path / "demo.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n")
@@ -155,14 +157,14 @@ def test_export_task_download_allows_admin_bypass(monkeypatch, tmp_path):
     app.dependency_overrides[export_routes.get_current_user_required] = lambda: _user(1, is_admin=True)
     client = TestClient(app)
 
-    response = client.get("/api/landppt/tasks/task-1/download")
+    response = client.get("/api/wisedeck/tasks/task-1/download")
 
     assert response.status_code == 200
     assert response.content.startswith(b"%PDF-1.4")
 
 
 def test_export_task_route_source_includes_owner_scoping_changes():
-    source = Path("/root/clawd/src/landppt/web/route_modules/export_routes.py").read_text(encoding="utf-8")
+    source = (_REPO_ROOT / "src/wisedeck/web/route_modules/export_routes.py").read_text(encoding="utf-8")
 
     assert 'metadata_filter={"project_id": project_id, "user_id": user.id}' in source
     assert '"user_id": user.id' in source
@@ -172,7 +174,7 @@ def test_export_task_route_source_includes_owner_scoping_changes():
 
 
 def test_narration_task_route_source_includes_owner_scoping_changes():
-    source = Path("/root/clawd/src/landppt/web/route_modules/narration_routes.py").read_text(encoding="utf-8")
+    source = (_REPO_ROOT / "src/wisedeck/web/route_modules/narration_routes.py").read_text(encoding="utf-8")
 
     assert 'metadata_filter={"project_id": project_id, "language": language, "provider": provider, "user_id": user.id}' in source
     assert '"user_id": user.id' in source

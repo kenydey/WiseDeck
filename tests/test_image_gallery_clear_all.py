@@ -3,9 +3,9 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_clear_user_cache_deletes_only_current_user_entries():
-    from landppt.auth.request_context import current_user_id
-    from landppt.services.image.image_service import ImageService
-    from landppt.services.image.models import ImageCacheInfo
+    from wisedeck.auth.request_context import current_user_id
+    from wisedeck.services.image.image_service import ImageService
+    from wisedeck.services.image.models import ImageCacheInfo
 
     service = ImageService({"cache": {}})
 
@@ -74,8 +74,8 @@ async def test_clear_user_cache_deletes_only_current_user_entries():
 
 @pytest.mark.asyncio
 async def test_clear_all_images_uses_user_scoped_clear_for_normal_users(monkeypatch):
-    from landppt.api import image_api
-    from landppt.auth.request_context import current_user_id
+    from wisedeck.api import image_api
+    from wisedeck.auth.request_context import current_user_id
     from types import SimpleNamespace
 
     class _FakeImageService:
@@ -112,8 +112,8 @@ async def test_clear_all_images_uses_user_scoped_clear_for_normal_users(monkeypa
 
 @pytest.mark.asyncio
 async def test_clear_all_images_preserves_global_clear_for_explicit_admin_scope(monkeypatch):
-    from landppt.api import image_api
-    from landppt.auth.request_context import USER_SCOPE_ALL, current_user_id
+    from wisedeck.api import image_api
+    from wisedeck.auth.request_context import USER_SCOPE_ALL, current_user_id
     from types import SimpleNamespace
 
     class _FakeImageService:

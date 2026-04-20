@@ -208,7 +208,7 @@ def _filename_from_headers(headers_map: Dict[str, str], fallback: str) -> str:
 
 
 def resolve_public_static_dir(cli_value: str) -> Path:
-    from_env = (os.environ.get("LANDPPT_PUBLIC_STATIC_DIR") or "").strip()
+    from_env = (os.environ.get("WISEDECK_PUBLIC_STATIC_DIR") or "").strip()
     if from_env:
         return Path(from_env).resolve()
     if (cli_value or "").strip():
@@ -454,7 +454,7 @@ def wait_for_task_completion(
     while True:
         task = call_json(
             "GET",
-            f"{base_url}/api/landppt/tasks/{task_id}",
+            f"{base_url}/api/wisedeck/tasks/{task_id}",
             api_key,
             timeout=600,
             auth_mode=auth_mode,
@@ -541,7 +541,7 @@ def export_pdf_and_publish(
         safe_print("- [STEP] Download exported PDF")
     data, hdrs = call_binary(
         "GET",
-        f"{base_url}/api/landppt/tasks/{task_id}/download",
+        f"{base_url}/api/wisedeck/tasks/{task_id}/download",
         api_key,
         timeout=1200,
         auth_mode=auth_mode,
@@ -624,7 +624,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--public-static-dir",
         default="",
-        help="Static root for published public files. Defaults to <repo>/src/landppt/web/static or LANDPPT_PUBLIC_STATIC_DIR.",
+        help="Static root for published public files. Defaults to <repo>/src/wisedeck/web/static or WISEDECK_PUBLIC_STATIC_DIR.",
     )
     parser.add_argument(
         "--public-static-subdir",
@@ -638,12 +638,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    api_key = args.api_key.strip() or os.environ.get("LANDPPT_USER_API_KEY", "").strip()
+    api_key = args.api_key.strip() or os.environ.get("WISEDECK_USER_API_KEY", "").strip()
     if not api_key:
-        api_key = os.environ.get("LANDPPT_API_KEY", "").strip()
+        api_key = os.environ.get("WISEDECK_API_KEY", "").strip()
     if not api_key:
         print(
-            "[ERROR] Missing API key. Pass --api-key or set LANDPPT_USER_API_KEY/LANDPPT_API_KEY."
+            "[ERROR] Missing API key. Pass --api-key or set WISEDECK_USER_API_KEY/WISEDECK_API_KEY."
         )
         return 2
 

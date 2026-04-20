@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from landppt.services.template.template_selection_service import TemplateSelectionService
+from wisedeck.services.template.template_selection_service import TemplateSelectionService
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,7 +137,7 @@ def test_extract_free_template_preview_html_supports_partial_html_chunks():
 
 @pytest.mark.asyncio
 async def test_confirm_route_persists_current_frontend_html_before_generation(monkeypatch):
-    from landppt.web.route_modules import template_routes
+    from wisedeck.web.route_modules import template_routes
 
     project = SimpleNamespace(
         topic="template-demo",
@@ -182,9 +182,9 @@ async def test_confirm_route_persists_current_frontend_html_before_generation(mo
 
 
 def test_free_template_streaming_route_and_frontend_use_sse_preview_pipeline():
-    route_text = _read("src/landppt/web/route_modules/template_routes.py")
-    service_text = _read("src/landppt/services/template/template_selection_service.py")
-    script_text = _read("src/landppt/web/templates/components/project/todo_board_with_editor/script_1.html")
+    route_text = _read("src/wisedeck/web/route_modules/template_routes.py")
+    service_text = _read("src/wisedeck/services/template/template_selection_service.py")
+    script_text = _read("src/wisedeck/web/templates/components/project/todo_board_with_editor/script_1.html")
 
     assert 'want_stream = True if stream_flag is None else bool(stream_flag)' in route_text
     assert 'media_type="text/event-stream"' in route_text

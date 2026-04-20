@@ -1,3 +1,8 @@
+# Node (Presenton-derived render-service)
+render-service/node_modules/
+render-service/.next/
+render-service/.next-build/
+
 # Python-generated files
 __pycache__/
 *.py[oc]

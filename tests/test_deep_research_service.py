@@ -23,8 +23,8 @@ if "tavily" not in sys.modules:
     sys.modules["tavily"] = fake_tavily
 
 
-from landppt.services import deep_research_service as drs
-from landppt.services.deep_research_service import (
+from wisedeck.services import deep_research_service as drs
+from wisedeck.services.deep_research_service import (
     DEEPResearchService,
     _is_tavily_auth_error,
     _normalize_secret_value,
@@ -135,8 +135,8 @@ async def test_tavily_search_uses_runtime_base_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_tavily_runtime_config_ignores_blank_db_base_url(monkeypatch):
-    import landppt.database.database as database_mod
-    import landppt.database.repositories as repo_mod
+    import wisedeck.database.database as database_mod
+    import wisedeck.database.repositories as repo_mod
 
     service = DEEPResearchService(user_id=123)
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from landppt.services.prompts.outline_prompts import OutlinePrompts
+from wisedeck.services.prompts.outline_prompts import OutlinePrompts
 from summeryanyfile.config.prompts import PromptTemplates
 
 

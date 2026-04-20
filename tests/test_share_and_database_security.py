@@ -11,7 +11,7 @@ def _user(user_id: int, *, is_admin: bool = False):
 
 @pytest.mark.asyncio
 async def test_share_routes_require_project_ownership_for_generate(monkeypatch):
-    from landppt.web.route_modules import share_routes
+    from wisedeck.web.route_modules import share_routes
 
     calls = {}
 
@@ -51,7 +51,7 @@ async def test_share_routes_require_project_ownership_for_generate(monkeypatch):
 @pytest.mark.asyncio
 async def test_share_routes_hide_other_users_projects(monkeypatch):
     from fastapi import HTTPException
-    from landppt.web.route_modules import share_routes
+    from wisedeck.web.route_modules import share_routes
 
     class FakeProjectManager:
         async def get_project(self, project_id: str, user_id=None):
@@ -67,7 +67,7 @@ async def test_share_routes_hide_other_users_projects(monkeypatch):
 
 
 def test_database_routes_require_admin_for_dangerous_operations():
-    from landppt.api import database_api
+    from wisedeck.api import database_api
 
     app = FastAPI()
     app.include_router(database_api.router)
@@ -89,8 +89,8 @@ def test_database_routes_require_admin_for_dangerous_operations():
 
 
 def test_database_delete_project_scopes_to_authenticated_user(monkeypatch):
-    from landppt.api import database_api
-    from landppt.auth.middleware import get_current_user_required
+    from wisedeck.api import database_api
+    from wisedeck.auth.middleware import get_current_user_required
 
     calls = {}
 
@@ -127,8 +127,8 @@ def test_database_delete_project_scopes_to_authenticated_user(monkeypatch):
 
 
 def test_database_delete_project_keeps_admin_global_scope(monkeypatch):
-    from landppt.api import database_api
-    from landppt.auth.middleware import get_current_user_required
+    from wisedeck.api import database_api
+    from wisedeck.auth.middleware import get_current_user_required
 
     calls = {}
 

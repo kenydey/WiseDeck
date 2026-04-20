@@ -90,7 +90,7 @@ class MineruAPIClient:
 
     def _get_current_user_id(self) -> Optional[int]:
         try:
-            from landppt.auth.request_context import current_user_id
+            from wisedeck.auth.request_context import current_user_id
 
             return current_user_id.get()
         except Exception:
@@ -118,7 +118,7 @@ class MineruAPIClient:
         falling back to system defaults when user-specific values are missing.
         """
         try:
-            from landppt.services.db_config_service import get_db_config_service
+            from wisedeck.services.db_config_service import get_db_config_service
         except Exception:
             return None, None
 
@@ -533,9 +533,9 @@ class MineruAPIClient:
         replace links in markdown. If LandPPT image service isn't available, returns unchanged.
         """
         try:
-            from landppt.services.image.image_service import get_image_service
-            from landppt.services.image.models import ImageUploadRequest
-            from landppt.services.url_service import build_image_url
+            from wisedeck.services.image.image_service import get_image_service
+            from wisedeck.services.image.models import ImageUploadRequest
+            from wisedeck.services.url_service import build_image_url
         except Exception:
             return markdown_content
 

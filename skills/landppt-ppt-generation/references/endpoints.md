@@ -342,14 +342,14 @@ curl -sS -X POST "${BASE_URL}/api/projects/${PROJECT_ID}/export/pptx-images" \
 Poll status:
 
 ```bash
-curl -sS -X GET "${BASE_URL}/api/landppt/tasks/${TASK_ID}" \
+curl -sS -X GET "${BASE_URL}/api/wisedeck/tasks/${TASK_ID}" \
   -H "${AUTH_HEADER}"
 ```
 
 Download task result:
 
 ```bash
-curl -L -X GET "${BASE_URL}/api/landppt/tasks/${TASK_ID}/download" \
+curl -L -X GET "${BASE_URL}/api/wisedeck/tasks/${TASK_ID}/download" \
   -H "${AUTH_HEADER}" \
   -o "task_result.bin"
 ```

@@ -2,12 +2,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-NARRATION_ROUTES = ROOT / "src/landppt/web/route_modules/narration_routes.py"
-EXPORT_ROUTES = ROOT / "src/landppt/web/route_modules/export_routes.py"
-BACKGROUND_TASKS = ROOT / "src/landppt/services/background_tasks.py"
-NARRATION_JS = ROOT / "src/landppt/web/static/js/pages/project/slides_editor/projectEditorNarration.js"
-SPEECH_MANAGE_JS = ROOT / "src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.speechScriptsManage.js"
-TEMPLATE_FILE = ROOT / "src/landppt/web/templates/pages/project/project_slides_editor.html"
+NARRATION_ROUTES = ROOT / "src/wisedeck/web/route_modules/narration_routes.py"
+EXPORT_ROUTES = ROOT / "src/wisedeck/web/route_modules/export_routes.py"
+BACKGROUND_TASKS = ROOT / "src/wisedeck/services/background_tasks.py"
+NARRATION_JS = ROOT / "src/wisedeck/web/static/js/pages/project/slides_editor/projectEditorNarration.js"
+SPEECH_MANAGE_JS = ROOT / "src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.speechScriptsManage.js"
+TEMPLATE_FILE = ROOT / "src/wisedeck/web/templates/pages/project/project_slides_editor.html"
 
 
 def _read(path: Path) -> str:

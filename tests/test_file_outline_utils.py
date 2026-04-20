@@ -1,4 +1,4 @@
-from landppt.services.file_outline_utils import (
+from wisedeck.services.file_outline_utils import (
     extract_saved_file_outline,
     get_file_processing_mode,
     is_file_generated_outline,

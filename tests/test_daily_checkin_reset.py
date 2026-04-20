@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from landppt.services.community_service import CommunityService
+from wisedeck.services.community_service import CommunityService
 
 
 def _ts(year: int, month: int, day: int, hour: int, minute: int = 0, second: int = 0) -> float:

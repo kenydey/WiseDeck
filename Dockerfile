@@ -151,7 +151,7 @@ COPY --from=builder /opt/playwright-browsers /opt/playwright-browsers
 RUN /opt/venv/bin/python -c "import fastapi, uvicorn; print('Runtime venv OK')"
 
 # Set permissions for landppt user and playwright browsers
-RUN chown -R landppt:landppt /home/landppt && \
+RUN chown -R wisedeck:landppt /home/landppt && \
     chmod -R 755 /opt/playwright-browsers
 
 # Set work directory
@@ -169,7 +169,7 @@ RUN sed -i 's/\r$//' /usr/local/bin/docker-healthcheck.sh /usr/local/bin/docker-
     chmod +x /usr/local/bin/docker-healthcheck.sh /usr/local/bin/docker-entrypoint.sh && \
     mkdir -p temp/ai_responses_cache temp/style_genes_cache temp/summeryanyfile_cache temp/templates_cache \
              research_reports lib/Linux lib/MacOS lib/Windows uploads data && \
-    chown -R landppt:landppt /app /home/landppt && \
+    chown -R wisedeck:landppt /app /home/landppt && \
     chmod -R 755 /app /home/landppt && \
     chmod 666 /app/.env
 

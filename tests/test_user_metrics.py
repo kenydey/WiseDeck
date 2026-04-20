@@ -5,7 +5,7 @@ from sqlalchemy.orm import joinedload, sessionmaker
 
 
 def _create_db():
-    from landppt.database.models import Base, CreditTransaction, Project, User, UserMetrics
+    from wisedeck.database.models import Base, CreditTransaction, Project, User, UserMetrics
 
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(
@@ -22,7 +22,7 @@ def _create_db():
 
 
 def test_user_metrics_track_projects_credits_and_activity():
-    from landppt.database.models import CreditTransaction, Project, User, UserMetrics
+    from wisedeck.database.models import CreditTransaction, Project, User, UserMetrics
 
     db = _create_db()
     try:
@@ -115,7 +115,7 @@ def test_user_metrics_track_projects_credits_and_activity():
 
 
 def test_user_to_dict_includes_loaded_metrics():
-    from landppt.database.models import User, UserMetrics
+    from wisedeck.database.models import User, UserMetrics
 
     db = _create_db()
     try:
@@ -142,8 +142,8 @@ def test_user_to_dict_includes_loaded_metrics():
 
 @pytest.mark.asyncio
 async def test_user_repository_sorts_by_metric_fields():
-    from landppt.database.models import Base, User, UserMetrics
-    from landppt.database.repositories import UserRepository
+    from wisedeck.database.models import Base, User, UserMetrics
+    from wisedeck.database.repositories import UserRepository
 
     class AsyncSessionAdapter:
         def __init__(self, sync_session):

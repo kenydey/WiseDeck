@@ -1,6 +1,6 @@
-from landppt.services.db_config_service import get_user_ai_provider_config_sync
-from landppt.services.image.config.image_config import ImageServiceConfig
-from landppt.services.pdf_to_pptx_converter import PDFToPPTXConverter
+from wisedeck.services.db_config_service import get_user_ai_provider_config_sync
+from wisedeck.services.image.config.image_config import ImageServiceConfig
+from wisedeck.services.pdf_to_pptx_converter import PDFToPPTXConverter
 
 
 def test_get_user_ai_provider_config_sync_uses_sync_config_map(monkeypatch):
@@ -15,12 +15,12 @@ def test_get_user_ai_provider_config_sync_uses_sync_config_map(monkeypatch):
                 "openai_use_responses_api": True,
                 "openai_enable_reasoning": True,
                 "openai_reasoning_effort": "high",
-                "landppt_api_key": "system-landppt-key",
-                "landppt_base_url": "https://landppt.example.com/v1",
-                "landppt_model": "MODEL1",
+                "wisedeck_api_key": "system-wisedeck-key",
+                "wisedeck_base_url": "https://wisedeck.example.com/v1",
+                "wisedeck_model": "MODEL1",
             }
 
-    import landppt.services.db_config_service as db_mod
+    import wisedeck.services.db_config_service as db_mod
 
     monkeypatch.setattr(db_mod, "get_db_config_service", lambda: FakeDBConfigService(), raising=True)
 
@@ -52,7 +52,7 @@ def test_image_service_config_load_config_from_db_sync(monkeypatch):
                 "searxng_host": "https://searx.example.com",
             }
 
-    import landppt.services.db_config_service as db_mod
+    import wisedeck.services.db_config_service as db_mod
 
     monkeypatch.setattr(db_mod, "get_db_config_service", lambda: FakeDBConfigService(), raising=True)
 
@@ -78,7 +78,7 @@ def test_pdf_to_pptx_converter_license_key_uses_sync_db_config(monkeypatch):
             assert user_id == 12
             return "sync-license-key"
 
-    import landppt.services.db_config_service as db_mod
+    import wisedeck.services.db_config_service as db_mod
 
     monkeypatch.setattr(db_mod, "get_db_config_service", lambda: FakeDBConfigService(), raising=True)
 
@@ -89,7 +89,7 @@ def test_pdf_to_pptx_converter_license_key_uses_sync_db_config(monkeypatch):
 
 
 def test_database_config_service_get_config_value_sync(monkeypatch):
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     class FakeResult:
         def __init__(self, value):
@@ -108,7 +108,7 @@ def test_database_config_service_get_config_value_sync(monkeypatch):
         def execute(self, stmt):
             return FakeResult("gpt-sync-from-db")
 
-    import landppt.database.database as db_database_mod
+    import wisedeck.database.database as db_database_mod
 
     monkeypatch.setattr(db_database_mod, "SessionLocal", lambda: FakeSession(), raising=True)
 

@@ -19,12 +19,12 @@ if "langchain_core.documents" not in sys.modules:
     sys.modules["langchain_core.documents"] = documents_module
     setattr(langchain_core_module, "documents", documents_module)
 
-from landppt.ai.base import AIResponse, MessageRole
-from landppt.services.outline.project_outline_research_service import ProjectOutlineResearchService
-from landppt.services.outline.project_outline_streaming_service import ProjectOutlineStreamingService
-from landppt.services.runtime import runtime_research_service as runtime_research_module
-from landppt.services.runtime.runtime_provider_service import RuntimeProviderService
-from landppt.services.runtime.runtime_research_service import RuntimeResearchService
+from wisedeck.ai.base import AIResponse, MessageRole
+from wisedeck.services.outline.project_outline_research_service import ProjectOutlineResearchService
+from wisedeck.services.outline.project_outline_streaming_service import ProjectOutlineStreamingService
+from wisedeck.services.runtime import runtime_research_service as runtime_research_module
+from wisedeck.services.runtime.runtime_provider_service import RuntimeProviderService
+from wisedeck.services.runtime.runtime_research_service import RuntimeResearchService
 
 
 class _FakeProvider:
@@ -111,9 +111,9 @@ def test_runtime_research_service_initializes_research_attrs_on_owner(monkeypatc
     support = _RuntimeResearchSupportStub(owner)
     service = RuntimeResearchService(support)
 
-    fake_deep_module = types.ModuleType("landppt.services.deep_research_service")
+    fake_deep_module = types.ModuleType("wisedeck.services.deep_research_service")
     fake_deep_module.DEEPResearchService = _FakeLegacyResearchService
-    fake_report_module = types.ModuleType("landppt.services.research_report_generator")
+    fake_report_module = types.ModuleType("wisedeck.services.research_report_generator")
     fake_report_module.ResearchReportGenerator = _FakeLegacyReportGenerator
 
     monkeypatch.setattr(
@@ -126,8 +126,8 @@ def test_runtime_research_service_initializes_research_attrs_on_owner(monkeypatc
         "EnhancedReportGenerator",
         _FakeEnhancedReportGenerator,
     )
-    monkeypatch.setitem(sys.modules, "landppt.services.deep_research_service", fake_deep_module)
-    monkeypatch.setitem(sys.modules, "landppt.services.research_report_generator", fake_report_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.deep_research_service", fake_deep_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.research_report_generator", fake_report_module)
 
     service._initialize_research_services()
 
@@ -243,7 +243,7 @@ class _OutlineResearchStubService:
 async def test_project_outline_research_service_uses_direct_file_processor_import(monkeypatch, tmp_path):
     service = ProjectOutlineResearchService(_OutlineResearchStubService())
 
-    fake_module = types.ModuleType("landppt.services.file_processor")
+    fake_module = types.ModuleType("wisedeck.services.file_processor")
 
     class _FakeFileProcessor:
         async def process_file(self, file_path, filename, file_processing_mode=None):
@@ -252,7 +252,7 @@ async def test_project_outline_research_service_uses_direct_file_processor_impor
             )
 
     fake_module.FileProcessor = _FakeFileProcessor
-    monkeypatch.setitem(sys.modules, "landppt.services.file_processor", fake_module)
+    monkeypatch.setitem(sys.modules, "wisedeck.services.file_processor", fake_module)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
 
     merged_path = await service.conduct_research_and_merge_with_files(
@@ -361,15 +361,15 @@ async def test_generate_outline_streaming_force_regenerate_skips_saved_outline(m
             return True
 
     monkeypatch.setattr(
-        "landppt.services.file_outline_utils.should_force_file_outline_regeneration",
+        "wisedeck.services.file_outline_utils.should_force_file_outline_regeneration",
         lambda confirmed_requirements: False,
     )
     monkeypatch.setattr(
-        "landppt.services.file_outline_utils.extract_saved_file_outline",
+        "wisedeck.services.file_outline_utils.extract_saved_file_outline",
         _fake_extract_saved_file_outline,
     )
     monkeypatch.setattr(
-        "landppt.services.db_project_manager.DatabaseProjectManager",
+        "wisedeck.services.db_project_manager.DatabaseProjectManager",
         _FakeDatabaseProjectManager,
     )
     monkeypatch.setattr(

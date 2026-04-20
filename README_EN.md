@@ -1,4 +1,4 @@
-# LandPPT - AI-Powered PPT Generation Platform
+# WiseDeck - AI-Powered PPT Generation Platform
 
 [![GitHub stars](https://img.shields.io/github/stars/sligter/LandPPT?style=flat-square)](https://github.com/sligter/LandPPT/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/sligter/LandPPT?style=flat-square)](https://github.com/sligter/LandPPT/network)
@@ -157,14 +157,30 @@ LandPPT is an intelligent presentation generation platform powered by Large Lang
 
 ### System Requirements
 - Python 3.11+
+- Git
 - SQLite 3
-- ffmpeg (required for narration video export)
-- Docker (optional)
+- **ffmpeg** (narration video export, etc.; on Windows: `winget install FFmpeg`; on Linux: use your distro packages)
+- **Playwright Chromium** (PDF/export paths; after installing deps run `uv run playwright install chromium`)
+- Docker + Docker Compose (optional; see **Docker Deployment** below)
 
 ### Database Migrations (Automatic)
-- By default, the app will auto-detect and apply pending database migrations on startup (not user-specific). Disable via `LANDPPT_AUTO_MIGRATE_ON_STARTUP=false`.
-- Standalone/local startup now defaults to SQLite; only set `DATABASE_URL` when you want to use PostgreSQL or another external database explicitly.
-- If you run multiple containers/nodes against the same database, consider disabling auto-migrate and running migrations as a dedicated one-off job.
+- By default, the app auto-applies pending migrations on startup. Disable with `WISEDECK_AUTO_MIGRATE_ON_STARTUP=false` (see also `WISEDECK_AUTO_MIGRATE_FAIL_FAST`, lock timeouts in `src/wisedeck/database/startup_migrations.py`).
+- Local startup defaults to SQLite; set `DATABASE_URL` only when using PostgreSQL or another external database.
+- For multiple containers/nodes sharing one database, prefer disabling auto-migrate and running migrations as a one-off job.
+
+### Local run (Windows / Linux)
+
+These steps match `run.py`, `docker-compose*.yaml`, and **`WISEDECK_*`** environment variables.
+
+**Windows (PowerShell):** Install Python 3.11+, **uv** (command in Method 1 below), **ffmpeg**, then `uv sync --extra dev`, `Copy-Item .env.example .env`, edit `.env` (at least `SECRET_KEY` and one AI key; optionally `WISEDECK_BOOTSTRAP_ADMIN_*`), optionally `uv run playwright install chromium`, then `uv run python run.py`. Open **http://localhost:8000**, **/docs**, **/health**.
+
+**Linux (bash):** Install Python 3.11+, `git`, `ffmpeg`, install **uv**, `uv sync --extra dev`, `cp .env.example .env`, same `.env` guidance, optional Playwright install, `uv run python run.py`.
+
+**IDE debugging:** Set workspace to repo root and include **`src` on `PYTHONPATH`** (same as `run.py`). You can run Uvicorn with `wisedeck.main:app --reload --host 0.0.0.0 --port 8000`. If breakpoints misbehave with reload, set `RELOAD=false` temporarily.
+
+**Docker Compose:** Production [`docker-compose.yml`](docker-compose.yml): app **http://localhost:8000** (`8000:8000`), Postgres on host **6004** (`6004:5432`). Logs: `docker compose logs -f wisedeck`. Dev [`docker-compose-dev.yaml`](docker-compose-dev.yaml): `docker compose -f docker-compose-dev.yaml logs -f wisedeck`, container name **`wisedeck-dev`**.
+
+**Optional structured PPTX:** Start `render-service` and set **`WISEDECK_RENDER_SERVICE_URL`** (see [render-service/README_WISEDECK.md](render-service/README_WISEDECK.md)).
 
 ### Local Installation
 
@@ -195,11 +211,11 @@ cp .env.example .env
 uv run python run.py
 
 # Run tests (example)
-uv run --extra dev pytest tests/test_creative_guidance_defaults.py
+uv run pytest tests/test_creative_guidance_defaults.py
 
 # If upgrading: after startup, apply database migrations (includes narration audio/video)
 # Option A (no HTTP auth required):
-# python -c "import asyncio; from landppt.database.migrations import migration_manager; asyncio.run(migration_manager.migrate_up())"
+# python -c "import asyncio; from wisedeck.database.migrations import migration_manager; asyncio.run(migration_manager.migrate_up())"
 # Option B (HTTP endpoint requires auth session cookie):
 # 1) Get session_id: curl -X POST -d "username=YOUR_USER&password=YOUR_PASS" http://localhost:8000/api/auth/login
 # 2) Run migrations: curl -X POST -H "Cookie: session_id=YOUR_SESSION_ID" http://localhost:8000/api/database/migrations/run
@@ -237,41 +253,41 @@ python run.py
 
 ```bash
 # Pull the latest image
-docker pull bradleylzh/landppt:latest
+docker pull bradleylzh/wisedeck:latest
 
 # Run container
 docker run -d \
-  --name landppt \
+  --name wisedeck \
   -p 8000:8000 \
   -v $(pwd)/.env:/app/.env \
-  -v landppt_data:/app/data \
-  -v landppt_reports:/app/research_reports \
-  -v landppt_cache:/app/temp \
-  bradleylzh/landppt:latest
+  -v wisedeck_data:/app/data \
+  -v wisedeck_reports:/app/research_reports \
+  -v wisedeck_cache:/app/temp \
+  bradleylzh/wisedeck:latest
 
 # View logs
-docker logs -f landppt
+docker logs -f wisedeck
 ```
 
 > **Note**: Make sure to create and configure the `.env` file with necessary API keys before running.
 
 #### Docker Compose (Recommended for Production)
 
-The repository includes `docker-compose.yml`, which starts `landppt + PostgreSQL + Valkey` together. This is the recommended setup for multi-user deployments, background jobs, and long-running environments. For standalone local use, you can run `python run.py` / `uv run python run.py` directly and use the default SQLite + memory-cache setup without extra services.
+The repository includes `docker-compose.yml`, which starts **WiseDeck + PostgreSQL + Valkey**. Use it for multi-user deployments, background jobs, and long-running environments. For simple local use, run `python run.py` / `uv run python run.py` with the default SQLite + memory cache.
 
 ```bash
 # Prepare configuration
 cp .env.example .env
-# At minimum, set AI keys, SECRET_KEY, and POSTGRES_PASSWORD
+# At minimum, set AI keys, SECRET_KEY, and POSTGRES_PASSWORD (consistent with DATABASE_URL in compose)
 
 # Start the production stack
 docker compose up -d --build
 
-# View logs
-docker compose logs -f landppt
+# View logs (compose service name is wisedeck)
+docker compose logs -f wisedeck
 ```
 
-Default URL: `http://localhost:6003`
+Default URL: **http://localhost:8000** (app maps `8000:8000`). PostgreSQL is exposed on host **6004** (`6004:5432`).
 
 #### Development Mode (Hot Reload)
 
@@ -280,10 +296,10 @@ Use `docker-compose-dev.yaml` for source-mounted development with hot reload ena
 ```bash
 cp .env.example .env
 docker compose -f docker-compose-dev.yaml up -d --build
-docker compose -f docker-compose-dev.yaml logs -f landppt-dev
+docker compose -f docker-compose-dev.yaml logs -f wisedeck
 ```
 
-Default URL: `http://localhost:8001`
+Default URL: **http://localhost:8000**. Container name **`wisedeck-dev`**.
 
 ##  Usage Guide
 
@@ -293,7 +309,7 @@ After starting the service, visit:
 - **API Documentation**: http://localhost:8000/docs
 - **Health Check**: http://localhost:8000/health
 
-No administrator account is created automatically by default. To bootstrap one, explicitly set `LANDPPT_BOOTSTRAP_ADMIN_ENABLED=true`, `LANDPPT_BOOTSTRAP_ADMIN_USERNAME`, and `LANDPPT_BOOTSTRAP_ADMIN_PASSWORD`.
+No administrator account is created automatically by default. To bootstrap one, explicitly set `WISEDECK_BOOTSTRAP_ADMIN_ENABLED=true`, `WISEDECK_BOOTSTRAP_ADMIN_USERNAME`, and `WISEDECK_BOOTSTRAP_ADMIN_PASSWORD`.
 
 ### 2. Configure AI Providers
 Configure your AI API keys in the settings page:
@@ -330,7 +346,7 @@ Configure your AI API keys in the settings page:
 
 ### Environment Variables
 
-Main configuration items (common options are in `.env.example`; advanced options can be referenced in `src/landppt/core/config.py`):
+Main configuration items (common options are in `.env.example`; advanced options can be referenced in `src/wisedeck/core/config.py`):
 
 ```bash
 # AI Provider Configuration
@@ -372,18 +388,18 @@ SILICONFLOW_API_KEY=your_siliconflow_key_here # AI image generation
 POLLINATIONS_API_KEY=your_pollinations_api_key_here # Pollinations AI (gen.pollinations.ai)
 
 # Automation auth
-LANDPPT_API_KEY=replace-with-strong-random-key
-LANDPPT_API_KEYS=admin:prod-key,robot:n8n-key
-LANDPPT_BOOTSTRAP_ADMIN_ENABLED=false
-LANDPPT_ENABLE_API_DOCS=true
-LANDPPT_ALLOW_HEADER_SESSION_AUTH=false
+WISEDECK_API_KEY=replace-with-strong-random-key
+WISEDECK_API_KEYS=admin:prod-key,robot:n8n-key
+WISEDECK_BOOTSTRAP_ADMIN_ENABLED=false
+WISEDECK_ENABLE_API_DOCS=true
+WISEDECK_ALLOW_HEADER_SESSION_AUTH=false
 
 # Storage / cache
 DATABASE_URL=sqlite:///./landppt.db
 CACHE_BACKEND=memory
 VALKEY_URL=valkey://localhost:6379
 # Production example:
-# DATABASE_URL=postgresql://landppt:password@localhost:5432/landppt
+# DATABASE_URL=postgresql://wisedeck:password@localhost:5432/landppt
 # CACHE_BACKEND=valkey
 
 # Export Functionality Configuration
@@ -427,17 +443,17 @@ For non-browser automation (n8n, CI jobs), you can use either:
 Configure machine API auth in `.env`:
 
 ```bash
-LANDPPT_API_KEY=replace-with-strong-random-key
-LANDPPT_API_KEY_USER=admin
+WISEDECK_API_KEY=replace-with-strong-random-key
+WISEDECK_API_KEY_USER=admin
 
 # Or use multi-key bindings
-LANDPPT_API_KEYS=admin:prod-key,robot:workflow-key
+WISEDECK_API_KEYS=admin:prod-key,robot:workflow-key
 ```
 
 Then call protected endpoints with:
 
-- `Authorization: Bearer <LANDPPT_API_KEY>`
-- or `X-API-Key: <LANDPPT_API_KEY>`
+- `Authorization: Bearer <WISEDECK_API_KEY>`
+- or `X-API-Key: <WISEDECK_API_KEY>`
 
 Example:
 
@@ -448,7 +464,7 @@ curl -X GET "http://localhost:8000/api/projects" \
 
 #### Option B: User-managed API key (no login needed for subsequent calls)
 
-1) Log in once with your administrator account and get `session_id` (bootstrap one explicitly with `LANDPPT_BOOTSTRAP_ADMIN_*` or create one from the Web UI):
+1) Log in once with your administrator account and get `session_id` (bootstrap one explicitly with `WISEDECK_BOOTSTRAP_ADMIN_*` or create one from the Web UI):
 ```bash
 curl -X POST "http://localhost:8000/api/auth/login" \
   -d "username=<your-admin-username>" \
@@ -474,9 +490,9 @@ Useful management endpoints:
 - `DELETE /api/auth/api-keys/{key_id}` delete one key
 
 Additional notes:
-- `LANDPPT_ALLOW_HEADER_SESSION_AUTH` is disabled by default; only when explicitly set to `true` can non-browser clients pass the session via `X-Session-Id`.
+- `WISEDECK_ALLOW_HEADER_SESSION_AUTH` is disabled by default; only when explicitly set to `true` can non-browser clients pass the session via `X-Session-Id`.
 - Global keys work well for service-to-service auth; user-managed keys are better for multi-tenant or personal automation.
-- `/docs`, `/redoc`, and `/openapi.json` are available when `LANDPPT_ENABLE_API_DOCS=true`, which is the default.
+- `/docs`, `/redoc`, and `/openapi.json` are available when `WISEDECK_ENABLE_API_DOCS=true`, which is the default.
 
 ### OpenAI-Compatible Endpoints
 

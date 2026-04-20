@@ -10,8 +10,8 @@ def _user(user_id: int, *, is_admin: bool = False):
 
 @pytest.mark.asyncio
 async def test_owned_project_helper_scopes_to_authenticated_user(monkeypatch):
-    from landppt.services import db_project_manager as db_project_manager_module
-    from landppt.web.route_modules import project_workspace_routes
+    from wisedeck.services import db_project_manager as db_project_manager_module
+    from wisedeck.web.route_modules import project_workspace_routes
 
     calls = {}
 
@@ -31,8 +31,8 @@ async def test_owned_project_helper_scopes_to_authenticated_user(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_owned_project_helper_hides_other_users_projects(monkeypatch):
-    from landppt.services import db_project_manager as db_project_manager_module
-    from landppt.web.route_modules import project_workspace_routes
+    from wisedeck.services import db_project_manager as db_project_manager_module
+    from wisedeck.web.route_modules import project_workspace_routes
 
     class FakeProjectManager:
         async def get_project(self, project_id: str, user_id=None):

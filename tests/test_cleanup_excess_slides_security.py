@@ -9,8 +9,8 @@ def _user(user_id: int, *, is_admin: bool = False):
 
 @pytest.mark.asyncio
 async def test_slide_cleanup_route_passes_authenticated_user_id(monkeypatch):
-    from landppt.services import db_project_manager as db_project_manager_module
-    from landppt.web.route_modules import slide_routes
+    from wisedeck.services import db_project_manager as db_project_manager_module
+    from wisedeck.web.route_modules import slide_routes
 
     calls = {}
 
@@ -52,8 +52,8 @@ async def test_slide_cleanup_route_passes_authenticated_user_id(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_database_service_cleanup_excess_slides_prefers_explicit_user_id():
-    from landppt.auth.request_context import current_user_id
-    from landppt.database.service import DatabaseService
+    from wisedeck.auth.request_context import current_user_id
+    from wisedeck.database.service import DatabaseService
 
     class FakeProjectRepo:
         def __init__(self):
@@ -88,8 +88,8 @@ async def test_database_service_cleanup_excess_slides_prefers_explicit_user_id()
 
 @pytest.mark.asyncio
 async def test_database_service_cleanup_excess_slides_falls_back_to_request_context():
-    from landppt.auth.request_context import current_user_id
-    from landppt.database.service import DatabaseService
+    from wisedeck.auth.request_context import current_user_id
+    from wisedeck.database.service import DatabaseService
 
     class FakeProjectRepo:
         def __init__(self):
@@ -118,20 +118,20 @@ async def test_database_service_cleanup_excess_slides_falls_back_to_request_cont
 
 
 def test_slide_cleanup_source_threads_explicit_user_id():
-    source = open("/root/clawd/src/landppt/web/route_modules/slide_routes.py", "r", encoding="utf-8").read()
+    source = open("/root/clawd/src/wisedeck/web/route_modules/slide_routes.py", "r", encoding="utf-8").read()
     assert "deleted_count = await db_manager.cleanup_excess_slides(" in source
     assert "user_id=user.id" in source
 
 
 def test_db_project_manager_source_accepts_cleanup_user_id():
-    source = open("/root/clawd/src/landppt/services/db_project_manager.py", "r", encoding="utf-8").read()
+    source = open("/root/clawd/src/wisedeck/services/db_project_manager.py", "r", encoding="utf-8").read()
     assert "async def cleanup_excess_slides(" in source
     assert "user_id: Optional[int] = None" in source
     assert "user_id=user_id" in source
 
 
 def test_database_service_source_prefers_explicit_cleanup_user_id_with_fallback():
-    source = open("/root/clawd/src/landppt/database/service.py", "r", encoding="utf-8").read()
+    source = open("/root/clawd/src/wisedeck/database/service.py", "r", encoding="utf-8").read()
     assert "async def cleanup_excess_slides(" in source
     assert "effective_user_id = user_id" in source
     assert "if effective_user_id == USER_SCOPE_ALL:" in source

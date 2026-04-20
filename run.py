@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-LandPPT Application Runner
+WiseDeck Application Runner
 
-This script starts the LandPPT FastAPI application with proper configuration.
+This script starts the WiseDeck FastAPI application with proper configuration.
 """
 
 import uvicorn
@@ -49,7 +49,7 @@ def main():
 
     # Configuration
     config = {
-        "app": "landppt.main:app",
+        "app": "wisedeck.main:app",
         "host": host,
         "port": port,
         "reload": reload,
@@ -60,14 +60,14 @@ def main():
     if workers > 1:
         config["workers"] = workers
     
-    print("Starting LandPPT Server...")
+    print("Starting WiseDeck Server...")
     print(f"Host: {config['host']}")
     print(f"Port: {config['port']}")
     print(f"Reload: {config['reload']}")
     print(f"Log Level: {config['log_level']}")
     print(f"Workers: {config.get('workers', 1)}")
     print(f"Server will be available at: http://localhost:{config['port']}")
-    print(f"Web Interface: http://localhost:{config['port']}/web")
+    print(f"Web Interface: http://localhost:{config['port']}/dashboard")
     print("=" * 60)
 
     try:

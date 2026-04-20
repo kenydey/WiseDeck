@@ -26,7 +26,7 @@ def _build_request(headers: dict | None = None, cookies: dict | None = None):
 
 
 def _create_db():
-    from landppt.database.models import Base, User, UserSession, UserAPIKey
+    from wisedeck.database.models import Base, User, UserSession, UserAPIKey
 
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine, tables=[User.__table__, UserSession.__table__, UserAPIKey.__table__])
@@ -35,7 +35,7 @@ def _create_db():
 
 
 def _create_user(db, username: str, email: str):
-    from landppt.database.models import User
+    from wisedeck.database.models import User
 
     user = User(username=username, email=email, is_admin=False, is_active=True, credits_balance=0)
     user.set_password("pw")
@@ -46,8 +46,8 @@ def _create_user(db, username: str, email: str):
 
 
 def test_auth_service_supports_single_api_key(monkeypatch):
-    from landppt.auth.auth_service import AuthService
-    from landppt.core.config import app_config
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.core.config import app_config
 
     db = _create_db()
     try:
@@ -67,8 +67,8 @@ def test_auth_service_supports_single_api_key(monkeypatch):
 
 
 def test_auth_service_supports_multiple_api_key_bindings(monkeypatch):
-    from landppt.auth.auth_service import AuthService
-    from landppt.core.config import app_config
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.core.config import app_config
 
     db = _create_db()
     try:
@@ -88,7 +88,7 @@ def test_auth_service_supports_multiple_api_key_bindings(monkeypatch):
         assert resolved_admin is not None
         assert resolved_admin.id == admin.id
 
-        # Key without user binding falls back to LANDPPT_API_KEY_USER
+        # Key without user binding falls back to WISEDECK_API_KEY_USER
         resolved_default = auth.get_user_by_api_key(db, "key-default")
         assert resolved_default is not None
         assert resolved_default.id == admin.id
@@ -98,8 +98,8 @@ def test_auth_service_supports_multiple_api_key_bindings(monkeypatch):
 
 def test_get_current_user_optional_reads_api_key_header(monkeypatch):
     pytest.importorskip("fastapi")
-    from landppt.auth.middleware import get_current_user_optional
-    from landppt.core.config import app_config
+    from wisedeck.auth.middleware import get_current_user_optional
+    from wisedeck.core.config import app_config
 
     db = _create_db()
     try:
@@ -120,9 +120,9 @@ def test_get_current_user_optional_reads_api_key_header(monkeypatch):
 
 def test_get_current_user_optional_ignores_x_session_id_when_disabled(monkeypatch):
     pytest.importorskip("fastapi")
-    from landppt.auth.auth_service import AuthService
-    from landppt.auth.middleware import get_current_user_optional
-    from landppt.core.config import app_config
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.auth.middleware import get_current_user_optional
+    from wisedeck.core.config import app_config
 
     db = _create_db()
     try:
@@ -140,9 +140,9 @@ def test_get_current_user_optional_ignores_x_session_id_when_disabled(monkeypatc
 
 def test_get_current_user_optional_reads_x_session_id(monkeypatch):
     pytest.importorskip("fastapi")
-    from landppt.auth.auth_service import AuthService
-    from landppt.auth.middleware import get_current_user_optional
-    from landppt.core.config import app_config
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.auth.middleware import get_current_user_optional
+    from wisedeck.core.config import app_config
 
     db = _create_db()
     try:
@@ -160,8 +160,8 @@ def test_get_current_user_optional_reads_x_session_id(monkeypatch):
 
 
 def test_auth_service_supports_user_managed_api_key(monkeypatch):
-    from landppt.auth.auth_service import AuthService
-    from landppt.core.config import app_config
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.core.config import app_config
 
     db = _create_db()
     try:
@@ -187,8 +187,8 @@ def test_auth_service_supports_user_managed_api_key(monkeypatch):
 
 
 def test_user_managed_api_key_rotation_and_revoke(monkeypatch):
-    from landppt.auth.auth_service import AuthService
-    from landppt.core.config import app_config
+    from wisedeck.auth.auth_service import AuthService
+    from wisedeck.core.config import app_config
 
     db = _create_db()
     try:

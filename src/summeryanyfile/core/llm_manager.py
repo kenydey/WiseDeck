@@ -2,7 +2,7 @@
 LLM manager for SummeryAnyFile.
 
 This module intentionally delegates all real model invocation to the unified
-LandPPT AI provider layer (src/landppt/ai/*) to avoid maintaining two separate
+WiseDeck AI provider layer (src/wisedeck/ai/*) to avoid maintaining two separate
 client stacks in this repository.
 """
 
@@ -14,24 +14,24 @@ from typing import Any, Dict, Optional
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
-from landppt.ai.langchain_adapter import get_langchain_chat_model
+from wisedeck.ai.langchain_adapter import get_langchain_chat_model
 
 logger = logging.getLogger(__name__)
 
 
 class LLMManager:
-    """Create LangChain chat models backed by the unified LandPPT AI providers."""
+    """Create LangChain chat models backed by the unified WiseDeck AI providers."""
 
     SUPPORTED_PROVIDERS: Dict[str, str] = {
-        "openai": "landppt_ai",
-        "anthropic": "landppt_ai",
-        "azure": "landppt_ai",  # Azure OpenAI (alias of azure_openai)
-        "azure_openai": "landppt_ai",
-        "ollama": "landppt_ai",
-        "google": "landppt_ai",
-        "gemini": "landppt_ai",
-        "landppt": "landppt_ai",  # OpenAI-compatible
-        "302ai": "landppt_ai",  # OpenAI-compatible
+        "openai": "wisedeck_ai",
+        "anthropic": "wisedeck_ai",
+        "azure": "wisedeck_ai",  # Azure OpenAI (alias of azure_openai)
+        "azure_openai": "wisedeck_ai",
+        "ollama": "wisedeck_ai",
+        "google": "wisedeck_ai",
+        "gemini": "wisedeck_ai",
+        "wisedeck": "wisedeck_ai",  # OpenAI-compatible (WiseDeck official channel)
+        "302ai": "wisedeck_ai",  # OpenAI-compatible
     }
 
     SUPPORTED_MODELS: Dict[str, list[str]] = {
@@ -66,6 +66,7 @@ class LLMManager:
             "gemini-pro-vision",
         ],
         "landppt": [],
+        "wisedeck": [],
         "302ai": [],
     }
 
@@ -121,7 +122,7 @@ class LLMManager:
     def validate_configuration(self, provider: str, **kwargs: Any) -> bool:
         provider_key = (provider or "").strip().lower()
 
-        if provider_key in ("openai", "landppt", "302ai"):
+        if provider_key in ("openai", "wisedeck", "302ai"):
             api_key = kwargs.get("api_key") or os.getenv("OPENAI_API_KEY") or os.getenv("302AI_API_KEY")
             return bool(api_key)
         if provider_key == "anthropic":

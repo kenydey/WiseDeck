@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 
 def _create_db():
-    from landppt.database.models import Base, User
+    from wisedeck.database.models import Base, User
 
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine, tables=[User.__table__])
@@ -12,7 +12,7 @@ def _create_db():
 
 
 def _create_user(db, username: str, email: str):
-    from landppt.database.models import User
+    from wisedeck.database.models import User
 
     user = User(username=username, email=email, is_admin=False, is_active=True, credits_balance=0)
     user.set_password("pw")
@@ -23,9 +23,9 @@ def _create_user(db, username: str, email: str):
 
 
 def test_init_default_admin_skips_when_bootstrap_disabled(monkeypatch):
-    from landppt.auth.auth_service import init_default_admin
-    from landppt.core.config import app_config
-    from landppt.database.models import User
+    from wisedeck.auth.auth_service import init_default_admin
+    from wisedeck.core.config import app_config
+    from wisedeck.database.models import User
 
     db = _create_db()
     try:
@@ -41,9 +41,9 @@ def test_init_default_admin_skips_when_bootstrap_disabled(monkeypatch):
 
 
 def test_init_default_admin_skips_when_credentials_missing(monkeypatch):
-    from landppt.auth.auth_service import init_default_admin
-    from landppt.core.config import app_config
-    from landppt.database.models import User
+    from wisedeck.auth.auth_service import init_default_admin
+    from wisedeck.core.config import app_config
+    from wisedeck.database.models import User
 
     db = _create_db()
     try:
@@ -59,9 +59,9 @@ def test_init_default_admin_skips_when_credentials_missing(monkeypatch):
 
 
 def test_init_default_admin_bootstraps_when_explicitly_configured(monkeypatch):
-    from landppt.auth.auth_service import init_default_admin
-    from landppt.core.config import app_config
-    from landppt.database.models import User
+    from wisedeck.auth.auth_service import init_default_admin
+    from wisedeck.core.config import app_config
+    from wisedeck.database.models import User
 
     db = _create_db()
     try:
@@ -79,9 +79,9 @@ def test_init_default_admin_bootstraps_when_explicitly_configured(monkeypatch):
 
 
 def test_init_default_admin_skips_when_users_exist(monkeypatch):
-    from landppt.auth.auth_service import init_default_admin
-    from landppt.core.config import app_config
-    from landppt.database.models import User
+    from wisedeck.auth.auth_service import init_default_admin
+    from wisedeck.core.config import app_config
+    from wisedeck.database.models import User
 
     db = _create_db()
     try:

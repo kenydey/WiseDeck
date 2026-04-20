@@ -9,7 +9,7 @@ from starlette.requests import Request
 
 
 def _create_db():
-    from landppt.database.models import (
+    from wisedeck.database.models import (
         Base,
         CreditTransaction,
         InviteCode,
@@ -34,7 +34,7 @@ def _create_db():
 
 
 def _create_invite(db, *, code: str, channel: str, credits_amount: int = 0, max_uses: int = 1):
-    from landppt.database.models import InviteCode
+    from wisedeck.database.models import InviteCode
 
     invite = InviteCode(
         code=code,
@@ -52,7 +52,7 @@ def _create_invite(db, *, code: str, channel: str, credits_amount: int = 0, max_
 
 
 def _create_user(db, username: str, email: str):
-    from landppt.database.models import User
+    from wisedeck.database.models import User
 
     user = User(username=username, email=email, is_admin=False, is_active=True, credits_balance=100)
     user.set_password("pw")
@@ -63,7 +63,7 @@ def _create_user(db, username: str, email: str):
 
 
 def _set_community_setting(db, key: str, value: str, value_type: str = "boolean"):
-    from landppt.database.models import UserConfig
+    from wisedeck.database.models import UserConfig
 
     item = UserConfig(
         user_id=None,
@@ -101,13 +101,13 @@ def _import_auth_routes(monkeypatch):
             raise AssertionError("TemplateResponse should not be used in this test")
 
     monkeypatch.setattr(fastapi.templating, "Jinja2Templates", _DummyTemplates)
-    sys.modules.pop("landppt.auth.routes", None)
-    return importlib.import_module("landppt.auth.routes")
+    sys.modules.pop("wisedeck.auth.routes", None)
+    return importlib.import_module("wisedeck.auth.routes")
 
 
 def test_apply_invite_code_records_reward_usage_and_channel():
-    from landppt.database.models import CreditTransaction, InviteCodeUsage
-    from landppt.services.community_service import community_service
+    from wisedeck.database.models import CreditTransaction, InviteCodeUsage
+    from wisedeck.services.community_service import community_service
 
     db = _create_db()
     try:
@@ -135,7 +135,7 @@ def test_apply_invite_code_records_reward_usage_and_channel():
 
 
 def test_validate_invite_code_rejects_wrong_channel():
-    from landppt.services.community_service import community_service
+    from wisedeck.services.community_service import community_service
 
     db = _create_db()
     try:
@@ -153,7 +153,7 @@ def test_validate_invite_code_rejects_wrong_channel():
 
 
 def test_validate_invite_code_accepts_universal_channel_for_multiple_registration_methods():
-    from landppt.services.community_service import community_service
+    from wisedeck.services.community_service import community_service
 
     db = _create_db()
     try:
@@ -172,8 +172,8 @@ def test_validate_invite_code_accepts_universal_channel_for_multiple_registratio
 
 
 def test_apply_universal_invite_code_records_actual_registration_channel():
-    from landppt.database.models import InviteCodeUsage
-    from landppt.services.community_service import community_service
+    from wisedeck.database.models import InviteCodeUsage
+    from wisedeck.services.community_service import community_service
 
     db = _create_db()
     try:
@@ -196,8 +196,8 @@ def test_apply_universal_invite_code_records_actual_registration_channel():
 
 
 def test_api_send_code_register_rejects_invalid_invite_before_email_send(monkeypatch):
-    from landppt.services import email_service, turnstile_service
-    from landppt.utils import rate_limiter
+    from wisedeck.services import email_service, turnstile_service
+    from wisedeck.utils import rate_limiter
 
     auth_routes = _import_auth_routes(monkeypatch)
 
@@ -235,8 +235,8 @@ def test_api_send_code_register_rejects_invalid_invite_before_email_send(monkeyp
 
 
 def test_api_send_code_register_sends_email_after_valid_invite_check(monkeypatch):
-    from landppt.services import email_service, turnstile_service
-    from landppt.utils import rate_limiter
+    from wisedeck.services import email_service, turnstile_service
+    from wisedeck.utils import rate_limiter
 
     auth_routes = _import_auth_routes(monkeypatch)
 
@@ -277,7 +277,7 @@ def test_api_send_code_register_sends_email_after_valid_invite_check(monkeypatch
 
 
 def test_api_send_code_reset_rejects_when_turnstile_verification_fails(monkeypatch):
-    from landppt.services import email_service, turnstile_service
+    from wisedeck.services import email_service, turnstile_service
 
     auth_routes = _import_auth_routes(monkeypatch)
 
@@ -317,7 +317,7 @@ def test_api_send_code_reset_rejects_when_turnstile_verification_fails(monkeypat
 
 
 def test_api_send_code_reset_sends_email_after_turnstile_check(monkeypatch):
-    from landppt.services import email_service, turnstile_service
+    from wisedeck.services import email_service, turnstile_service
 
     auth_routes = _import_auth_routes(monkeypatch)
 
@@ -360,7 +360,7 @@ def test_api_send_code_reset_sends_email_after_turnstile_check(monkeypatch):
 
 
 def test_resolve_registration_invite_allows_blank_when_switch_disabled():
-    from landppt.services.community_service import community_service
+    from wisedeck.services.community_service import community_service
 
     db = _create_db()
     try:
@@ -373,9 +373,9 @@ def test_resolve_registration_invite_allows_blank_when_switch_disabled():
 
 
 def test_github_oauth_new_user_requires_and_consumes_invite_code():
-    from landppt.auth.github_oauth_service import get_or_create_user_by_github
-    from landppt.core.config import app_config
-    from landppt.database.models import InviteCodeUsage
+    from wisedeck.auth.github_oauth_service import get_or_create_user_by_github
+    from wisedeck.core.config import app_config
+    from wisedeck.database.models import InviteCodeUsage
 
     db = _create_db()
     try:
@@ -415,9 +415,9 @@ def test_github_oauth_new_user_requires_and_consumes_invite_code():
 
 
 def test_github_oauth_new_user_can_register_without_invite_when_switch_disabled():
-    from landppt.auth.github_oauth_service import get_or_create_user_by_github
-    from landppt.core.config import app_config
-    from landppt.database.models import InviteCodeUsage
+    from wisedeck.auth.github_oauth_service import get_or_create_user_by_github
+    from wisedeck.core.config import app_config
+    from wisedeck.database.models import InviteCodeUsage
 
     db = _create_db()
     try:

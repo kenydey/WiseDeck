@@ -9,7 +9,7 @@ def _read(relative_path: str) -> str:
 
 
 def test_main_router_registers_extracted_route_modules():
-    routes_text = _read("src/landppt/web/routes.py")
+    routes_text = _read("src/wisedeck/web/routes.py")
 
     assert 'from .route_modules.ai_edit_routes import router as ai_edit_router' in routes_text
     assert 'from .route_modules.config_routes import router as config_router' in routes_text
@@ -35,7 +35,7 @@ def test_main_router_registers_extracted_route_modules():
 
 
 def test_legacy_route_handlers_were_removed_from_main_router_file():
-    routes_text = _read("src/landppt/web/routes.py")
+    routes_text = _read("src/wisedeck/web/routes.py")
 
     assert "_legacy_router" not in routes_text
     assert "async def web_shared_presentation(" not in routes_text
@@ -60,7 +60,7 @@ def test_legacy_route_handlers_were_removed_from_main_router_file():
     assert '@router.post("/projects/{project_id}/confirm-requirements")' not in routes_text
     assert '@router.get("/api/projects/{project_id}/export/pdf")' not in routes_text
     assert '@router.get("/api/projects/{project_id}/export/pptx")' not in routes_text
-    assert '@router.get("/api/landppt/tasks/{task_id}/download")' not in routes_text
+    assert '@router.get("/api/wisedeck/tasks/{task_id}/download")' not in routes_text
     assert '@router.get("/dashboard"' not in routes_text
     assert '@router.post("/api/projects/{project_id}/slides/batch-regenerate")' not in routes_text
     assert '@router.post("/api/ai/slide-edit")' not in routes_text
@@ -68,22 +68,22 @@ def test_legacy_route_handlers_were_removed_from_main_router_file():
 
 
 def test_extracted_route_modules_keep_expected_public_paths():
-    config_text = _read("src/landppt/web/route_modules/config_routes.py")
-    export_text = _read("src/landppt/web/route_modules/export_routes.py")
-    outline_text = _read("src/landppt/web/route_modules/outline_routes.py")
-    outline_generation_text = _read("src/landppt/web/route_modules/outline_generation_routes.py")
-    outline_requirements_text = _read("src/landppt/web/route_modules/outline_requirements_routes.py")
-    outline_support_text = _read("src/landppt/web/route_modules/outline_support.py")
-    project_text = _read("src/landppt/web/route_modules/project_routes.py")
-    project_lifecycle_text = _read("src/landppt/web/route_modules/project_lifecycle_routes.py")
-    project_workspace_text = _read("src/landppt/web/route_modules/project_workspace_routes.py")
-    project_library_text = _read("src/landppt/web/route_modules/project_library_routes.py")
-    share_text = _read("src/landppt/web/route_modules/share_routes.py")
-    slide_text = _read("src/landppt/web/route_modules/slide_routes.py")
-    speech_text = _read("src/landppt/web/route_modules/speech_script_routes.py")
-    ai_edit_text = _read("src/landppt/web/route_modules/ai_edit_routes.py")
-    narration_text = _read("src/landppt/web/route_modules/narration_routes.py")
-    template_text = _read("src/landppt/web/route_modules/template_routes.py")
+    config_text = _read("src/wisedeck/web/route_modules/config_routes.py")
+    export_text = _read("src/wisedeck/web/route_modules/export_routes.py")
+    outline_text = _read("src/wisedeck/web/route_modules/outline_routes.py")
+    outline_generation_text = _read("src/wisedeck/web/route_modules/outline_generation_routes.py")
+    outline_requirements_text = _read("src/wisedeck/web/route_modules/outline_requirements_routes.py")
+    outline_support_text = _read("src/wisedeck/web/route_modules/outline_support.py")
+    project_text = _read("src/wisedeck/web/route_modules/project_routes.py")
+    project_lifecycle_text = _read("src/wisedeck/web/route_modules/project_lifecycle_routes.py")
+    project_workspace_text = _read("src/wisedeck/web/route_modules/project_workspace_routes.py")
+    project_library_text = _read("src/wisedeck/web/route_modules/project_library_routes.py")
+    share_text = _read("src/wisedeck/web/route_modules/share_routes.py")
+    slide_text = _read("src/wisedeck/web/route_modules/slide_routes.py")
+    speech_text = _read("src/wisedeck/web/route_modules/speech_script_routes.py")
+    ai_edit_text = _read("src/wisedeck/web/route_modules/ai_edit_routes.py")
+    narration_text = _read("src/wisedeck/web/route_modules/narration_routes.py")
+    template_text = _read("src/wisedeck/web/route_modules/template_routes.py")
 
     for marker in [
         '@router.get("/home"',
@@ -99,8 +99,8 @@ def test_extracted_route_modules_keep_expected_public_paths():
         '@router.post("/api/projects/{project_id}/export/pdf/async")',
         '@router.get("/api/projects/{project_id}/export/pptx")',
         '@router.post("/api/projects/{project_id}/export/pptx-images")',
-        '@router.get("/api/landppt/tasks/{task_id}")',
-        '@router.get("/api/landppt/tasks/{task_id}/download")',
+        '@router.get("/api/wisedeck/tasks/{task_id}")',
+        '@router.get("/api/wisedeck/tasks/{task_id}/download")',
         '@router.get("/api/projects/{project_id}/export/html")',
     ]:
         assert marker in export_text
@@ -213,12 +213,12 @@ def test_extracted_route_modules_keep_expected_public_paths():
 
 
 def test_outline_routes_delegate_helpers_to_outline_support_module():
-    export_routes_text = _read("src/landppt/web/route_modules/export_routes.py")
-    export_support_text = _read("src/landppt/web/route_modules/export_support.py")
-    outline_routes_text = _read("src/landppt/web/route_modules/outline_routes.py")
-    outline_generation_text = _read("src/landppt/web/route_modules/outline_generation_routes.py")
-    outline_requirements_text = _read("src/landppt/web/route_modules/outline_requirements_routes.py")
-    outline_support_text = _read("src/landppt/web/route_modules/outline_support.py")
+    export_routes_text = _read("src/wisedeck/web/route_modules/export_routes.py")
+    export_support_text = _read("src/wisedeck/web/route_modules/export_support.py")
+    outline_routes_text = _read("src/wisedeck/web/route_modules/outline_routes.py")
+    outline_generation_text = _read("src/wisedeck/web/route_modules/outline_generation_routes.py")
+    outline_requirements_text = _read("src/wisedeck/web/route_modules/outline_requirements_routes.py")
+    outline_support_text = _read("src/wisedeck/web/route_modules/outline_support.py")
 
     assert "from .export_support import (" in export_routes_text
 
@@ -249,7 +249,7 @@ def test_outline_routes_delegate_helpers_to_outline_support_module():
 
 
 def test_main_router_is_now_aggregator_shell():
-    routes_text = _read("src/landppt/web/routes.py")
+    routes_text = _read("src/wisedeck/web/routes.py")
 
     assert "@router.get(" not in routes_text
     assert "@router.post(" not in routes_text
@@ -260,7 +260,7 @@ def test_main_router_is_now_aggregator_shell():
 
 
 def test_project_routes_are_now_aggregator_shell():
-    project_text = _read("src/landppt/web/route_modules/project_routes.py")
+    project_text = _read("src/wisedeck/web/route_modules/project_routes.py")
 
     assert "@router.get(" not in project_text
     assert "@router.post(" not in project_text
@@ -268,11 +268,11 @@ def test_project_routes_are_now_aggregator_shell():
 
 
 def test_frontend_template_grouping_is_applied_to_route_handlers():
-    auth_text = _read("src/landppt/auth/routes.py")
-    admin_text = _read("src/landppt/web/admin_routes.py")
-    community_text = _read("src/landppt/web/community_routes.py")
-    credits_text = _read("src/landppt/web/credits_routes.py")
-    config_text = _read("src/landppt/web/route_modules/config_routes.py")
+    auth_text = _read("src/wisedeck/auth/routes.py")
+    admin_text = _read("src/wisedeck/web/admin_routes.py")
+    community_text = _read("src/wisedeck/web/community_routes.py")
+    credits_text = _read("src/wisedeck/web/credits_routes.py")
+    config_text = _read("src/wisedeck/web/route_modules/config_routes.py")
 
     for marker in [
         'pages/auth/login.html',
@@ -297,10 +297,10 @@ def test_frontend_template_grouping_is_applied_to_route_handlers():
 
 
 def test_admin_env_editor_surface_was_removed_but_db_config_routes_remain():
-    admin_text = _read("src/landppt/web/admin_routes.py")
-    admin_body_text = _read("src/landppt/web/templates/components/admin/community/body_1.html")
-    admin_script_text = _read("src/landppt/web/templates/components/admin/community/script_1.html")
-    config_api_text = _read("src/landppt/api/config_api.py")
+    admin_text = _read("src/wisedeck/web/admin_routes.py")
+    admin_body_text = _read("src/wisedeck/web/templates/components/admin/community/body_1.html")
+    admin_script_text = _read("src/wisedeck/web/templates/components/admin/community/script_1.html")
+    config_api_text = _read("src/wisedeck/api/config_api.py")
 
     for marker in [
         'EnvFileUpdateRequest',
@@ -336,20 +336,23 @@ def test_admin_env_editor_surface_was_removed_but_db_config_routes_remain():
         '@router.post("/api/config/system")',
         '@router.get("/api/config/all")',
         '@router.post("/api/config/all")',
+        '@router.get("/api/system-env-file")',
+        '@router.post("/api/system-env-file")',
+        'def _get_env_file_path(',
     ]:
         assert marker in config_api_text
 
 
 def test_component_templates_replace_legacy_partials_directories():
     template_expectations = {
-        "src/landppt/web/templates/pages/settings/ai_config.html": "components/settings/ai_config/",
-        "src/landppt/web/templates/pages/admin/community.html": "components/admin/community/",
-        "src/landppt/web/templates/pages/project/project_detail.html": "components/project/detail/",
-        "src/landppt/web/templates/pages/project/project_fullscreen_presentation.html": "components/project/fullscreen_presentation/",
-        "src/landppt/web/templates/pages/project/todo_board.html": "components/project/todo_board/",
-        "src/landppt/web/templates/pages/project/todo_board_with_editor.html": "components/project/todo_board_with_editor/",
-        "src/landppt/web/templates/pages/template/global_master_templates.html": "components/template/global_master_templates/",
-        "src/landppt/web/templates/pages/template/template_selection.html": "components/template/template_selection/",
+        "src/wisedeck/web/templates/pages/settings/ai_config.html": "components/settings/ai_config/",
+        "src/wisedeck/web/templates/pages/admin/community.html": "components/admin/community/",
+        "src/wisedeck/web/templates/pages/project/project_detail.html": "components/project/detail/",
+        "src/wisedeck/web/templates/pages/project/project_fullscreen_presentation.html": "components/project/fullscreen_presentation/",
+        "src/wisedeck/web/templates/pages/project/todo_board.html": "components/project/todo_board/",
+        "src/wisedeck/web/templates/pages/project/todo_board_with_editor.html": "components/project/todo_board_with_editor/",
+        "src/wisedeck/web/templates/pages/template/global_master_templates.html": "components/template/global_master_templates/",
+        "src/wisedeck/web/templates/pages/template/template_selection.html": "components/template/template_selection/",
     }
 
     for relative_path, marker in template_expectations.items():
@@ -359,9 +362,9 @@ def test_component_templates_replace_legacy_partials_directories():
 
 
 def test_compatibility_entrypoints_and_templates_were_removed():
-    project_lifecycle_text = _read("src/landppt/web/route_modules/project_lifecycle_routes.py")
-    outline_requirements_text = _read("src/landppt/web/route_modules/outline_requirements_routes.py")
-    error_template_text = _read("src/landppt/web/templates/error.html")
+    project_lifecycle_text = _read("src/wisedeck/web/route_modules/project_lifecycle_routes.py")
+    outline_requirements_text = _read("src/wisedeck/web/route_modules/outline_requirements_routes.py")
+    error_template_text = _read("src/wisedeck/web/templates/error.html")
 
     for marker in [
         '@router.get("/upload"',
@@ -378,16 +381,16 @@ def test_compatibility_entrypoints_and_templates_were_removed():
     assert "/demo" not in error_template_text
 
     for relative_path in [
-        "src/landppt/web/templates/pages/project/demo.html",
-        "src/landppt/web/templates/pages/project/project_requirements.html",
-        "src/landppt/web/templates/pages/project/upload.html",
-        "src/landppt/web/templates/pages/project/upload_result.html",
+        "src/wisedeck/web/templates/pages/project/demo.html",
+        "src/wisedeck/web/templates/pages/project/project_requirements.html",
+        "src/wisedeck/web/templates/pages/project/upload.html",
+        "src/wisedeck/web/templates/pages/project/upload_result.html",
     ]:
         assert not (ROOT / relative_path).exists()
 
 
 def test_project_slides_editor_template_uses_extracted_assets():
-    template_text = _read("src/landppt/web/templates/pages/project/project_slides_editor.html")
+    template_text = _read("src/wisedeck/web/templates/pages/project/project_slides_editor.html")
 
     assert '/static/css/pages/project/slides_editor/projectSlidesEditor.css' in template_text
     assert 'id="projectEditorConfigScript"' in template_text
@@ -404,11 +407,11 @@ def test_project_slides_editor_template_uses_extracted_assets():
 
 def test_extracted_editor_assets_do_not_embed_template_syntax():
     for relative_path in [
-        "src/landppt/web/static/css/pages/project/slides_editor/projectSlidesEditor.css",
-        "src/landppt/web/static/js/pages/project/slides_editor/projectEditorShareExport.js",
-        "src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.core.js",
-        "src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.tools.js",
-        "src/landppt/web/static/js/pages/project/slides_editor/projectEditorNarration.js",
+        "src/wisedeck/web/static/css/pages/project/slides_editor/projectSlidesEditor.css",
+        "src/wisedeck/web/static/js/pages/project/slides_editor/projectEditorShareExport.js",
+        "src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.core.js",
+        "src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.tools.js",
+        "src/wisedeck/web/static/js/pages/project/slides_editor/projectEditorNarration.js",
     ]:
         content = _read(relative_path)
         assert "{{" not in content
@@ -416,10 +419,10 @@ def test_extracted_editor_assets_do_not_embed_template_syntax():
 
 
 def test_editor_page_modules_own_their_responsibilities():
-    core_text = _read("src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.core.js")
-    tools_text = _read("src/landppt/web/static/js/pages/project/slides_editor/projectSlidesEditor.tools.js")
-    share_text = _read("src/landppt/web/static/js/pages/project/slides_editor/projectEditorShareExport.js")
-    narration_text = _read("src/landppt/web/static/js/pages/project/slides_editor/projectEditorNarration.js")
+    core_text = _read("src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.core.js")
+    tools_text = _read("src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.tools.js")
+    share_text = _read("src/wisedeck/web/static/js/pages/project/slides_editor/projectEditorShareExport.js")
+    narration_text = _read("src/wisedeck/web/static/js/pages/project/slides_editor/projectEditorNarration.js")
 
     for marker in [
         "function downloadHTML()",
@@ -444,7 +447,7 @@ def test_editor_page_modules_own_their_responsibilities():
 
 
 def test_enhanced_ppt_service_delegates_file_outline_workflow_to_extracted_service():
-    service_text = _read("src/landppt/services/enhanced_ppt_service.py")
+    service_text = _read("src/wisedeck/services/enhanced_ppt_service.py")
 
     assert "from .outline.outline_workflow_service import OutlineWorkflowService" in service_text
     assert "self.outline_workflow = OutlineWorkflowService(self)" in service_text

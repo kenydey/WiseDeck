@@ -1,5 +1,5 @@
 def test_config_service_defaults_llm_timeout_seconds():
-    from landppt.services.config_service import ConfigService
+    from wisedeck.services.config_service import ConfigService
 
     service = ConfigService(env_file=".env.example")
 
@@ -7,7 +7,7 @@ def test_config_service_defaults_llm_timeout_seconds():
 
 
 def test_db_config_service_defaults_llm_timeout_seconds():
-    from landppt.services.db_config_service import DatabaseConfigService
+    from wisedeck.services.db_config_service import DatabaseConfigService
 
     service = DatabaseConfigService()
 
@@ -26,7 +26,7 @@ def test_get_user_ai_provider_config_sync_includes_llm_timeout_seconds(monkeypat
                 "llm_timeout_seconds": "900",
             }
 
-    import landppt.services.db_config_service as db_mod
+    import wisedeck.services.db_config_service as db_mod
 
     monkeypatch.setattr(db_mod, "get_db_config_service", lambda: FakeDBConfigService(), raising=True)
 
@@ -37,7 +37,7 @@ def test_get_user_ai_provider_config_sync_includes_llm_timeout_seconds(monkeypat
 
 
 def test_openai_compatible_timeout_uses_unified_llm_timeout():
-    from landppt.ai.providers import _get_httpx_timeout_seconds
+    from wisedeck.ai.providers import _get_httpx_timeout_seconds
 
     assert _get_httpx_timeout_seconds({}) == 600.0
     assert _get_httpx_timeout_seconds({"llm_timeout_seconds": "900"}) == 900.0

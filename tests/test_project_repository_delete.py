@@ -2,8 +2,8 @@ import pytest
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session
 
-from landppt.database.models import Base, Project, User
-from landppt.database.repositories import ProjectRepository
+from wisedeck.database.models import Base, Project, User
+from wisedeck.database.repositories import ProjectRepository
 
 
 class _AsyncConnectionAdapter:

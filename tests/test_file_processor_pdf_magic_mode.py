@@ -5,7 +5,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_file_processor_pdf_magic_mode_uses_mineru_client(monkeypatch, tmp_path: Path):
-    from landppt.services.file_processor import FileProcessor
+    from wisedeck.services.file_processor import FileProcessor
 
     calls = []
 
@@ -17,7 +17,7 @@ async def test_file_processor_pdf_magic_mode_uses_mineru_client(monkeypatch, tmp
                 return "https://mineru.net/api/v4"
             return None
 
-    import landppt.services.db_config_service as db_mod
+    import wisedeck.services.db_config_service as db_mod
 
     monkeypatch.setattr(db_mod, "get_db_config_service", lambda: FakeDBConfigService(), raising=True)
 
@@ -42,7 +42,7 @@ async def test_file_processor_pdf_magic_mode_uses_mineru_client(monkeypatch, tmp
 
     monkeypatch.setattr(mineru_mod, "MineruAPIClient", FakeMineruAPIClient, raising=True)
 
-    from landppt.auth.request_context import current_user_id
+    from wisedeck.auth.request_context import current_user_id
 
     token = current_user_id.set(1)
     try:

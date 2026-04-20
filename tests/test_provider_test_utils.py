@@ -1,4 +1,4 @@
-from landppt.services.provider_test_utils import (
+from wisedeck.services.provider_test_utils import (
     build_anthropic_messages_url,
     build_google_generate_content_url,
     extract_anthropic_test_result,

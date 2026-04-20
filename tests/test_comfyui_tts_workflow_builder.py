@@ -2,7 +2,7 @@ import copy
 
 
 def test_build_qwen3_td_tts_workflow_patches_nodes():
-    from landppt.services.comfyui_tts_client import load_workflow_template, build_qwen3_td_tts_workflow
+    from wisedeck.services.comfyui_tts_client import load_workflow_template, build_qwen3_td_tts_workflow
 
     template = load_workflow_template("tests/Qwen3-TD-TTS.json")
     original = copy.deepcopy(template)
@@ -25,7 +25,7 @@ def test_build_qwen3_td_tts_workflow_patches_nodes():
 
 
 def test_build_qwen3_td_tts_workflow_language_english():
-    from landppt.services.comfyui_tts_client import load_workflow_template, build_qwen3_td_tts_workflow
+    from wisedeck.services.comfyui_tts_client import load_workflow_template, build_qwen3_td_tts_workflow
 
     template = load_workflow_template("tests/Qwen3-TD-TTS.json")
     wf = build_qwen3_td_tts_workflow(

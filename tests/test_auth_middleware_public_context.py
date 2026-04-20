@@ -2,8 +2,8 @@ import pytest
 from starlette.requests import Request
 from starlette.responses import Response
 
-from landppt.auth import middleware as auth_middleware_module
-from landppt.auth.middleware import AuthMiddleware
+from wisedeck.auth import middleware as auth_middleware_module
+from wisedeck.auth.middleware import AuthMiddleware
 
 
 class _FakeUser:

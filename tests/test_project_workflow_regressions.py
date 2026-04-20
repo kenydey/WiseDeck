@@ -6,7 +6,7 @@ from typing import Optional
 
 import pytest
 
-from landppt.database.service import DatabaseService
+from wisedeck.database.service import DatabaseService
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,7 +39,7 @@ def _load_class_method(relative_path: str, class_name: str, method_name: str):
 @pytest.mark.asyncio
 async def test_enhanced_ppt_service_keeps_project_workflow_proxy():
     execute_project_workflow = _load_class_method(
-        "src/landppt/services/enhanced_ppt_service.py",
+        "src/wisedeck/services/enhanced_ppt_service.py",
         "EnhancedPPTService",
         "_execute_project_workflow",
     )

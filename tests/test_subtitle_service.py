@@ -1,4 +1,4 @@
-from landppt.services.subtitle_service import (
+from wisedeck.services.subtitle_service import (
     _select_boundary_sequence,
     build_slide_cues_snapped,
     build_srt_for_slides,
