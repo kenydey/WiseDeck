@@ -142,14 +142,14 @@ def test_prepare_slide_html_for_video_export_rewrites_image_resources(monkeypatc
     prepared = NarrationVideoExportService()._prepare_slide_html_for_video_export(
         """
         <div style="background-image:url('/temp/rendered/hero.png')">
-          <img src="/static/images/landppt-logo.png" alt="logo">
+          <img src="/static/images/wisedeck-logo.png" alt="logo">
         </div>
         """,
         title="Slide 1",
     )
 
     assert '<base href="https://slides.example.com/">' in prepared
-    assert 'src="https://slides.example.com/static/images/landppt-logo.png"' in prepared
+    assert 'src="https://slides.example.com/static/images/wisedeck-logo.png"' in prepared
     assert "https://slides.example.com/temp/rendered/hero.png" in prepared
 
 

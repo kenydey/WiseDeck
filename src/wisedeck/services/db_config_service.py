@@ -1,5 +1,5 @@
 """
-Database-backed configuration management service for LandPPT
+Database-backed configuration management service for WiseDeck
 Supports per-user isolated configuration settings
 """
 
@@ -608,7 +608,7 @@ class DatabaseConfigService:
                     )
                     count += 1
 
-                # Legacy default migration: LandPPT default model used to be gpt-4o; update to MODEL1
+                # Legacy default migration: WiseDeck default model used to be gpt-4o; update to MODEL1
                 try:
                     legacy_value = (existing_values.get("wisedeck_model") or "").strip()
                     desired_default = str(self.config_schema.get("wisedeck_model", {}).get("default", "MODEL1")).strip()

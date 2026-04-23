@@ -90,7 +90,7 @@ async def regenerate_slide_async(
             },
         )
 
-    # Check credits before scheduling background AI work (only billable for LandPPT provider).
+    # Check credits before scheduling background AI work (only billable for WiseDeck provider).
     try:
         user_ppt_service = get_ppt_service_for_user(user.id)
         _, slide_role_settings = await user_ppt_service.get_role_provider_async("slide_generation")
@@ -250,7 +250,7 @@ async def batch_regenerate_slides(
         if invalid_indices:
             raise HTTPException(status_code=400, detail=f"Invalid slide indices: {invalid_indices}")
 
-        # Check credits before any AI calls (only billable for LandPPT provider).
+        # Check credits before any AI calls (only billable for WiseDeck provider).
         _, slide_role_settings = await user_ppt_service.get_role_provider_async("slide_generation")
         slide_provider_name = slide_role_settings.get("provider")
         has_credits, required, balance = await check_credits_for_operation(
@@ -415,7 +415,7 @@ async def batch_regenerate_slides_async(
             },
         )
 
-    # Check credits before scheduling background AI work (only billable for LandPPT provider).
+    # Check credits before scheduling background AI work (only billable for WiseDeck provider).
     try:
         user_ppt_service = get_ppt_service_for_user(user.id)
         quantity = len(payload.slide_indices or [])

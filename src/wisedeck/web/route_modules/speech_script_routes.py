@@ -156,7 +156,7 @@ async def generate_speech_script(
         else:
             slide_indices = request.slide_indices or []
 
-        # Check credits before scheduling any AI work (only billable for LandPPT provider).
+        # Check credits before scheduling any AI work (only billable for WiseDeck provider).
         speech_provider_name = (speech_service.provider_settings or {}).get("provider")
         has_credits, required, balance = await check_credits_for_operation(
             user.id, "ai_other", len(slide_indices), provider_name=speech_provider_name

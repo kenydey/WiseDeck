@@ -2,7 +2,7 @@
 Startup migration runner.
 
 Why:
-- LandPPT uses a lightweight custom migration system in `landppt.database.migrations`.
+- WiseDeck uses a lightweight custom migration system in `wisedeck.database.migrations`.
 - `init_db()` creates tables but won't evolve existing schemas (except a few ad-hoc columns).
 - Running `migration_manager.migrate_up()` at startup keeps schema consistent without manual steps.
 

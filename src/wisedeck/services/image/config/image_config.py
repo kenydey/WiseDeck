@@ -151,7 +151,7 @@ class ImageServiceConfig:
                 'upload_skip_animated': True,
                 'thumbnail_size': (300, 200),
                 'watermark_enabled': False,
-                'watermark_text': 'LandPPT',
+                'watermark_text': 'WiseDeck',
                 'watermark_opacity': 0.3
             },
             

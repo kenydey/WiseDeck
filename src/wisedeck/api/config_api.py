@@ -1,5 +1,5 @@
 """
-Configuration management API for LandPPT
+Configuration management API for WiseDeck
 Supports per-user isolated configuration and system-level defaults
 """
 

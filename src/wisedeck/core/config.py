@@ -1,5 +1,5 @@
 """
-Configuration management for LandPPT AI features
+Configuration management for WiseDeck AI features
 """
 
 import os

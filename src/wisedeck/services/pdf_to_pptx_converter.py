@@ -1,5 +1,5 @@
 """
-PDF to PPTX Converter Service for LandPPT
+PDF to PPTX Converter Service for WiseDeck
 Uses Apryse SDK to convert PDF files to PowerPoint presentations
 """
 

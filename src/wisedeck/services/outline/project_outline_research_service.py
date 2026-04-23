@@ -193,13 +193,13 @@ class ProjectOutlineResearchService:
 
     def _standardize_summeryfile_outline(self, summeryfile_outline: Dict[str, Any]) -> Dict[str, Any]:
         """
-                    将summeryanyfile生成的大纲格式标准化为LandPPT格式
+                    将summeryanyfile生成的大纲格式标准化为WiseDeck格式
         
                     Args:
                         summeryfile_outline: summeryanyfile生成的大纲数据
         
                     Returns:
-                        标准化后的LandPPT格式大纲
+                        标准化后的WiseDeck格式大纲
                     """
         try:
             title = summeryfile_outline.get('title', 'PPT大纲')

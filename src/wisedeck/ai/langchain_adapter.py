@@ -1,5 +1,5 @@
 """
-LangChain adapter for LandPPT AI providers.
+LangChain adapter for WiseDeck AI providers.
 
 This allows LangChain pipelines (prompt | llm | parser) to reuse the unified
 WiseDeck provider layer (src/wisedeck/ai/providers.py) instead of maintaining a
@@ -31,9 +31,9 @@ _ROLE_MAP: Dict[str, MessageRole] = {
 }
 
 
-class LandPPTChatModel(BaseChatModel):
+class WiseDeckChatModel(BaseChatModel):
     """
-    A LangChain BaseChatModel backed by LandPPT AIProvider implementations.
+    A LangChain BaseChatModel backed by WiseDeck AIProvider implementations.
 
     Supports provider-specific overrides via kwargs (api_key/base_url/azure_endpoint/api_version).
     """
@@ -198,7 +198,7 @@ def get_langchain_chat_model(
     Factory used by src/summeryanyfile to obtain a LangChain LLM using the unified provider layer.
     """
 
-    return LandPPTChatModel(
+    return WiseDeckChatModel(
         provider=provider,
         model=model,
         temperature=temperature,

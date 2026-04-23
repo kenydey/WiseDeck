@@ -1,5 +1,5 @@
 """
-File Processing Service for LandPPT
+File Processing Service for WiseDeck
 Handles document upload and content extraction as specified in requires.md
 """
 

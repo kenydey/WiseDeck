@@ -1,5 +1,5 @@
 """
-Database health check utilities for LandPPT
+Database health check utilities for WiseDeck
 """
 
 import time

@@ -882,7 +882,7 @@ class NarrationVideoExportService:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LandPPT Slide</title>
+  <title>WiseDeck Slide</title>
   <style>
     html, body {{
       width: 100%;
@@ -1211,7 +1211,7 @@ class NarrationVideoExportService:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LandPPT Playback</title>
+  <title>WiseDeck Playback</title>
   <style>
     html, body {{
       width: 100%;

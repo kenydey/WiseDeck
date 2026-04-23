@@ -1,5 +1,5 @@
 """
-Playwright-based PDF converter for LandPPT
+Playwright-based PDF converter for WiseDeck
 Replaces the Pyppeteer implementation with Python Playwright for better stability and performance
 """
 

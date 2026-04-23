@@ -50,7 +50,7 @@ class WebContentExtractor:
         self.timeout = ai_config.research_extraction_timeout
         # Do not cap extracted content length.
         self.max_content_length = None
-        self.user_agent = "LandPPT Research Bot 1.0"
+        self.user_agent = "WiseDeck Research Bot 1.0"
         # If aggressive cleanup leaves too little text, fallback to relaxed extraction.
         self.min_usable_words = 80
         

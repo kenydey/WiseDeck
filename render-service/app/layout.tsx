@@ -30,10 +30,9 @@ const unbounded = Unbounded({
 
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://presenton.ai"),
-  title: "Presenton - Open Source AI presentation generator",
+  title: "WiseDeck - AI presentation generator",
   description:
-    "Open-source AI presentation generator with custom layouts, multi-model support (OpenAI, Gemini, Ollama), and PDF/PPTX export. A free Gamma alternative.",
+    "WiseDeck is an AI presentation generator with custom layouts, multi-model support (OpenAI, Gemini, Ollama), and PDF/PPTX export.",
   keywords: [
     "AI presentation generator",
     "data storytelling",
@@ -45,31 +44,27 @@ export const metadata: Metadata = {
     "professional slides",
   ],
   openGraph: {
-    title: "Presenton - Open Source AI presentation generator",
+    title: "WiseDeck - AI presentation generator",
     description:
-      "Open-source AI presentation generator with custom layouts, multi-model support (OpenAI, Gemini, Ollama), and PDF/PPTX export. A free Gamma alternative.",
-    url: "https://presenton.ai",
-    siteName: "Presenton",
+      "WiseDeck is an AI presentation generator with custom layouts, multi-model support (OpenAI, Gemini, Ollama), and PDF/PPTX export.",
+    siteName: "WiseDeck",
     images: [
       {
-        url: "https://presenton.ai/presenton-feature-graphics.png",
+        url: "/logo-with-bg.png",
         width: 1200,
         height: 630,
-        alt: "Presenton Logo",
+        alt: "WiseDeck",
       },
     ],
     type: "website",
     locale: "en_US",
   },
-  alternates: {
-    canonical: "https://presenton.ai",
-  },
   twitter: {
     card: "summary_large_image",
-    title: "Presenton - Open Source AI presentation generator",
+    title: "WiseDeck - AI presentation generator",
     description:
-      "Open-source AI presentation generator with custom layouts, multi-model support (OpenAI, Gemini, Ollama), and PDF/PPTX export. A free Gamma alternative.",
-    images: ["https://presenton.ai/presenton-feature-graphics.png"],
+      "WiseDeck is an AI presentation generator with custom layouts, multi-model support (OpenAI, Gemini, Ollama), and PDF/PPTX export.",
+    images: ["/logo-with-bg.png"],
   },
 };
 

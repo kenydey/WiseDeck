@@ -1,5 +1,5 @@
 """
-LandPPT specific API endpoints
+WiseDeck specific API endpoints
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request, Depends
@@ -150,7 +150,7 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": "LandPPT API",
+        "service": "WiseDeck API",
         "version": "0.1.0",
         "ai_provider": ai_config.default_ai_provider,
         "available_providers": ai_config.get_available_providers()

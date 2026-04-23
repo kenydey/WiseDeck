@@ -124,7 +124,7 @@ class SpeechScriptService:
                 f"Failed to initialize speech script AI provider from DB role config for user {self.user_id}: {e}"
             )
 
-        # 2) If the configured provider cannot be created (e.g. missing system LandPPT key),
+        # 2) If the configured provider cannot be created (e.g. missing system WiseDeck key),
         # fall back to any working provider from the user's DB settings.
         try:
             config_service = get_db_config_service()

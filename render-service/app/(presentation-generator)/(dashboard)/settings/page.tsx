@@ -2,7 +2,7 @@ import React from 'react'
 import SettingPage from './SettingPage'
 
 export const metadata = {
-  title: 'Settings | Presenton',
+  title: 'Settings | WiseDeck',
   description: 'Settings page',
 }
 const page = () => {

@@ -332,7 +332,7 @@ class NarrationService:
                 req = urllib.request.Request(
                     url,
                     headers={
-                        "User-Agent": "LandPPT/ComfyUI-TTS-Workflow-Fetcher",
+                        "User-Agent": "WiseDeck/ComfyUI-TTS-Workflow-Fetcher",
                         "Accept": "application/json,text/plain,*/*",
                     },
                     method="GET",

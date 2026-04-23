@@ -71,7 +71,7 @@ class CompletionResponse(BaseModel):
     choices: List[CompletionChoice]
     usage: Usage
 
-# LandPPT Specific Models
+# WiseDeck Specific Models
 
 class PPTScenario(BaseModel):
     id: str

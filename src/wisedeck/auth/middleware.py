@@ -1,5 +1,5 @@
 """
-Authentication middleware for LandPPT
+Authentication middleware for WiseDeck
 """
 
 from __future__ import annotations

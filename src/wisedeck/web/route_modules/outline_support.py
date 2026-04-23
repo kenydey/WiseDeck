@@ -925,7 +925,7 @@ async def _process_url_sources_for_outline(
 
         timeout = aiohttp.ClientTimeout(total=60)
         headers = {
-            "User-Agent": "LandPPT Research Bot 1.0",
+            "User-Agent": "WiseDeck Research Bot 1.0",
             "Accept": "*/*",
         }
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:

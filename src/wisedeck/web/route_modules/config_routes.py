@@ -207,7 +207,7 @@ async def get_ai_providers_config(
     request: Request,
     user: User = Depends(get_current_user_required)
 ):
-    """Get AI providers configuration for the current user (LandPPT system credentials are hidden for non-admins)."""
+    """Get AI providers configuration for the current user (WiseDeck system credentials are hidden for non-admins)."""
     from ...services.db_config_service import get_db_config_service
 
     config_service = get_db_config_service()
@@ -215,7 +215,7 @@ async def get_ai_providers_config(
     current_config = await config_service.get_all_config(user_id=user.id)
     
     # Return the config with the relevant provider keys.
-    # LandPPT API key / base URL are system-level admin-only values and should not be exposed to non-admin users.
+    # WiseDeck API key / base URL are system-level admin-only values and should not be exposed to non-admin users.
     config: Dict[str, Any] = {
         "openai_api_key": current_config.get("openai_api_key", ""),
         "openai_base_url": current_config.get("openai_base_url", ""),
@@ -252,7 +252,7 @@ async def update_ai_providers_config(
     Update AI provider configuration.
 
     - Normal users can only update their own provider keys.
-    - Admin-only keys (e.g. LandPPT API key/base URL) are accepted only for admins and are stored at system scope.
+    - Admin-only keys (e.g. WiseDeck API key/base URL) are accepted only for admins and are stored at system scope.
     """
     from ...services.db_config_service import get_db_config_service
 
@@ -771,7 +771,7 @@ async def test_provider_connection(
                     logger.error("%s connection test failed: %s - %s", provider, response.status, error_text)
                     return {"success": False, "error": f"请求失败: {response.status}"}
 
-            # OpenAI、LandPPT 等兼容服务继续沿用 OpenAI 协议。
+            # OpenAI、WiseDeck 等兼容服务继续沿用 OpenAI 协议。
             if not base_url.endswith('/v1'):
                 base_url = base_url.rstrip('/') + '/v1'
 

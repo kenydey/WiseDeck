@@ -1,5 +1,5 @@
 """
-Database migration utilities for LandPPT
+Database migration utilities for WiseDeck
 """
 
 import os
@@ -96,7 +96,7 @@ class DatabaseMigration:
             "down": self._migration_008_down
         })
 
-        # Migration 009: Update LandPPT default model from legacy gpt-4o to MODEL1
+        # Migration 009: Update WiseDeck default model from legacy gpt-4o to MODEL1
         self.migrations.append({
             "version": "009",
             "name": "update_landppt_default_model",

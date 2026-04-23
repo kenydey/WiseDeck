@@ -1,5 +1,5 @@
 """
-Configuration management service for LandPPT
+Configuration management service for WiseDeck
 """
 
 import os
