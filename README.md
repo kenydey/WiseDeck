@@ -1,13 +1,12 @@
 # WiseDeck - AI驱动的PPT生成平台
 
-[![GitHub stars](https://img.shields.io/github/stars/sligter/LandPPT?style=flat-square)](https://github.com/sligter/LandPPT/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/sligter/LandPPT?style=flat-square)](https://github.com/sligter/LandPPT/network)
-[![GitHub issues](https://img.shields.io/github/issues/sligter/LandPPT?style=flat-square)](https://github.com/sligter/LandPPT/issues)
+[![GitHub stars](https://img.shields.io/github/stars/kenydey/WiseDeck?style=flat-square)](https://github.com/kenydey/WiseDeck/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/kenydey/WiseDeck?style=flat-square)](https://github.com/kenydey/WiseDeck/network)
+[![GitHub issues](https://img.shields.io/github/issues/kenydey/WiseDeck?style=flat-square)](https://github.com/kenydey/WiseDeck/issues)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg?style=flat-square)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg?style=flat-square)](https://fastapi.tiangolo.com)
-[![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://hub.docker.com/r/bradleylzh/landppt)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sligter/LandPPT)
+[![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://hub.docker.com/r/bradleylzh/wisedeck)
 
 ---
 
@@ -15,7 +14,7 @@
 
 如果你对我的项目感兴趣，欢迎联系我！
 
-[<img title="" src="file:///C:/Users/kenyd/Downloads/WiseDeck.png" alt="Email" width="106">](mailto:ai@yydsapp.com)
+[![Email](https://img.shields.io/badge/_Email-ai%40yydsapp.com-blue?style=for-the-badge)](mailto:ai@yydsapp.com)
 
 ---
 
@@ -40,7 +39,7 @@
 
 WiseDeck 是一个基于大语言模型（LLM）的智能演示文稿生成平台，能够自动将文档内容转换为专业的PPT演示文稿。平台集成了多种AI模型、智能图像处理、深度研究功能和丰富的模板系统，让用户能够轻松创建高质量的演示文稿
 
-[文档指南](http://landppt-doc.52yyds.top/docs)
+[部署与使用指南](docs/base_url_configuration.md)
 
 ### 主界面
 
@@ -325,11 +324,11 @@ WISEDECK_ENABLE_API_DOCS=true
 WISEDECK_ALLOW_HEADER_SESSION_AUTH=false
 
 # 存储 / 缓存
-DATABASE_URL=sqlite:///./landppt.db
+DATABASE_URL=sqlite:///./wisedeck.db
 CACHE_BACKEND=memory
 VALKEY_URL=valkey://localhost:6379
 # 生产部署示例：
-# DATABASE_URL=postgresql://wisedeck:password@localhost:5432/landppt
+# DATABASE_URL=postgresql://wisedeck:password@localhost:5432/wisedeck
 # CACHE_BACKEND=valkey
 
 # 导出功能配置
@@ -492,7 +491,7 @@ curl -X GET "http://localhost:8000/api/projects" \
 
 ### 报告问题
 
-如果你发现了bug或有功能建议，请在 [Issues](https://github.com/sligter/LandPPT/issues) 页面创建新的issue。
+如果你发现了 bug 或有功能建议，请在 [Issues](https://github.com/kenydey/WiseDeck/issues) 页面创建新的 issue。
 
 ## 常见问题
 
@@ -570,6 +569,6 @@ A: 大多数AI提供商支持并发请求，但可能有不同的限制。建议
 
 
 
-Made with  by the LandPPT Team
+Made with  by the WiseDeck Team
 
 </div>

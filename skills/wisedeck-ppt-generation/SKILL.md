@@ -1,13 +1,13 @@
 ---
-name: landppt-ppt-generation
-description: Execute and verify the end-to-end LandPPT protected project workflow for non-browser automation, including project creation, interruption-safe recovery, free-template generation and confirmation, slide generation, share/export, and post-generation speech or narration operations. Use this skill whenever the user wants to generate, resume, verify, edit, narrate, share, or export a LandPPT project through scripts, curl, n8n, CLI, or other API-driven automation instead of the web UI.
+name: wisedeck-ppt-generation
+description: Execute and verify the end-to-end WiseDeck protected project workflow for non-browser automation, including project creation, interruption-safe recovery, free-template generation and confirmation, slide generation, share/export, and post-generation speech or narration operations. Use this skill whenever the user wants to generate, resume, verify, edit, narrate, share, or export a WiseDeck project through scripts, curl, n8n, CLI, or other API-driven automation instead of the web UI.
 ---
 
-# LandPPT PPT Generation
+# WiseDeck PPT Generation
 
 ## Overview
 
-Execute the LandPPT protected API workflow with a user API key and return Markdown-formatted status/output.
+Execute the WiseDeck protected API workflow with a user API key and return Markdown-formatted status/output.
 Exported files are published to public `/static` paths by default.
 Prefer the bundled Python scripts for reliability. Use direct curl calls only when the user explicitly asks for curl-only execution.
 

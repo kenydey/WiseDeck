@@ -172,7 +172,7 @@ function parseAttachmentFilename(contentDisposition) {
  * Synchronous GET → PPTX file (native charts when outline has chart_config).
  * Does not use /api/wisedeck/tasks polling.
  */
-async function exportToStructuredPPTX() {
+async function exportToStructuredPPTX(options = {}) {
     if (structuredPptxExportInProgress) {
         showNotification('结构化 PPTX 导出正在进行中，请稍候...', 'warning');
         return;
@@ -181,7 +181,10 @@ async function exportToStructuredPPTX() {
     const progressToast = showProgressToast('正在生成结构化 PPTX（可编辑图表）...');
     updateProgressToast(progressToast, '正在请求服务器...', 15);
     try {
-        const url = `/api/projects/${window.wisedeckEditorConfig.projectId}/export/structured-pptx`;
+        const rawMode = options && options.mode ? String(options.mode) : '';
+        const mode = rawMode === 'render' || rawMode === 'python' || rawMode === 'auto' ? rawMode : '';
+        const baseUrl = `/api/projects/${window.wisedeckEditorConfig.projectId}/export/structured-pptx`;
+        const url = mode && mode !== 'auto' ? `${baseUrl}?mode=${encodeURIComponent(mode)}` : baseUrl;
         const response = await fetch(url);
         const contentType = response.headers.get('content-type') || '';
 

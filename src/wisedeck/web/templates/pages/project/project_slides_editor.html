@@ -185,6 +185,30 @@
                                     </span>
                                 </a>
                             </li>
+                            <li>
+                                <a class="dropdown-item toolbar-dropdown-item" href="#"
+                                    onclick="exportToStructuredPPTX({ mode: 'render' }); return false;">
+                                    <span class="toolbar-dropdown-item__icon">
+                                        <i class="fas fa-wand-magic-sparkles"></i>
+                                    </span>
+                                    <span class="toolbar-dropdown-item__content">
+                                        <span class="toolbar-dropdown-item__label">结构化导出（高质量布局）</span>
+                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">强制调用渲染服务</span>
+                                    </span>
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item toolbar-dropdown-item" href="#"
+                                    onclick="exportToStructuredPPTX({ mode: 'python' }); return false;">
+                                    <span class="toolbar-dropdown-item__icon">
+                                        <i class="fas fa-bolt"></i>
+                                    </span>
+                                    <span class="toolbar-dropdown-item__content">
+                                        <span class="toolbar-dropdown-item__label">结构化导出（快速/稳定）</span>
+                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">跳过渲染服务</span>
+                                    </span>
+                                </a>
+                            </li>
                         </ul>
                     </div>
                     <button class="toolbar-btn toolbar-btn--labeled" onclick="downloadHTML()" title="下载HTML">

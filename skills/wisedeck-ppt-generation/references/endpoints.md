@@ -1,4 +1,4 @@
-# LandPPT Full API Flow Reference
+# WiseDeck Full API Flow Reference
 
 ## Auth Header
 

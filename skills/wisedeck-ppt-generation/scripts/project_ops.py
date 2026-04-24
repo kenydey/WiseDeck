@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LandPPT project operations for outline/PPT/speech/narration/export."""
+"""WiseDeck project operations for outline/PPT/speech/narration/export."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def fmt_seconds(value: float) -> str:
 
 
 def print_markdown_result(command: str, *, success: bool, result: Optional[Dict[str, Any]] = None, error: str = "") -> None:
-    title = f"## LandPPT Operation: `{command}`"
+    title = f"## WiseDeck Operation: `{command}`"
     safe_print(title)
     safe_print("")
     safe_print(f"- success: `{str(bool(success)).lower()}`")
@@ -765,7 +765,7 @@ def run_command(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="LandPPT project operations script")
+    p = argparse.ArgumentParser(description="WiseDeck project operations script")
     p.add_argument("--base-url", default="http://localhost:8000")
     p.add_argument("--api-key", default="")
     p.add_argument("--auth-mode", choices=["bearer", "x-api-key"], default="bearer")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run full LandPPT API workflow with a user API key.
+"""Run full WiseDeck API workflow with a user API key.
 
 Workflow:
 1) Create project
@@ -53,7 +53,7 @@ def _fmt_seconds(value: float) -> str:
 
 
 def print_markdown_summary(summary: Dict[str, Any], *, success: bool) -> None:
-    title = "## LandPPT Workflow Result" if success else "## LandPPT Workflow Failed"
+    title = "## WiseDeck Workflow Result" if success else "## WiseDeck Workflow Failed"
     safe_print(title)
     safe_print("")
     safe_print(f"- success: `{str(bool(success)).lower()}`")
@@ -568,7 +568,7 @@ def export_pdf_and_publish(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run and verify full LandPPT API workflow with user API key."
+        description="Run and verify full WiseDeck API workflow with user API key."
     )
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--api-key", default="")

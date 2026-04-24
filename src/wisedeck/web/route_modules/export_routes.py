@@ -170,6 +170,7 @@ def _outline_to_structured_deck(project, outline: dict):
 @router.get("/api/projects/{project_id}/export/structured-pptx")
 async def export_project_structured_pptx(
     project_id: str,
+    mode: str | None = None,
     user: User = Depends(get_current_user_required),
 ):
     """
@@ -180,7 +181,11 @@ async def export_project_structured_pptx(
     """
     from starlette.background import BackgroundTask
 
-    from wisedeck.services.structured_export.service import export_structured_pptx_auto
+    from wisedeck.services.structured_export.service import (
+        build_pptx_bytes_from_deck,
+        export_structured_pptx_auto,
+        export_structured_pptx_via_render_service,
+    )
 
     try:
         project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
@@ -193,7 +198,18 @@ async def export_project_structured_pptx(
                 detail="Project outline has no slides; generate an outline first",
             )
         deck = _outline_to_structured_deck(project, outline)
-        pptx_bytes = await export_structured_pptx_auto(deck)
+        m = (mode or "").strip().lower()
+        if m in ("", "auto"):
+            pptx_bytes = await export_structured_pptx_auto(deck)
+            export_method = "WiseDeck-Structured-Auto"
+        elif m == "render":
+            pptx_bytes = await export_structured_pptx_via_render_service(deck)
+            export_method = "WiseDeck-Structured-Render"
+        elif m == "python":
+            pptx_bytes = await build_pptx_bytes_from_deck(deck)
+            export_method = "WiseDeck-Structured-Python"
+        else:
+            raise HTTPException(status_code=400, detail="Invalid mode; expected auto|render|python")
         safe_base = urllib.parse.quote(project.topic or project.title or "deck", safe="")
         tmp = tempfile.NamedTemporaryFile(suffix=".pptx", delete=False)
         tmp.write(pptx_bytes)
@@ -212,7 +228,7 @@ async def export_project_structured_pptx(
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             headers={
                 "Content-Disposition": f"attachment; filename*=UTF-8''{safe_base}_structured.pptx",
-                "X-Export-Method": "WiseDeck-Structured-NativeChart",
+                "X-Export-Method": export_method,
             },
             background=BackgroundTask(_cleanup),
         )

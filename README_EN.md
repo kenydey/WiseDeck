@@ -1,13 +1,12 @@
 # WiseDeck - AI-Powered PPT Generation Platform
 
-[![GitHub stars](https://img.shields.io/github/stars/sligter/LandPPT?style=flat-square)](https://github.com/sligter/LandPPT/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/sligter/LandPPT?style=flat-square)](https://github.com/sligter/LandPPT/network)
-[![GitHub issues](https://img.shields.io/github/issues/sligter/LandPPT?style=flat-square)](https://github.com/sligter/LandPPT/issues)
+[![GitHub stars](https://img.shields.io/github/stars/kenydey/WiseDeck?style=flat-square)](https://github.com/kenydey/WiseDeck/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/kenydey/WiseDeck?style=flat-square)](https://github.com/kenydey/WiseDeck/network)
+[![GitHub issues](https://img.shields.io/github/issues/kenydey/WiseDeck?style=flat-square)](https://github.com/kenydey/WiseDeck/issues)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg?style=flat-square)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg?style=flat-square)](https://fastapi.tiangolo.com)
-[![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://hub.docker.com/r/bradleylzh/landppt)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sligter/LandPPT)
+[![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://hub.docker.com/r/bradleylzh/wisedeck)
 
 ---
 
@@ -39,7 +38,7 @@ If you're interested in my projects or have suitable collaboration opportunities
 
 ##  Project Overview
 
-LandPPT is an intelligent presentation generation platform powered by Large Language Models (LLMs) that automatically converts document content into professional PPT presentations. The platform integrates multiple AI models, intelligent image processing, deep research capabilities, and rich template systems, enabling users to effortlessly create high-quality presentations.
+WiseDeck is an intelligent presentation generation platform powered by Large Language Models (LLMs) that automatically converts document content into professional PPT presentations. The platform integrates multiple AI models, intelligent image processing, deep research capabilities, and rich template systems, enabling users to effortlessly create high-quality presentations.
 
 
 ### Main Interface
@@ -188,8 +187,8 @@ These steps match `run.py`, `docker-compose*.yaml`, and **`WISEDECK_*`** environ
 
 ```bash
 # Clone the repository
-git clone https://github.com/sligter/LandPPT.git
-cd LandPPT
+git clone https://github.com/kenydey/WiseDeck.git
+cd WiseDeck
 
 # Install uv (if not already installed)
 # Windows (PowerShell)
@@ -225,8 +224,8 @@ uv run pytest tests/test_creative_guidance_defaults.py
 
 ```bash
 # Clone the repository
-git clone https://github.com/sligter/LandPPT.git
-cd LandPPT
+git clone https://github.com/kenydey/WiseDeck.git
+cd WiseDeck
 
 # Create virtual environment
 python -m venv venv
@@ -395,11 +394,11 @@ WISEDECK_ENABLE_API_DOCS=true
 WISEDECK_ALLOW_HEADER_SESSION_AUTH=false
 
 # Storage / cache
-DATABASE_URL=sqlite:///./landppt.db
+DATABASE_URL=sqlite:///./wisedeck.db
 CACHE_BACKEND=memory
 VALKEY_URL=valkey://localhost:6379
 # Production example:
-# DATABASE_URL=postgresql://wisedeck:password@localhost:5432/landppt
+# DATABASE_URL=postgresql://wisedeck:password@localhost:5432/wisedeck
 # CACHE_BACKEND=valkey
 
 # Export Functionality Configuration
@@ -554,7 +553,7 @@ We welcome all forms of contributions!
 For details, please see [Contributing Guide](CONTRIBUTING.md).
 
 ### Reporting Issues
-If you find bugs or have feature suggestions, please create a new issue on the [Issues](https://github.com/sligter/LandPPT/issues) page.
+If you find bugs or have feature suggestions, please create a new issue on the [Issues](https://github.com/kenydey/WiseDeck/issues) page.
 
 ##  FAQ
 
@@ -607,21 +606,18 @@ This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE
 
 ##  Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=sligter/LandPPT&type=Date)](https://star-history.com/#sligter/LandPPT&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=kenydey/WiseDeck&type=Date)](https://star-history.com/#kenydey/WiseDeck&Date)
 
 ##  Contact Us
 
-- **Project Homepage**: https://github.com/sligter/LandPPT
-- **Issue Reporting**: https://github.com/sligter/LandPPT/issues
-- **Discussions**: https://github.com/sligter/LandPPT/discussions
-
-![LandPPT](https://jsd.onmicrosoft.cn/gh/mydracula/image@master/20260413/052dae6fa31246aab7c34ada2ba32a84.jpg)
----
+- **Project Homepage**: https://github.com/kenydey/WiseDeck
+- **Issue Reporting**: https://github.com/kenydey/WiseDeck/issues
+- **Discussions**: https://github.com/kenydey/WiseDeck/discussions
 
 <div align="center">
 
 **If this project helps you, please give us a  Star!**
 
-Made with  by the LandPPT Team
+Made with  by the WiseDeck Team
 
 </div>
