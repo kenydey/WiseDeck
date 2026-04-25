@@ -102,5 +102,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     success: true,
     path: destinationPath,
+  }, {
+    headers: {
+      "X-Render-Service-Endpoint": "export-as-pdf",
+    },
   });
 }

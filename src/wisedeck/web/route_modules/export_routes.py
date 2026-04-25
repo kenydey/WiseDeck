@@ -117,7 +117,8 @@ async def export_project_pdf(
             media_type="application/pdf",
             headers={
                 "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
-                "X-PDF-Generator": "Pyppeteer"
+                "X-PDF-Generator": "Pyppeteer",
+                "X-Export-Method": "PDF-Pyppeteer-Sync",
             },
             background=BackgroundTask(cleanup_temp_file)
         )
@@ -369,18 +370,22 @@ async def export_project_pdf_async(
                 "project_topic": project.topic,
                 "slide_count": len(project.slides_data),
                 "user_id": user.id,
+                "export_method": "PDF-Pyppeteer-Async",
             }
         )
 
         logging.info(f"PDF generation task started: {task_id}")
 
-        return JSONResponse({
-            "status": "processing",
-            "task_id": task_id,
-            "message": "PDF generation started in background",
-            "polling_endpoint": f"/api/wisedeck/tasks/{task_id}",
-            "slide_count": len(project.slides_data)
-        })
+        return JSONResponse(
+            {
+                "status": "processing",
+                "task_id": task_id,
+                "message": "PDF generation started in background",
+                "polling_endpoint": f"/api/wisedeck/tasks/{task_id}",
+                "slide_count": len(project.slides_data),
+            },
+            headers={"X-Export-Method": "PDF-Pyppeteer-Async"},
+        )
 
     except HTTPException:
         raise
@@ -598,19 +603,23 @@ async def export_project_pptx(
                 "pdf_path": temp_pdf_path,
                 "pptx_path": temp_pptx_path,
                 "user_id": user.id,
+                "export_method": "PPTX-Apryse-PDFToPPTX-Async",
             }
         )
 
         logging.info(f"PPTX export task started: {task_id}")
 
         # 立即返回任务ID，不等待任务完成
-        return JSONResponse({
-            "status": "processing",
-            "task_id": task_id,
-            "message": "PPTX export started in background (PDF generation + conversion)",
-            "polling_endpoint": f"/api/wisedeck/tasks/{task_id}",
-            "slide_count": len(project.slides_data)
-        })
+        return JSONResponse(
+            {
+                "status": "processing",
+                "task_id": task_id,
+                "message": "PPTX export started in background (PDF generation + conversion)",
+                "polling_endpoint": f"/api/wisedeck/tasks/{task_id}",
+                "slide_count": len(project.slides_data),
+            },
+            headers={"X-Export-Method": "PPTX-Apryse-PDFToPPTX-Async"},
+        )
 
     except HTTPException:
         raise
@@ -814,18 +823,23 @@ async def export_project_pptx_from_images(
                 "project_topic": project.topic,
                 "slide_count": len(slides),
                 "pptx_path": temp_pptx_path,
+                "export_base_url": export_base_url,
+                "export_method": "PPTX-Images-Playwright",
                 "progress_message": "图片导出任务已创建，等待后台执行...",
                 "user_id": user.id,
             }
         )
 
         # 立即返回任务ID
-        return JSONResponse({
-            "status": "processing",
-            "task_id": task_id,
-            "message": "PPTX generation with screenshots started in background",
-            "polling_endpoint": f"/api/wisedeck/tasks/{task_id}"
-        })
+        return JSONResponse(
+            {
+                "status": "processing",
+                "task_id": task_id,
+                "message": "PPTX generation with screenshots started in background",
+                "polling_endpoint": f"/api/wisedeck/tasks/{task_id}",
+            },
+            headers={"X-Export-Method": "PPTX-Images-Playwright"},
+        )
 
     except HTTPException:
         raise
@@ -1028,7 +1042,8 @@ async def download_task_result(
             media_type="application/pdf",
             headers={
                 "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
-                "X-Conversion-Method": "PDF-Background"
+                "X-Conversion-Method": "PDF-Background",
+                "X-Export-Method": "PDF-Pyppeteer-Async",
             },
             background=BackgroundTask(cleanup_temp_files)
         )
@@ -1040,7 +1055,8 @@ async def download_task_result(
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             headers={
                 "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
-                "X-Conversion-Method": "PDF-to-PPTX-Background"
+                "X-Conversion-Method": "PDF-to-PPTX-Background",
+                "X-Export-Method": "PPTX-Apryse-PDFToPPTX-Async",
             },
             background=BackgroundTask(cleanup_temp_files)
         )

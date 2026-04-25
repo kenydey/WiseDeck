@@ -527,6 +527,7 @@ async def export_narration_audio(
                 "language": language,
                 "provider": provider,
                 "user_id": user.id,
+                "export_method": "Narration-Audio",
                 "progress_message": "讲解音频导出任务已创建，等待后台执行...",
             },
         )
@@ -537,7 +538,8 @@ async def export_narration_audio(
                 "task_id": task_id,
                 "message": "讲解音频导出已开始，请稍候",
                 "polling_endpoint": f"/api/wisedeck/tasks/{task_id}",
-            }
+            },
+            headers={"X-Export-Method": "Narration-Audio"},
         )
     except HTTPException:
         raise
@@ -605,6 +607,7 @@ async def export_narration_video(
                 "language": language,
                 "fps": fps,
                 "user_id": user.id,
+                "export_method": "Narration-Video",
             },
         )
         return JSONResponse(
@@ -613,7 +616,8 @@ async def export_narration_video(
                 "task_id": task_id,
                 "message": "Narration video export started in background",
                 "polling_endpoint": f"/api/wisedeck/tasks/{task_id}",
-            }
+            },
+            headers={"X-Export-Method": "Narration-Video"},
         )
     except HTTPException:
         raise

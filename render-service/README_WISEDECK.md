@@ -21,3 +21,12 @@ Optional: `PUPPETEER_EXECUTABLE_PATH` to a Chromium binary for headless export.
 
 - `POST /api/wisedeck/session` — register presentation JSON; returns `session_id`
 - `GET /api/wisedeck/session?id=` — used by `pdf-maker` when `id=wisedeck-{session_id}`
+
+## Notes on PDF export
+
+`POST /api/export-as-pdf` is a render-service **internal/UI** helper that renders `pdf-maker` to a PDF and stores it under `APP_DATA_DIRECTORY`.
+
+WiseDeck backend exports **do not depend** on this endpoint. Backend export uses:
+
+- `POST /api/wisedeck/session`
+- `GET /api/presentation_to_pptx_model?id=wisedeck-{session_id}[&chart_mode=native]`
