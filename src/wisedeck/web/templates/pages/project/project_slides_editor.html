@@ -199,6 +199,18 @@
                             </li>
                             <li>
                                 <a class="dropdown-item toolbar-dropdown-item" href="#"
+                                    onclick="exportToStructuredPPTX({ mode: 'stable' }); return false;">
+                                    <span class="toolbar-dropdown-item__icon">
+                                        <i class="fas fa-chart-line"></i>
+                                    </span>
+                                    <span class="toolbar-dropdown-item__content">
+                                        <span class="toolbar-dropdown-item__label">结构化导出（稳定版：原生图表）</span>
+                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">高质量布局 + 图表可编辑（需渲染服务）</span>
+                                    </span>
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item toolbar-dropdown-item" href="#"
                                     onclick="exportToStructuredPPTX({ mode: 'python' }); return false;">
                                     <span class="toolbar-dropdown-item__icon">
                                         <i class="fas fa-bolt"></i>

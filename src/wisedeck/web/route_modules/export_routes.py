@@ -181,9 +181,11 @@ async def export_project_structured_pptx(
     """
     from starlette.background import BackgroundTask
 
+    from wisedeck.core.config import app_config
     from wisedeck.services.structured_export.service import (
         build_pptx_bytes_from_deck,
         export_structured_pptx_auto,
+        export_structured_pptx_stable,
         export_structured_pptx_via_render_service,
     )
 
@@ -205,11 +207,19 @@ async def export_project_structured_pptx(
         elif m == "render":
             pptx_bytes = await export_structured_pptx_via_render_service(deck)
             export_method = "WiseDeck-Structured-Render"
+        elif m == "stable":
+            if not app_config.wisedeck_render_service_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Stable mode requires WISEDECK_RENDER_SERVICE_URL to be configured",
+                )
+            pptx_bytes = await export_structured_pptx_stable(deck)
+            export_method = "WiseDeck-Structured-Stable"
         elif m == "python":
             pptx_bytes = await build_pptx_bytes_from_deck(deck)
             export_method = "WiseDeck-Structured-Python"
         else:
-            raise HTTPException(status_code=400, detail="Invalid mode; expected auto|render|python")
+            raise HTTPException(status_code=400, detail="Invalid mode; expected auto|render|stable|python")
         safe_base = urllib.parse.quote(project.topic or project.title or "deck", safe="")
         tmp = tempfile.NamedTemporaryFile(suffix=".pptx", delete=False)
         tmp.write(pptx_bytes)

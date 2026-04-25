@@ -9,7 +9,7 @@ import os
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -49,11 +49,17 @@ async def build_pptx_bytes_from_deck(deck: StructuredSlideDeckModel) -> bytes:
             pass
 
 
-async def fetch_pptx_model_via_render_service(session_id: str) -> Dict[str, Any]:
+async def fetch_pptx_model_via_render_service(
+    session_id: str,
+    *,
+    chart_mode: Optional[str] = None,
+) -> Dict[str, Any]:
     base = (app_config.wisedeck_render_service_url or "").rstrip("/")
     if not base:
         raise RuntimeError("WISEDECK_RENDER_SERVICE_URL is not configured")
     url = f"{base}/api/presentation_to_pptx_model?id=wisedeck-{session_id}"
+    if chart_mode:
+        url = f"{url}&chart_mode={httpx.QueryParams({'chart_mode': chart_mode})['chart_mode']}"
     timeout = float(os.environ.get("WISEDECK_RENDER_EXPORT_TIMEOUT", "360"))
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.get(url)
@@ -83,6 +89,34 @@ async def export_structured_pptx_via_render_service(deck: StructuredSlideDeckMod
     model_json = await fetch_pptx_model_via_render_service(sid)
     model = PptxPresentationModel.model_validate(model_json)
     tmp = tempfile.mkdtemp(prefix="wd_rs_")
+    try:
+        creator = PptxPresentationCreator(model, tmp)
+        await creator.create_ppt()
+        out = Path(tmp) / "out.pptx"
+        creator.save(str(out))
+        return out.read_bytes()
+    finally:
+        for f in Path(tmp).glob("*"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        try:
+            Path(tmp).rmdir()
+        except OSError:
+            pass
+
+
+async def export_structured_pptx_stable(deck: StructuredSlideDeckModel) -> bytes:
+    """
+    Stable path: keep render-service layout measurement, but force native chart export.
+
+    This requires render-service and will NOT fall back to python-only mode.
+    """
+    sid = await post_render_session(deck)
+    model_json = await fetch_pptx_model_via_render_service(sid, chart_mode="native")
+    model = PptxPresentationModel.model_validate(model_json)
+    tmp = tempfile.mkdtemp(prefix="wd_rs_stable_")
     try:
         creator = PptxPresentationCreator(model, tmp)
         await creator.create_ppt()

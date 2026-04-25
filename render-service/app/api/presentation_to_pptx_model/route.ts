@@ -28,6 +28,7 @@ interface GetAllChildElementsAttributesArgs {
   inheritedZIndex?: number;
   inheritedOpacity?: number;
   screenshotsDir: string;
+  enableNativeCharts?: boolean;
 }
 
 export async function GET(request: NextRequest) {
@@ -36,11 +37,17 @@ export async function GET(request: NextRequest) {
 
   try {
     const id = await getPresentationId(request);
+    const chartMode = (request.nextUrl.searchParams.get("chart_mode") || "").trim().toLowerCase();
+    const enableNativeCharts = chartMode === "native";
     [browser, page] = await getBrowserAndPage(id);
     const screenshotsDir = getScreenshotsDir();
 
     const { slides, speakerNotes } = await getSlidesAndSpeakerNotes(page);
-    const slides_attributes = await getSlidesAttributes(slides, screenshotsDir);
+    const slides_attributes = await getSlidesAttributes(
+      slides,
+      screenshotsDir,
+      enableNativeCharts
+    );
     await postProcessSlidesAttributes(
       slides_attributes,
       screenshotsDir,
@@ -278,11 +285,16 @@ const convertSvgToPng = async (element_attibutes: ElementAttributes) => {
 
 async function getSlidesAttributes(
   slides: ElementHandle<Element>[],
-  screenshotsDir: string
+  screenshotsDir: string,
+  enableNativeCharts: boolean
 ): Promise<SlideAttributesResult[]> {
   const slideAttributes = await Promise.all(
     slides.map((slide) =>
-      getAllChildElementsAttributes({ element: slide, screenshotsDir })
+      getAllChildElementsAttributes({
+        element: slide,
+        screenshotsDir,
+        enableNativeCharts,
+      })
     )
   );
   return slideAttributes;
@@ -322,9 +334,10 @@ async function getAllChildElementsAttributes({
   inheritedZIndex,
   inheritedOpacity,
   screenshotsDir,
+  enableNativeCharts = false,
 }: GetAllChildElementsAttributesArgs): Promise<SlideAttributesResult> {
   if (!rootRect) {
-    const rootAttributes = await getElementAttributes(element);
+    const rootAttributes = await getElementAttributes(element, enableNativeCharts);
     inheritedFont = rootAttributes.font;
     inheritedBackground = rootAttributes.background;
     inheritedZIndex = rootAttributes.zIndex;
@@ -342,7 +355,10 @@ async function getAllChildElementsAttributes({
   const allResults: { attributes: ElementAttributes; depth: number }[] = [];
 
   for (const childElementHandle of directChildElementHandles) {
-    const attributes = await getElementAttributes(childElementHandle);
+    const attributes = await getElementAttributes(
+      childElementHandle,
+      enableNativeCharts
+    );
 
     if (
       ["style", "script", "link", "meta", "path"].includes(attributes.tagName)
@@ -451,6 +467,7 @@ async function getAllChildElementsAttributes({
       inheritedZIndex: attributes.zIndex || inheritedZIndex,
       inheritedOpacity: attributes.opacity || inheritedOpacity,
       screenshotsDir,
+      enableNativeCharts,
     });
     allResults.push(
       ...childResults.elements.map((attr) => ({
@@ -549,9 +566,10 @@ async function getAllChildElementsAttributes({
 }
 
 async function getElementAttributes(
-  element: ElementHandle<Element>
+  element: ElementHandle<Element>,
+  enableNativeCharts: boolean
 ): Promise<ElementAttributes> {
-  const attributes = await element.evaluate((el: Element) => {
+  const attributes = await element.evaluate((el: Element, enabled: boolean) => {
     function colorToHex(color: string): {
       hex: string | undefined;
       opacity: number | undefined;
@@ -1263,7 +1281,7 @@ async function getElementAttributes(
             colors?: string[];
           }
         | undefined = undefined;
-      if (tagName === "svg" || tagName === "canvas") {
+      if (enabled && (tagName === "svg" || tagName === "canvas")) {
         const chartWrapper = (el as Element).closest(
           "[data-chart-config],[data-pp-chart-config]"
         ) as HTMLElement | null;
@@ -1413,6 +1431,6 @@ async function getElementAttributes(
     }
 
     return parseElementAttributes(el);
-  });
+  }, enableNativeCharts);
   return attributes;
 }

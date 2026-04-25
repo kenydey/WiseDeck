@@ -182,7 +182,7 @@ async function exportToStructuredPPTX(options = {}) {
     updateProgressToast(progressToast, '正在请求服务器...', 15);
     try {
         const rawMode = options && options.mode ? String(options.mode) : '';
-        const mode = rawMode === 'render' || rawMode === 'python' || rawMode === 'auto' ? rawMode : '';
+        const mode = rawMode === 'render' || rawMode === 'python' || rawMode === 'stable' || rawMode === 'auto' ? rawMode : '';
         const baseUrl = `/api/projects/${window.wisedeckEditorConfig.projectId}/export/structured-pptx`;
         const url = mode && mode !== 'auto' ? `${baseUrl}?mode=${encodeURIComponent(mode)}` : baseUrl;
         const response = await fetch(url);
