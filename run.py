@@ -11,6 +11,16 @@ import os
 import asyncio
 from dotenv import load_dotenv
 
+# Windows: Playwright needs asyncio subprocess support. Ensure Proactor policy.
+if sys.platform == "win32":
+    _proactor = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
+    if _proactor is not None:
+        try:
+            asyncio.set_event_loop_policy(_proactor())
+        except Exception:
+            # Best-effort; Playwright launcher will re-check and set again.
+            pass
+
 # Add src to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
@@ -68,6 +78,11 @@ def main():
     print(f"Workers: {config.get('workers', 1)}")
     print(f"Server will be available at: http://localhost:{config['port']}")
     print(f"Web Interface: http://localhost:{config['port']}/dashboard")
+    if not config["reload"]:
+        print(
+            "NOTE: Reload is disabled. If you just changed code and don't see it take effect, "
+            "restart this process or set RELOAD=true for development."
+        )
     print("=" * 60)
 
     try:

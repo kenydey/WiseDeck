@@ -1,5 +1,5 @@
 """
-Pydantic contracts for WiseDeck structured export (aligned with render-service / Zod slides).
+Pydantic contracts for WiseDeck structured export (aligned with Presenton / Zod slides).
 
 This is the bridge payload between FastAPI and the optional Next+Puppeteer render service,
 and the direct python-pptx path for native editable charts.
@@ -47,6 +47,10 @@ class StructuredSlideModel(BaseModel):
     chart_config: Optional[ChartConfigModel] = None
     # When set, bypass chart_config and use native pptx chart directly
     native_chart_only: bool = False
+    # Optional Presenton template overrides (historically aligned with TSX pdf-maker layouts).
+    # When unset, exporter falls back to neo-general chart vs swift bullets heuristics.
+    presenton_layout_group: Optional[str] = None
+    presenton_layout: Optional[str] = None
 
 
 class StructuredSlideDeckModel(BaseModel):

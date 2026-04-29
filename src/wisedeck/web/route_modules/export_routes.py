@@ -10,8 +10,8 @@ import tempfile
 import time
 import urllib.parse
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
 
 from ...auth.middleware import get_current_user_required
 from ...database.models import User
@@ -129,11 +129,25 @@ async def export_project_pdf(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _outline_to_structured_deck(project, outline: dict):
+def _project_to_structured_deck(project, outline: dict):
+    """
+    Build StructuredSlideDeckModel from outline + optional slides_data alignment.
+
+    Per-slide titles/content_points prefer slides_data when the editor has saved HTML slides.
+    Optional Presenton hints come from slides_data keys (see slides_data_presenton).
+    Chart config remains sourced from outline ``chart_config`` (normalized).
+    """
     from wisedeck.services.structured_export.schemas import (
         ChartConfigModel,
         StructuredSlideDeckModel,
         StructuredSlideModel,
+    )
+    from wisedeck.services.structured_export.chart_config_normalizer import (
+        normalize_chart_config,
+    )
+    from wisedeck.services.structured_export.slides_data_presenton import (
+        merge_outline_slide_with_slides_data,
+        presenton_hints_from_slides_data_row,
     )
 
     title = outline.get("title") or project.title or "Presentation"
@@ -141,28 +155,54 @@ def _outline_to_structured_deck(project, outline: dict):
     meta = project.project_metadata if isinstance(project.project_metadata, dict) else {}
     lang = str(meta.get("language") or lang)
     slides_out = []
-    for raw in outline.get("slides") or []:
+    outline_slides = outline.get("slides") or []
+    sd_list = project.slides_data if isinstance(project.slides_data, list) else []
+
+    for idx, raw in enumerate(outline_slides):
         if not isinstance(raw, dict):
             continue
-        cc = raw.get("chart_config")
+        row = sd_list[idx] if idx < len(sd_list) and isinstance(sd_list[idx], dict) else None
+        merged = merge_outline_slide_with_slides_data(raw, row)
+        lg_hint, lay_hint = presenton_hints_from_slides_data_row(row) if row else (None, None)
+
+        cc = merged.get("chart_config")
         chart_model = None
         if isinstance(cc, dict) and cc:
             try:
-                chart_model = ChartConfigModel.model_validate(cc)
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "structured_export chart_config raw_keys=%s has_data=%s has_categories=%s has_series=%s",
+                        sorted(list(cc.keys())),
+                        isinstance(cc.get("data"), dict),
+                        isinstance(cc.get("categories"), list),
+                        isinstance(cc.get("series"), list),
+                    )
+                cc_norm = normalize_chart_config(cc) or cc
+                if logger.isEnabledFor(logging.DEBUG):
+                    data_norm = cc_norm.get("data") if isinstance(cc_norm, dict) else None
+                    logger.debug(
+                        "structured_export chart_config normalized has_data=%s labels_len=%s datasets_len=%s",
+                        isinstance(data_norm, dict),
+                        len(data_norm.get("labels") or []) if isinstance(data_norm, dict) else None,
+                        len(data_norm.get("datasets") or []) if isinstance(data_norm, dict) else None,
+                    )
+                chart_model = ChartConfigModel.model_validate(cc_norm)
             except Exception:
                 chart_model = None
-        points = raw.get("content_points") or raw.get("bullet_points") or []
+        points = merged.get("content_points") or merged.get("bullet_points") or []
         if isinstance(points, str):
             points = [points]
         if not isinstance(points, list):
             points = []
         slides_out.append(
             StructuredSlideModel(
-                page_number=int(raw.get("page_number") or len(slides_out) + 1),
-                title=str(raw.get("title") or ""),
-                slide_type=str(raw.get("slide_type") or raw.get("type") or "content"),
+                page_number=int(merged.get("page_number") or len(slides_out) + 1),
+                title=str(merged.get("title") or ""),
+                slide_type=str(merged.get("slide_type") or merged.get("type") or "content"),
                 content_points=[str(p) for p in points],
                 chart_config=chart_model,
+                presenton_layout_group=lg_hint,
+                presenton_layout=lay_hint,
             )
         )
     return StructuredSlideDeckModel(title=str(title), language=lang, slides=slides_out)
@@ -171,83 +211,298 @@ def _outline_to_structured_deck(project, outline: dict):
 @router.get("/api/projects/{project_id}/export/structured-pptx")
 async def export_project_structured_pptx(
     project_id: str,
+    http_request: Request,
     mode: str | None = None,
     user: User = Depends(get_current_user_required),
 ):
     """
     Export PPTX with native editable charts (python-pptx) when outline includes chart_config.
 
-    If WISEDECK_RENDER_SERVICE_URL is set, uses Presenton-derived Next+Puppeteer for layout
-    measurement before PPTX assembly; otherwise uses the direct python-pptx path.
+    Default ``mode=auto`` follows ``WISEDECK_STRUCTURED_PPTX_MEASUREMENT_SOURCE`` (default
+    ``homomorphic-editable``): Playwright screenshots from same-origin slides-html when
+    ``slides_data`` exists, otherwise python-pptx. See ``STRUCTURED_EXPORT_VENDOR.md``.
     """
-    from starlette.background import BackgroundTask
-
-    from wisedeck.core.config import app_config
+    from wisedeck.services.structured_export.dual_write import (
+        try_assemble_presentation_from_dual_write,
+        upsert_presenton_snapshots_on_slides_data,
+    )
+    from wisedeck.services.structured_export.presentation_payload import (
+        StructuredExportPayloadError,
+        assert_presenton_export_payload_ready,
+        deck_to_presenton_presentation_json,
+    )
     from wisedeck.services.structured_export.service import (
         build_pptx_bytes_from_deck,
         export_structured_pptx_auto,
-        export_structured_pptx_stable,
-        export_structured_pptx_via_render_service,
+        export_structured_pptx_via_homomorphic_html,
+        export_structured_pptx_via_homomorphic_dom_to_pptx,
     )
+
+    try:
+        started_at = time.time()
+        project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        outline = project.outline if isinstance(project.outline, dict) else {}
+        outline_slides = outline.get("slides") or []
+        if not outline_slides:
+            raise HTTPException(
+                status_code=400,
+                detail="Project outline has no slides; generate an outline first",
+            )
+        deck = _project_to_structured_deck(project, outline)
+        computed_payload = deck_to_presenton_presentation_json(deck)
+        title_str = outline.get("title") or project.title or "Presentation"
+        dual_payload = try_assemble_presentation_from_dual_write(
+            outline_slides=outline_slides,
+            slides_data=project.slides_data,
+            title=str(title_str),
+            language=deck.language,
+        )
+        try:
+            if dual_payload is not None:
+                assert_presenton_export_payload_ready(dual_payload)
+        except StructuredExportPayloadError:
+            dual_payload = None
+
+        m_raw = (mode or "").strip().lower()
+        # Legacy query params Presenton used for DOM measurement — map to homomorphic_editable.
+        if m_raw in ("render", "stable"):
+            m = "homomorphic_editable"
+        else:
+            m = m_raw or "auto"
+
+        if m in ("", "auto"):
+            export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
+            try:
+                pptx_bytes = await export_structured_pptx_auto(
+                    deck,
+                    slides_for_same_html=project.slides_data if isinstance(project.slides_data, list) else None,
+                    export_base_url=export_base_url,
+                )
+                export_method = "WiseDeck-Structured-Auto"
+            except Exception as auto_exc:
+                # Some Windows setups can raise `[Errno 22] Invalid argument` from the headless/render chain.
+                # Fall back to python-only so exports remain usable (even if layout fidelity is lower).
+                if "[Errno 22]" in str(auto_exc) or (
+                    isinstance(auto_exc, OSError) and getattr(auto_exc, "errno", None) == 22
+                ):
+                    logging.getLogger(__name__).warning(
+                        "structured auto export hit Errno 22; falling back to python-only: %s",
+                        auto_exc,
+                    )
+                    pptx_bytes = await build_pptx_bytes_from_deck(deck)
+                    export_method = "WiseDeck-Structured-Python-Fallback-Errno22"
+                else:
+                    raise
+        elif m == "homomorphic":
+            export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
+            pptx_bytes = await export_structured_pptx_via_homomorphic_html(
+                deck,
+                slides_for_same_html=project.slides_data if isinstance(project.slides_data, list) else None,
+                export_base_url=export_base_url,
+            )
+            export_method = "WiseDeck-Structured-Homomorphic"
+        elif m == "homomorphic_editable":
+            export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
+            try:
+                pptx_bytes = await export_structured_pptx_via_homomorphic_dom_to_pptx(
+                    deck,
+                    project_id=project_id,
+                    export_base_url=export_base_url,
+                )
+                export_method = "WiseDeck-Structured-Homomorphic-Editable"
+            except Exception as dom_exc:
+                logging.getLogger(__name__).warning(
+                    "homomorphic_editable dom-to-pptx failed, falling back to screenshot-based homomorphic: %s",
+                    dom_exc,
+                )
+                pptx_bytes = await export_structured_pptx_via_homomorphic_html(
+                    deck,
+                    slides_for_same_html=project.slides_data if isinstance(project.slides_data, list) else None,
+                    export_base_url=export_base_url,
+                )
+                export_method = "WiseDeck-Structured-Homomorphic-Editable-Fallback-Images"
+        elif m == "python":
+            pptx_bytes = await build_pptx_bytes_from_deck(deck)
+            export_method = "WiseDeck-Structured-Python"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid mode; expected auto|homomorphic|homomorphic_editable|python. "
+                    "Legacy modes render|stable are accepted as aliases for homomorphic_editable."
+                ),
+            )
+        safe_base = urllib.parse.quote(project.topic or project.title or "deck", safe="")
+
+        if m != "python":
+            persist = (
+                os.environ.get("WISEDECK_DUAL_WRITE_PERSIST_ON_EXPORT", "").strip().lower()
+                in ("1", "true", "yes")
+            )
+            if persist:
+                try:
+                    upd_sd = upsert_presenton_snapshots_on_slides_data(
+                        project.slides_data,
+                        len(outline_slides),
+                        computed_payload["slides"],
+                    )
+                    await ppt_service.project_manager.update_project_data(
+                        project_id,
+                        {"slides_data": upd_sd},
+                        user_id=user.id,
+                    )
+                except Exception as persist_exc:
+                    logging.getLogger(__name__).warning(
+                        "dual-write slides_data persist skipped: %s", persist_exc
+                    )
+
+        elapsed_ms = int((time.time() - started_at) * 1000)
+        logging.getLogger(__name__).info(
+            "structured_export mode=%s raw_mode=%s export_method=%s elapsed_ms=%s project_id=%s user_id=%s",
+            m,
+            m_raw,
+            export_method,
+            elapsed_ms,
+            project_id,
+            getattr(user, "id", None),
+        )
+
+        headers = {
+            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_base}_structured.pptx",
+            "X-Export-Method": export_method,
+            "X-WiseDeck-Structured-Mode": m,
+            "X-WiseDeck-Structured-Mode-Raw": m_raw,
+            "X-WiseDeck-Structured-Measurement-Source": (
+                os.environ.get("WISEDECK_STRUCTURED_PPTX_MEASUREMENT_SOURCE", "").strip().lower() or "homomorphic-editable"
+            ),
+            "X-WiseDeck-Presentation-Source": ("dual-write" if dual_payload is not None else "deck"),
+        }
+        if m_raw in ("render", "stable"):
+            # RFC 8594 + RFC 9110 style deprecation hints (best-effort).
+            headers["Deprecation"] = "true"
+            headers["Sunset"] = "2026-06-30"
+            headers["Link"] = (
+                f'</api/projects/{project_id}/export/structured-pptx?mode=homomorphic_editable>; rel="successor-version"'
+            )
+
+        return Response(
+            content=pptx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers=headers,
+        )
+    except HTTPException:
+        raise
+    except StructuredExportPayloadError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        msg = str(e)
+        # Client-fixable configuration / missing slides for chosen pipeline
+        if "requires" in msg:
+            raise HTTPException(status_code=400, detail=msg)
+        logging.getLogger(__name__).exception("structured pptx export failed")
+        raise HTTPException(status_code=500, detail=msg)
+    except Exception as e:
+        logging.getLogger(__name__).exception("structured pptx export failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/projects/{project_id}/export/pptx-merge-native-charts")
+async def export_project_pptx_merge_native_charts(
+    project_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user_required),
+):
+    """
+    Merge native editable charts into a client-exported PPTX (dom-to-pptx) using outline chart_config.
+
+    Input: multipart file field `file` (a .pptx).
+    Output: merged .pptx bytes. MVP appends charts by slide index order.
+    """
+    from starlette.background import BackgroundTask
+
+    from wisedeck.services.structured_export.service import merge_native_charts_into_pptx_bytes
 
     try:
         project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         outline = project.outline if isinstance(project.outline, dict) else {}
-        if not outline.get("slides"):
+        outline_slides = outline.get("slides") or []
+        if not outline_slides:
             raise HTTPException(
                 status_code=400,
                 detail="Project outline has no slides; generate an outline first",
             )
-        deck = _outline_to_structured_deck(project, outline)
-        m = (mode or "").strip().lower()
-        if m in ("", "auto"):
-            pptx_bytes = await export_structured_pptx_auto(deck)
-            export_method = "WiseDeck-Structured-Auto"
-        elif m == "render":
-            pptx_bytes = await export_structured_pptx_via_render_service(deck)
-            export_method = "WiseDeck-Structured-Render"
-        elif m == "stable":
-            if not app_config.wisedeck_render_service_url:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Stable mode requires WISEDECK_RENDER_SERVICE_URL to be configured",
-                )
-            pptx_bytes = await export_structured_pptx_stable(deck)
-            export_method = "WiseDeck-Structured-Stable"
-        elif m == "python":
-            pptx_bytes = await build_pptx_bytes_from_deck(deck)
-            export_method = "WiseDeck-Structured-Python"
-        else:
-            raise HTTPException(status_code=400, detail="Invalid mode; expected auto|render|stable|python")
+
+        base_bytes = await file.read()
+        if not base_bytes or base_bytes[:4] != b"PK\x03\x04":
+            raise HTTPException(status_code=400, detail="Invalid PPTX file")
+
+        deck = _project_to_structured_deck(project, outline)
+        merged_bytes = await merge_native_charts_into_pptx_bytes(base_bytes, deck=deck)
+
         safe_base = urllib.parse.quote(project.topic or project.title or "deck", safe="")
-        tmp = tempfile.NamedTemporaryFile(suffix=".pptx", delete=False)
-        tmp.write(pptx_bytes)
-        tmp.close()
-        temp_path = tmp.name
-
-        def _cleanup():
-            try:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-            except OSError:
-                pass
-
-        return FileResponse(
-            temp_path,
+        return Response(
+            content=merged_bytes,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_base}_structured.pptx",
-                "X-Export-Method": export_method,
+                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_base}_merged_native_charts.pptx",
+                "X-Export-Method": "WiseDeck-Client-Merge-Native-Charts",
             },
-            background=BackgroundTask(_cleanup),
         )
     except HTTPException:
         raise
     except Exception as e:
-        logging.getLogger(__name__).exception("structured pptx export failed")
+        logging.getLogger(__name__).exception("pptx merge-native-charts failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/projects/{project_id}/internal/preview/slides-html", response_class=HTMLResponse)
+async def internal_preview_slides_html(
+    project_id: str,
+    request: Request,
+    page: int | None = None,
+    user: User = Depends(get_current_user_required),
+):
+    """
+    Same-origin hosted HTML for server-side headless rendering (Playwright/Pyppeteer).
+
+    Query:
+    - page: 1-based page number; when omitted, renders all slides.
+    """
+    from wisedeck.services.export_infra.slides_html_hosting import build_hosted_slides_html_document
+    from .slide_routes import SLIDE_HTML_CONTRACT_VERSION
+
+    project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.slides_data or len(project.slides_data) == 0:
+        raise HTTPException(status_code=400, detail="PPT not generated yet")
+
+    base_url = _resolve_export_base_url(request)
+    # Ensure each slide html can resolve relative static resources.
+    prepared_rows = []
+    for row in project.slides_data:
+        if not isinstance(row, dict):
+            prepared_rows.append(row)
+            continue
+        r = dict(row)
+        r["html_content"] = _prepare_html_for_file_based_export(str(r.get("html_content") or ""), base_url)
+        prepared_rows.append(r)
+
+    try:
+        html = build_hosted_slides_html_document(
+            slides_data=prepared_rows,
+            base_url=base_url,
+            contract_version=SLIDE_HTML_CONTRACT_VERSION,
+            page=page,
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid page; expected 1..N")
+
+    return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/projects/{project_id}/export/pdf/individual")

@@ -568,12 +568,6 @@ class AppConfig(BaseSettings):
     api_keys: Optional[str] = Field(default=None, env="WISEDECK_API_KEYS")
     allow_header_session_auth: bool = Field(default=False, env="WISEDECK_ALLOW_HEADER_SESSION_AUTH")
     
-    # Structured export (Presenton-derived render-service + native PPTX charts)
-    wisedeck_render_service_url: Optional[str] = Field(
-        default=None,
-        env="WISEDECK_RENDER_SERVICE_URL",
-    )
-
     # File Upload Configuration
     max_file_size: int = Field(default=10 * 1024 * 1024, env="MAX_FILE_SIZE")  # 10MB
     upload_dir: str = Field(default="uploads", env="UPLOAD_DIR")

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
@@ -99,6 +100,22 @@ class PlaywrightPDFConverter:
         if not self.is_available():
             raise ImportError("Playwright is not available. Please install: pip install playwright")
 
+        # Windows: ensure Proactor event loop policy so subprocesses work (Playwright launches a browser process).
+        if sys.platform == "win32":
+            try:
+                policy = asyncio.get_event_loop_policy()
+                proactor_cls = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
+                if proactor_cls is not None and not isinstance(policy, proactor_cls):
+                    asyncio.set_event_loop_policy(proactor_cls())
+                    policy = asyncio.get_event_loop_policy()
+                logger.info(
+                    "Playwright launch env: sys.executable=%s event_loop_policy=%s",
+                    sys.executable,
+                    type(policy).__name__,
+                )
+            except Exception as e:
+                logger.warning("Failed to ensure Proactor event loop policy: %s", e)
+
         # Enhanced launch options with better Windows compatibility
         launch_args = [
             '--no-sandbox',
@@ -164,11 +181,22 @@ class PlaywrightPDFConverter:
                 logger.warning(f"❌ Playwright Chromium launch failed: {playwright_error}")
 
             # Method 2: Try system Chrome with enhanced error handling
-            system_chrome_paths = [
+            system_chrome_paths = []
+
+            # Optional: user-provided executable path.
+            override = (os.environ.get("PLAYWRIGHT_CHROME_EXECUTABLE") or "").strip()
+            if override:
+                system_chrome_paths.append(override)
+
+            # Common system installs (Chrome + Edge).
+            system_chrome_paths += [
                 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
                 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
                 'C:\\Users\\{}\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe'.format(os.environ.get('USERNAME', '')),
+                'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+                'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
                 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
                 '/usr/bin/google-chrome',
                 '/usr/bin/chromium-browser',
                 '/snap/bin/chromium'
@@ -267,9 +295,10 @@ class PlaywrightPDFConverter:
                 "解决方案:\n"
                 "1. 确保已安装 Google Chrome 浏览器\n"
                 "2. 运行: pip install --upgrade playwright\n"
-                "3. 手动安装 Chromium: python -m playwright install chromium\n"
-                "4. 或者安装所有浏览器: python -m playwright install\n"
-                "5. 检查防火墙和杀毒软件是否阻止了浏览器启动"
+                f"3. 在当前解释器下安装浏览器（推荐）: {sys.executable} -m playwright install chromium\n"
+                f"4. 或安装全部浏览器: {sys.executable} -m playwright install\n"
+                "5. （可选）设置 PLAYWRIGHT_CHROME_EXECUTABLE 指向 chrome/msedge 可执行文件\n"
+                "6. 检查防火墙和杀毒软件是否阻止了浏览器启动"
             )
             raise ImportError(error_msg)
 

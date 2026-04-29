@@ -1,4 +1,4 @@
-"""Build render-service PresentationData JSON from StructuredSlideDeckModel."""
+"""Build Presenton-compatible presentation JSON from StructuredSlideDeckModel."""
 
 from __future__ import annotations
 
@@ -6,7 +6,85 @@ import uuid
 from typing import Any, Dict, List
 
 from wisedeck.services.structured_export.chart_mapper import _normalize_chart_type
-from wisedeck.services.structured_export.schemas import StructuredSlideDeckModel
+from wisedeck.services.structured_export.schemas import StructuredSlideDeckModel, StructuredSlideModel
+
+
+class StructuredExportPayloadError(ValueError):
+    """Presentation JSON fails pre-export checks (layout, chart data)."""
+
+
+def assert_presenton_export_payload_ready(payload: Dict[str, Any]) -> None:
+    """
+    Validate Presenton-shaped payload: template-prefixed layouts and non-empty chart data.
+
+    Raises StructuredExportPayloadError with a short, actionable message.
+    """
+    slides = payload.get("slides") or []
+    if not isinstance(slides, list):
+        raise StructuredExportPayloadError("Presentation payload has no slides list")
+
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        idx = slide.get("index", "?")
+        lay = slide.get("layout")
+        if lay is not None:
+            s = str(lay).strip()
+            if s and ":" not in s:
+                raise StructuredExportPayloadError(
+                    f"Slide {idx}: layout must use `template:layoutId` form (got {lay!r})"
+                )
+
+        content = slide.get("content") if isinstance(slide.get("content"), dict) else {}
+        chart = content.get("chart") if isinstance(content, dict) else None
+        if not isinstance(chart, dict) or not chart:
+            continue
+
+        categories = chart.get("categories") or []
+        series = chart.get("series") or []
+        if not isinstance(categories, list) or len(categories) == 0:
+            raise StructuredExportPayloadError(
+                f"Slide {idx}: chart has no categories (labels); fix outline chart_config before export"
+            )
+        if not isinstance(series, list) or len(series) == 0:
+            raise StructuredExportPayloadError(
+                f"Slide {idx}: chart has no series; fix outline chart_config before export"
+            )
+        for si, srow in enumerate(series):
+            if not isinstance(srow, dict):
+                continue
+            vals = srow.get("values")
+            if not isinstance(vals, list) or len(vals) == 0:
+                raise StructuredExportPayloadError(
+                    f"Slide {idx}: chart series[{si}] has no values; fix outline chart_config before export"
+                )
+
+
+def _effective_presenton_layout(
+    slide: StructuredSlideModel,
+    *,
+    chart_slide: bool,
+) -> tuple[str, str]:
+    """
+    Resolve layout_group + layout for pdf-maker.
+
+    Uses optional slide.presenton_* overrides; otherwise neo-general chart vs swift bullets.
+    """
+    lg = (slide.presenton_layout_group or "").strip() if slide.presenton_layout_group else ""
+    lv = (slide.presenton_layout or "").strip() if slide.presenton_layout else ""
+
+    if lv and ":" in lv:
+        prefix = lv.split(":", 1)[0]
+        group = lg or prefix
+        return group, lv
+
+    if lg and lv:
+        combined = lv if ":" in lv else f"{lg}:{lv}"
+        return lg, combined
+
+    if chart_slide:
+        return "neo-general", "neo-general:title-metrics-with-chart"
+    return "swift", "swift:simple-bullet-points-layout"
 
 
 def _recharts_chart_type(normalized: str) -> str:
@@ -29,6 +107,7 @@ def deck_to_presenton_presentation_json(deck: StructuredSlideDeckModel) -> Dict[
     slides_payload: List[Dict[str, Any]] = []
     for idx, s in enumerate(deck.slides):
         if s.chart_config is not None:
+            layout_group_resolved, layout_resolved = _effective_presenton_layout(s, chart_slide=True)
             chart = s.chart_config
             data = chart.data
             categories = list(data.labels) if data else []
@@ -73,8 +152,8 @@ def deck_to_presenton_presentation_json(deck: StructuredSlideDeckModel) -> Dict[
                 {
                     "id": str(uuid.uuid4()),
                     "index": idx,
-                    "layout_group": "neo-general",
-                    "layout": "title-metrics-with-chart",
+                    "layout_group": layout_group_resolved,
+                    "layout": layout_resolved,
                     "content": content,
                     "properties": {},
                 }
@@ -94,12 +173,13 @@ def deck_to_presenton_presentation_json(deck: StructuredSlideDeckModel) -> Dict[
             stmt = " ".join(raw_points)[:260]
             if len(stmt) < 20:
                 stmt = filler
+            layout_group_resolved, layout_resolved = _effective_presenton_layout(s, chart_slide=False)
             slides_payload.append(
                 {
                     "id": str(uuid.uuid4()),
                     "index": idx,
-                    "layout_group": "swift",
-                    "layout": "simple-bullet-points-layout",
+                    "layout_group": layout_group_resolved,
+                    "layout": layout_resolved,
                     "content": {
                         "title": (s.title or "Overview")[:36],
                         "statement": stmt,

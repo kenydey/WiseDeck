@@ -44,6 +44,23 @@ from .support import (
 
 router = APIRouter()
 
+# Bump when iframe HTML / merged slides_html semantics change for server-side parity work.
+SLIDE_HTML_CONTRACT_VERSION = "2026.04"
+
+
+def _ensure_slide_contract_version_on_rows(slides_data: List[Any]) -> List[Any]:
+    """Attach slide_contract_version for future same-HTML export parity (optional field)."""
+    out: List[Dict[str, Any]] = []
+    for row in slides_data:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        r = dict(row)
+        if not r.get("slide_contract_version"):
+            r["slide_contract_version"] = SLIDE_HTML_CONTRACT_VERSION
+        out.append(r)
+    return out
+
 
 class SlideBatchRegenerateRequest(BaseModel):
     """Batch slide regeneration request (0-based indices)."""
@@ -278,7 +295,8 @@ async def batch_regenerate_slides(
                 "html_content": "<div>Pending</div>",
                 "slide_type": "content",
                 "content_points": [],
-                "is_user_edited": False
+                "is_user_edited": False,
+                "slide_contract_version": SLIDE_HTML_CONTRACT_VERSION,
             })
 
         results: List[Dict[str, Any]] = []
@@ -709,7 +727,7 @@ async def batch_save_slides(
         logger.debug(f"🔄 开始批量保存项目 {project_id} 的所有幻灯片")
 
         data = await request.json()
-        slides_data = data.get('slides_data', [])
+        slides_data = _ensure_slide_contract_version_on_rows(data.get('slides_data', []))
 
         if not slides_data:
             logger.error("❌ 幻灯片数据为空")

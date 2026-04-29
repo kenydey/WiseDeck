@@ -1,4 +1,4 @@
-"""WiseDeck structured export (Presenton-derived python-pptx + optional render-service)."""
+"""WiseDeck structured export (python-pptx + Playwright homomorphic HTML)."""
 
 from wisedeck.services.structured_export.schemas import (
     ChartConfigModel,
@@ -8,7 +8,6 @@ from wisedeck.services.structured_export.schemas import (
 from wisedeck.services.structured_export.service import (
     build_pptx_bytes_from_deck,
     export_structured_pptx_auto,
-    export_structured_pptx_via_render_service,
 )
 
 __all__ = [
@@ -17,5 +16,4 @@ __all__ = [
     "StructuredSlideModel",
     "build_pptx_bytes_from_deck",
     "export_structured_pptx_auto",
-    "export_structured_pptx_via_render_service",
 ]

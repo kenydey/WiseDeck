@@ -1,0 +1,4 @@
+# Legacy untracked artifacts if any remain locally after subtree removal
+node_modules/
+.next/
+.next-build/

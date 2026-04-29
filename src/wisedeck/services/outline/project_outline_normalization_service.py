@@ -487,7 +487,17 @@ class ProjectOutlineNormalizationService:
             }
 
             if slide.get("chart_config"):
-                standardized_slide["chart_config"] = slide["chart_config"]
+                try:
+                    from wisedeck.services.structured_export.chart_config_normalizer import (
+                        normalize_chart_config,
+                    )
+
+                    standardized_slide["chart_config"] = (
+                        normalize_chart_config(slide["chart_config"])
+                        or slide["chart_config"]
+                    )
+                except Exception:
+                    standardized_slide["chart_config"] = slide["chart_config"]
 
             standardized_slides.append(standardized_slide)
 

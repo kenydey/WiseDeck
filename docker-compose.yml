@@ -53,8 +53,6 @@ services:
       - CACHE_BACKEND=valkey
       - VALKEY_URL=valkey://valkey:${VALKEY_PORT:-6379}
 
-      # Optional: Presenton-derived render-service for structured PPTX (see render-service/README_WISEDECK.md)
-      - WISEDECK_RENDER_SERVICE_URL=${WISEDECK_RENDER_SERVICE_URL:-}
       - WISEDECK_APP_DATA_DIRECTORY=${WISEDECK_APP_DATA_DIRECTORY:-/app/temp/wisedeck_app_data}
 
     depends_on:

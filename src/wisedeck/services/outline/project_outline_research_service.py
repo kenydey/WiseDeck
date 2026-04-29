@@ -244,8 +244,18 @@ class ProjectOutlineResearchService:
                 type_mapping = {'title': 'title', 'content': 'content', 'conclusion': 'thankyou', 'agenda': 'agenda'}
                 mapped_type = type_mapping.get(slide_type, 'content')
                 standardized_slide = {'page_number': slide.get('page_number', slide.get('id', len(standardized_slides) + 1)), 'title': slide.get('title', f'第{len(standardized_slides) + 1}页'), 'content_points': content_points, 'slide_type': slide_type, 'type': mapped_type, 'description': slide.get('description', '')}
-                if 'chart_config' in slide and slide['chart_config']:
-                    standardized_slide['chart_config'] = slide['chart_config']
+                if slide.get("chart_config"):
+                    try:
+                        from wisedeck.services.structured_export.chart_config_normalizer import (
+                            normalize_chart_config,
+                        )
+
+                        standardized_slide["chart_config"] = (
+                            normalize_chart_config(slide["chart_config"])
+                            or slide["chart_config"]
+                        )
+                    except Exception:
+                        standardized_slide["chart_config"] = slide["chart_config"]
                 standardized_slides.append(standardized_slide)
             standardized_metadata = {'generated_with_summeryfile': True, 'page_count_settings': {'mode': metadata.get('page_count_mode', 'ai_decide'), 'min_pages': None, 'max_pages': None, 'fixed_pages': None}, 'actual_page_count': len(standardized_slides), 'generated_at': time.time(), 'original_metadata': metadata}
             if 'total_pages' in metadata:

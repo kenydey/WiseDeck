@@ -2,15 +2,27 @@
 Main FastAPI application entry point
 """
 
+import asyncio
+import sys
+
+# Windows: Playwright (and other subprocess-based features) require a Proactor loop.
+# Uvicorn workers import this module directly, so this must run before the event loop is created.
+if sys.platform == "win32":
+    _proactor = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
+    if _proactor is not None:
+        try:
+            asyncio.set_event_loop_policy(_proactor())
+        except Exception:
+            # Best-effort; Playwright launcher will re-check and log if needed.
+            pass
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 import uvicorn
-import asyncio
 import logging
 import os
-import sys
 from .api.openai_compat import router as openai_router
 from .api.wisedeck_api import router as wisedeck_api_router
 from .api.database_api import router as database_router

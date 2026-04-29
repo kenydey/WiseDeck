@@ -15,6 +15,15 @@
                 ? parsedSlideIndices
                 : null;
             const singleSlideMode = requestedSlideIndices && requestedSlideIndices.length === 1;
+            const resolveMergeNativeChartsPreference = () => {
+                if (typeof normalizedOptions.mergeNativeCharts === 'boolean') return normalizedOptions.mergeNativeCharts;
+                try {
+                    const v = localStorage.getItem('wisedeck_client_pptx_merge_native_charts');
+                    return v === '1' || v === 'true';
+                } catch (_) {
+                    return false;
+                }
+            };
 
             let exporter = null;
             try {
@@ -242,15 +251,61 @@
                 const fileName = `${fileBaseName}.pptx`;
 
                 throwIfClientExportCancelled(exportSignal);
-                await exporter.exportToPptx(slideElementStream, {
+                const enableNativeChartMerge = resolveMergeNativeChartsPreference();
+                const basePptxBlob = await exporter.exportToPptx(slideElementStream, {
                     fileName: fileName,
                     autoEmbedFonts: true,
                     svgAsVector: false,
                     slideNotes: slideNotes,
                     iconRules: getCompiledIconExportRules().rawRules,
+                    skipDownload: enableNativeChartMerge,
                     signal: exportSignal,
                     shouldCancel: () => !!(clientExportCancelRequested || (exportSignal && exportSignal.aborted))
                 });
+
+                if (enableNativeChartMerge) {
+                    try {
+                        throwIfClientExportCancelled(exportSignal);
+                        updateExportUI(null, null, null, '正在合并可编辑图表（上传并处理 PPTX）...', 96, '处理中...');
+
+                        const form = new FormData();
+                        const baseFile = new File([basePptxBlob], fileName, {
+                            type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                        });
+                        form.append('file', baseFile);
+
+                        const resp = await fetch(`/api/projects/${window.wisedeckEditorConfig.projectId}/export/pptx-merge-native-charts`, {
+                            method: 'POST',
+                            body: form,
+                            credentials: 'same-origin',
+                            signal: exportSignal
+                        });
+
+                        if (!resp.ok) {
+                            const errText = await resp.text().catch(() => '');
+                            throw new Error(errText || `合并失败（HTTP ${resp.status}）`);
+                        }
+
+                        const mergedBlob = await resp.blob();
+                        const mergedName = fileName.replace(/\.pptx$/i, '') + '_merged_native_charts.pptx';
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(mergedBlob);
+                        a.download = mergedName;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+                    } catch (mergeErr) {
+                        console.warn('Native chart merge failed, falling back to base PPTX download:', mergeErr);
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(basePptxBlob);
+                        a.download = fileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+                    }
+                }
                 hideExportOverlay();
                 updateExportCancelButton(false);
 

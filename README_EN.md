@@ -179,7 +179,7 @@ These steps match `run.py`, `docker-compose*.yaml`, and **`WISEDECK_*`** environ
 
 **Docker Compose:** Production [`docker-compose.yml`](docker-compose.yml): app **http://localhost:8000** (`8000:8000`), Postgres on host **6004** (`6004:5432`). Logs: `docker compose logs -f wisedeck`. Dev [`docker-compose-dev.yaml`](docker-compose-dev.yaml): `docker compose -f docker-compose-dev.yaml logs -f wisedeck`, container name **`wisedeck-dev`**.
 
-**Optional structured PPTX:** Start `render-service` and set **`WISEDECK_RENDER_SERVICE_URL`** (see [render-service/README_WISEDECK.md](render-service/README_WISEDECK.md)).
+**Structured PPTX:** Served by the WiseDeck FastAPI app (Playwright + same-origin slides-html). See [STRUCTURED_EXPORT_VENDOR.md](STRUCTURED_EXPORT_VENDOR.md). No separate Presenton Next.js service is required.
 
 ### Local Installation
 

@@ -171,6 +171,8 @@ function parseAttachmentFilename(contentDisposition) {
 /**
  * Synchronous GET → PPTX file (native charts when outline has chart_config).
  * Does not use /api/wisedeck/tasks polling.
+ *
+ * Supported modes (API): auto | render | stable | python — stable/python removed from toolbar but remain for integrations/tests.
  */
 async function exportToStructuredPPTX(options = {}) {
     if (structuredPptxExportInProgress) {
@@ -182,7 +184,46 @@ async function exportToStructuredPPTX(options = {}) {
     updateProgressToast(progressToast, '正在请求服务器...', 15);
     try {
         const rawMode = options && options.mode ? String(options.mode) : '';
-        const mode = rawMode === 'render' || rawMode === 'python' || rawMode === 'stable' || rawMode === 'auto' ? rawMode : '';
+        let mode = rawMode === 'render'
+            || rawMode === 'python'
+            || rawMode === 'stable'
+            || rawMode === 'auto'
+            || rawMode === 'homomorphic'
+            || rawMode === 'homomorphic_editable'
+            ? rawMode
+            : '';
+
+        // Default behavior (no explicit mode): export with the SAME client PPTX template, then
+        // merge native editable charts on the server (python-pptx) via /export/pptx-merge-native-charts.
+        // This path is the only one that guarantees “client template + editable charts”.
+        const isDefaultEntry = !mode || mode === 'auto';
+        if (isDefaultEntry) {
+            try {
+                if (typeof exportSlidesToPptxClient === 'function') {
+                    updateProgressToast(progressToast, '正在使用客户端模板导出并合并可编辑图表...', 18);
+                    closeProgressToast(progressToast);
+                    // dom-to-pptx → upload → merge-native-charts → download
+                    await exportSlidesToPptxClient({ mergeNativeCharts: true });
+                    return;
+                }
+            } catch (e) {
+                // Fallback to server export below.
+                console.warn('Client template export+merge failed, falling back to server structured export:', e);
+            }
+        }
+
+        // Fallback: server structured export (kept for render mode and as safety net).
+        // Note: Windows can fail the default server structured export path with `[Errno 22] Invalid argument`,
+        // so we prefer client-export+merge above. If we reach here without explicit mode, use python-only
+        // to avoid the known failure mode.
+        if (!mode) {
+            const platform = (typeof navigator !== 'undefined' && navigator.platform) ? String(navigator.platform) : '';
+            const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? String(navigator.userAgent) : '';
+            const isWindows = /win/i.test(platform) || /windows/i.test(ua);
+            if (isWindows) {
+                mode = 'python';
+            }
+        }
         const baseUrl = `/api/projects/${window.wisedeckEditorConfig.projectId}/export/structured-pptx`;
         const url = mode && mode !== 'auto' ? `${baseUrl}?mode=${encodeURIComponent(mode)}` : baseUrl;
         const response = await fetch(url);
@@ -743,4 +784,46 @@ function copyShareUrl(url) {
 
 function openShareUrl(url) {
     window.open(url, '_blank');
+}
+
+// --- Client PPTX export options (UI) ---
+
+const CLIENT_PPTX_MERGE_NATIVE_CHARTS_STORAGE_KEY = 'wisedeck_client_pptx_merge_native_charts';
+
+function getClientPptxMergeNativeChartsPreference() {
+    try {
+        const v = localStorage.getItem(CLIENT_PPTX_MERGE_NATIVE_CHARTS_STORAGE_KEY);
+        return v === '1' || v === 'true';
+    } catch (_) {
+        return false;
+    }
+}
+
+function setClientPptxMergeNativeChartsPreference(enabled) {
+    try {
+        localStorage.setItem(CLIENT_PPTX_MERGE_NATIVE_CHARTS_STORAGE_KEY, enabled ? '1' : '0');
+    } catch (_) { }
+}
+
+function openClientPptxExportDialog() {
+    const modalEl = document.getElementById('clientPptxExportOptionsModal');
+    const checkbox = document.getElementById('clientPptxMergeNativeChartsCheckbox');
+    const confirmBtn = document.getElementById('clientPptxExportConfirmBtn');
+    if (!modalEl || !checkbox || !confirmBtn || !window.bootstrap || !window.bootstrap.Modal) {
+        // Fallback: if modal not available, keep old behavior.
+        exportSlidesToPptxClient();
+        return;
+    }
+
+    checkbox.checked = getClientPptxMergeNativeChartsPreference();
+
+    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+    confirmBtn.onclick = async () => {
+        const enabled = !!checkbox.checked;
+        setClientPptxMergeNativeChartsPreference(enabled);
+        modal.hide();
+        await exportSlidesToPptxClient({ mergeNativeCharts: enabled });
+    };
+
+    modal.show();
 }

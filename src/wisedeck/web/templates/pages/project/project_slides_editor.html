@@ -134,7 +134,7 @@
                             aria-labelledby="exportDropdownBtn">
                             <li>
                                 <a class="dropdown-item toolbar-dropdown-item" href="#"
-                                    onclick="exportSlidesToPptxClient(); return false;">
+                                    onclick="openClientPptxExportDialog(); return false;">
                                     <span class="toolbar-dropdown-item__icon">
                                         <i class="fas fa-desktop"></i>
                                     </span>
@@ -181,43 +181,19 @@
                                     </span>
                                     <span class="toolbar-dropdown-item__content">
                                         <span class="toolbar-dropdown-item__label">结构化导出（可编辑图表）</span>
-                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">需已生成含图表的大纲</span>
+                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">服务端组装会话：大纲图表 + slides_data；图表可走 python-pptx 可编辑路径（详见文档）</span>
                                     </span>
                                 </a>
                             </li>
                             <li>
                                 <a class="dropdown-item toolbar-dropdown-item" href="#"
-                                    onclick="exportToStructuredPPTX({ mode: 'render' }); return false;">
+                                    onclick="exportToStructuredPPTX({ mode: 'homomorphic_editable' }); return false;">
                                     <span class="toolbar-dropdown-item__icon">
                                         <i class="fas fa-wand-magic-sparkles"></i>
                                     </span>
                                     <span class="toolbar-dropdown-item__content">
                                         <span class="toolbar-dropdown-item__label">结构化导出（高质量布局）</span>
-                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">强制调用渲染服务</span>
-                                    </span>
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item toolbar-dropdown-item" href="#"
-                                    onclick="exportToStructuredPPTX({ mode: 'stable' }); return false;">
-                                    <span class="toolbar-dropdown-item__icon">
-                                        <i class="fas fa-chart-line"></i>
-                                    </span>
-                                    <span class="toolbar-dropdown-item__content">
-                                        <span class="toolbar-dropdown-item__label">结构化导出（稳定版：原生图表）</span>
-                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">高质量布局 + 图表可编辑（需渲染服务）</span>
-                                    </span>
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item toolbar-dropdown-item" href="#"
-                                    onclick="exportToStructuredPPTX({ mode: 'python' }); return false;">
-                                    <span class="toolbar-dropdown-item__icon">
-                                        <i class="fas fa-bolt"></i>
-                                    </span>
-                                    <span class="toolbar-dropdown-item__content">
-                                        <span class="toolbar-dropdown-item__label">结构化导出（快速/稳定）</span>
-                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">跳过渲染服务</span>
+                                        <span class="toolbar-dropdown-item__hint text-muted small d-block">同构 HTML（mode=homomorphic_editable）：服务端运行 dom-to-pptx 导出可编辑形状，并合并 python-pptx 原生可编辑图表（失败自动回退图片同构）</span>
                                     </span>
                                 </a>
                             </li>
@@ -850,6 +826,34 @@
                     <i class="fas fa-times"></i>
                     <span>取消导出</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client PPTX Export Options (Modal) -->
+    <div class="modal fade" id="clientPptxExportOptionsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">客户端导出选项</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" title="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="clientPptxMergeNativeChartsCheckbox">
+                        <label class="form-check-label" for="clientPptxMergeNativeChartsCheckbox">
+                            合并可编辑图表（服务端）
+                        </label>
+                    </div>
+                    <div class="text-muted small mt-2">
+                        勾选后：先用 dom-to-pptx 生成基准 PPTX，再上传到服务端按大纲 chart_config 写入原生图表。
+                        若合并失败，将自动回退下载基准 PPTX。
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="clientPptxExportConfirmBtn">开始导出</button>
+                </div>
             </div>
         </div>
     </div>
