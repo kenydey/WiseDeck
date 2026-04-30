@@ -282,6 +282,7 @@ async def create_default_global_template():
                 "template_name": "默认商务模板",
                 "description": "现代简约的商务PPT模板，适用于各种商务演示场景。采用深色背景和蓝色主色调，支持多种内容类型展示。",
                 "html_template": DEFAULT_TEMPLATE_HTML,
+                "svg_template": None,
                 "tags": ["默认", "商务", "现代", "简约", "深色"],
                 "is_default": True,
                 "is_active": True,

@@ -141,6 +141,15 @@ class DatabaseMigration:
             "down": self._migration_013_down,
         })
 
+        # Migration 014: Add svg_template for native SVG/DrawingML export
+        self.migrations.append({
+            "version": "014",
+            "name": "add_svg_template_to_global_master_templates",
+            "description": "Add optional svg_template column for ppt-master style native export",
+            "up": self._migration_014_up,
+            "down": self._migration_014_down,
+        })
+
     @staticmethod
     def _dialect_name(session: AsyncSession) -> str:
         try:
@@ -1408,6 +1417,66 @@ class DatabaseMigration:
         except Exception as e:
             await session.rollback()
             logger.error(f"Migration 013 rollback failed: {e}")
+            raise
+
+    async def _migration_014_up(self, session: AsyncSession):
+        """Migration 014: Add svg_template to global_master_templates."""
+        logger.info("Applying migration 014: Add svg_template to global_master_templates")
+        try:
+            if not await self._table_exists(session, "global_master_templates"):
+                logger.info("global_master_templates table not found; skipping migration 014")
+                return
+
+            if not await self._column_exists(session, "global_master_templates", "svg_template"):
+                dialect = self._dialect_name(session)
+                if dialect == "sqlite":
+                    await session.execute(
+                        text("ALTER TABLE global_master_templates ADD COLUMN svg_template TEXT")
+                    )
+                else:
+                    await session.execute(
+                        text(
+                            "ALTER TABLE global_master_templates "
+                            "ADD COLUMN IF NOT EXISTS svg_template TEXT"
+                        )
+                    )
+                logger.info("Added svg_template column to global_master_templates")
+            else:
+                logger.info("svg_template column already exists in global_master_templates")
+
+            await session.commit()
+            logger.info("Migration 014 completed successfully")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 014 failed: {e}")
+            raise
+
+    async def _migration_014_down(self, session: AsyncSession):
+        """Migration 014 rollback (best-effort)."""
+        logger.info("Rolling back migration 014: Remove svg_template from global_master_templates")
+        try:
+            if not await self._table_exists(session, "global_master_templates"):
+                return
+
+            if not await self._column_exists(session, "global_master_templates", "svg_template"):
+                await session.commit()
+                return
+
+            dialect = self._dialect_name(session)
+            if dialect == "sqlite":
+                # SQLite DROP COLUMN is not supported in many versions; skip.
+                logger.warning("SQLite DROP COLUMN not supported; skipping migration 014 down")
+                await session.commit()
+                return
+
+            await session.execute(
+                text("ALTER TABLE global_master_templates DROP COLUMN IF EXISTS svg_template")
+            )
+            await session.commit()
+            logger.info("Migration 014 rollback completed")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 014 rollback failed: {e}")
             raise
 
     async def _create_migration_table(self, session: AsyncSession):

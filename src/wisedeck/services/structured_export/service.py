@@ -20,6 +20,9 @@ from wisedeck.services.structured_export._presenton.pptx_presentation_creator im
     PptxPresentationCreator,
 )
 from wisedeck.services.structured_export.schemas import StructuredSlideDeckModel
+from wisedeck.svg_export import render_pptx_from_svg_templates
+from wisedeck.svg_export.engine import build_slide_placeholders_from_wisedeck_contract
+from wisedeck.svg_export.errors import SVGExportError
 
 logger = logging.getLogger(__name__)
 
@@ -483,6 +486,168 @@ async def export_structured_pptx_via_homomorphic_dom_to_pptx(
         deck=deck,
         chart_position_override_pt=override,
     )
+
+
+async def export_structured_pptx_via_svg_native(
+    deck: StructuredSlideDeckModel,
+    *,
+    svg_template: str,
+    canvas_format: str | None = None,
+    spec_lock: str | None = None,
+) -> bytes:
+    """
+    Native SVG/DrawingML export (ppt-master style):
+    - Fill placeholders into a per-slide SVG template
+    - Run svg_quality_checker + finalize_svg + svg_to_pptx (via wisedeck.svg_export)
+    - Return pptx bytes
+    """
+    if not isinstance(svg_template, str) or not svg_template.strip():
+        raise RuntimeError("SVG native export requires svg_template")
+
+    svg_xmls: list[str] = []
+    placeholders: list[dict[str, str]] = []
+    total = max(1, len(deck.slides))
+
+    for idx, slide in enumerate(deck.slides, start=1):
+        svg_xmls.append(svg_template)
+        # Best-effort: map structured slide into text placeholders.
+        page_title = str(slide.title or "")
+        # Join content points into a single text blob; template can decide how to wrap.
+        points = slide.content_points or []
+        if isinstance(points, list):
+            page_content = "\n".join(str(p) for p in points if p)
+        else:
+            page_content = str(points or "")
+
+        placeholders.append(
+            build_slide_placeholders_from_wisedeck_contract(
+                page_title=page_title,
+                page_content=page_content,
+                page_num=idx,
+                total_pages=total,
+            )
+        )
+
+    try:
+        base_pptx = render_pptx_from_svg_templates(
+            svg_xmls=svg_xmls,
+            slide_placeholders=placeholders,
+            spec_lock=spec_lock,
+            canvas_format=canvas_format,
+            native_shapes=True,
+            quiet=True,
+        )
+        # Reuse existing chart merge (append native charts by slide index).
+        raw = (os.environ.get("WISEDECK_HOMOMORPHIC_CHART_BOX_PT") or "").strip()
+        override = None
+        if raw:
+            try:
+                parts = [int(p.strip()) for p in raw.split(",") if p.strip()]
+                if len(parts) == 4:
+                    override = (parts[0], parts[1], parts[2], parts[3])
+            except Exception:
+                override = None
+        if override is None:
+            override = (520, 170, 420, 300)
+        merged = await merge_native_charts_into_pptx_bytes(
+            base_pptx,
+            deck=deck,
+            chart_position_override_pt=override,
+        )
+        return _merge_native_tables_into_pptx_bytes(merged, deck=deck)
+    except SVGExportError as e:
+        # Let callers decide fallback strategy.
+        raise RuntimeError(f"SVG native export failed: {e}") from e
+
+
+def _merge_native_tables_into_pptx_bytes(pptx_bytes: bytes, *, deck: StructuredSlideDeckModel) -> bytes:
+    """
+    MVP: merge outline table_config as native python-pptx tables.
+
+    Slides with `slide.table_config` (dict) will receive an editable table shape.
+    Placement can be overridden with `WISEDECK_NATIVE_TABLE_BOX_PT=left,top,width,height` (pt).
+    """
+    raw = (os.environ.get("WISEDECK_NATIVE_TABLE_BOX_PT") or "").strip()
+    box_pt = None
+    if raw:
+        try:
+            parts = [int(p.strip()) for p in raw.split(",") if p.strip()]
+            if len(parts) == 4:
+                box_pt = (parts[0], parts[1], parts[2], parts[3])
+        except Exception:
+            box_pt = None
+    if box_pt is None:
+        box_pt = (80, 140, 560, 420)
+
+    # 1 pt = 12700 EMU
+    def _pt_to_emu(v: int) -> int:
+        return int(v) * 12700
+
+    prs = Presentation(BytesIO(pptx_bytes))
+
+    for slide_idx, slide_model in enumerate(deck.slides):
+        cfg = getattr(slide_model, "table_config", None)
+        if not isinstance(cfg, dict) or not cfg:
+            continue
+        if slide_idx >= len(prs.slides):
+            break
+
+        headers = cfg.get("headers") or []
+        rows = cfg.get("rows") or []
+        caption = cfg.get("caption")
+
+        # Determine column count.
+        col_count = 0
+        if isinstance(headers, list):
+            col_count = max(col_count, len(headers))
+        body_rows = []
+        if isinstance(rows, list):
+            for r in rows:
+                if isinstance(r, list):
+                    body_rows.append(r)
+                    col_count = max(col_count, len(r))
+        if col_count <= 0:
+            continue
+
+        # Guardrail for MVP: cap rows to avoid unreadable exports.
+        body_rows = body_rows[:12]
+        row_count = (1 if headers else 0) + max(1, len(body_rows))
+
+        slide = prs.slides[slide_idx]
+        left = _pt_to_emu(box_pt[0])
+        top = _pt_to_emu(box_pt[1])
+        width = _pt_to_emu(box_pt[2])
+        height = _pt_to_emu(box_pt[3])
+
+        table_shape = slide.shapes.add_table(row_count, col_count, left, top, width, height)
+        table = table_shape.table
+
+        r0 = 0
+        if headers:
+            for c in range(col_count):
+                val = str(headers[c] or "") if c < len(headers) else ""
+                table.cell(0, c).text = val
+            r0 = 1
+
+        if body_rows:
+            for r_i, r in enumerate(body_rows):
+                for c in range(col_count):
+                    val = str(r[c] or "") if c < len(r) else ""
+                    table.cell(r0 + r_i, c).text = val
+        else:
+            for c in range(col_count):
+                table.cell(r0, c).text = ""
+
+        if isinstance(caption, str) and caption.strip():
+            try:
+                tb = slide.shapes.add_textbox(left, top - _pt_to_emu(18), width, _pt_to_emu(16))
+                tb.text_frame.text = caption.strip()
+            except Exception:
+                pass
+
+    out = BytesIO()
+    prs.save(out)
+    return out.getvalue()
 
 
 async def export_structured_pptx_auto(

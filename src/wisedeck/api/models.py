@@ -3,7 +3,7 @@ Pydantic models for API requests and responses
 """
 
 from typing import List, Optional, Dict, Any, Union, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import time
 import uuid
 
@@ -163,13 +163,14 @@ class ProjectListResponse(BaseModel):
 
 # Enhanced Slide Models
 class SlideContent(BaseModel):
-    type: Literal["title", "content", "image", "chart", "list", "thankyou", "agenda", "section", "conclusion"]
+    type: Literal["title", "content", "table", "image", "chart", "list", "thankyou", "agenda", "section", "conclusion"]
     title: str
     subtitle: Optional[str] = None
     content: Optional[str] = None
     bullet_points: Optional[List[str]] = None
     image_suggestions: Optional[List[str]] = None
     chart_data: Optional[Dict[str, Any]] = None
+    table_data: Optional[Dict[str, Any]] = None
     layout: str = "default"
     locked: bool = False
 
@@ -223,10 +224,19 @@ class GlobalMasterTemplateCreate(BaseModel):
     """Request model for creating a global master template"""
     template_name: str = Field(..., description="Template name (must be unique)")
     description: Optional[str] = Field("", description="Template description")
-    html_template: str = Field(..., description="HTML template content")
+    html_template: Optional[str] = Field(None, description="HTML template content")
+    svg_template: Optional[str] = Field(None, description="SVG template content (ppt-master style)")
     tags: Optional[List[str]] = Field([], description="Template tags for categorization")
     is_default: Optional[bool] = Field(False, description="Whether this is the default template")
     created_by: Optional[str] = Field("user", description="Creator identifier")
+
+    @model_validator(mode="after")
+    def _ensure_html_or_svg_present(self):
+        html_ok = isinstance(self.html_template, str) and self.html_template.strip()
+        svg_ok = isinstance(self.svg_template, str) and self.svg_template.strip()
+        if not html_ok and not svg_ok:
+            raise ValueError("Either html_template or svg_template must be provided")
+        return self
 
 
 class GlobalMasterTemplateUpdate(BaseModel):
@@ -234,6 +244,7 @@ class GlobalMasterTemplateUpdate(BaseModel):
     template_name: Optional[str] = Field(None, description="Template name (must be unique)")
     description: Optional[str] = Field(None, description="Template description")
     html_template: Optional[str] = Field(None, description="HTML template content")
+    svg_template: Optional[str] = Field(None, description="SVG template content (ppt-master style)")
     tags: Optional[List[str]] = Field(None, description="Template tags for categorization")
     is_default: Optional[bool] = Field(None, description="Whether this is the default template")
     is_active: Optional[bool] = Field(None, description="Whether the template is active")
@@ -253,11 +264,13 @@ class GlobalMasterTemplateResponse(BaseModel):
     created_by: str
     created_at: float
     updated_at: float
+    svg_template: Optional[str] = None
 
 
 class GlobalMasterTemplateDetailResponse(GlobalMasterTemplateResponse):
     """Detailed response model for global master template"""
     html_template: str
+    svg_template: Optional[str] = None
     style_config: Optional[Dict[str, Any]] = None
 
 
@@ -284,6 +297,10 @@ class GlobalMasterTemplateGenerateRequest(BaseModel):
     description: Optional[str] = Field("", description="Template description")
     tags: Optional[List[str]] = Field([], description="Template tags")
     generation_mode: str = Field("text_only", description="Generation mode: text_only, reference_style, exact_replica, pptx_extract")
+    output_format: Optional[Literal["html", "svg", "dual"]] = Field(
+        "html",
+        description="Template output format for AI generation. Currently 'html' is supported in WiseDeck.",
+    )
     reference_image: Optional[ReferenceImageData] = Field(None, description="Reference image for multimodal generation")
     reference_pptx: Optional[ReferencePptxData] = Field(None, description="Reference PPTX for template extraction")
 

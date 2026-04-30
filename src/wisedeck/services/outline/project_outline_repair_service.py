@@ -48,6 +48,34 @@ class ProjectOutlineRepairService:
     def __getattr__(self, name: str):
         return getattr(self._service, name)
 
+    @staticmethod
+    def _validate_table_config(table_config: Any, slide_index: int) -> List[str]:
+        errors: List[str] = []
+        if table_config is None:
+            return errors
+        if not isinstance(table_config, dict):
+            return [f'第{slide_index}页：table_config必须是字典格式']
+
+        headers = table_config.get('headers')
+        rows = table_config.get('rows')
+        if not isinstance(headers, list) or not headers or not all(isinstance(h, str) and h.strip() for h in headers):
+            errors.append(f'第{slide_index}页：table_config.headers必须是非空字符串列表')
+            return errors
+        if not isinstance(rows, list) or not rows:
+            errors.append(f'第{slide_index}页：table_config.rows必须是非空二维数组')
+            return errors
+
+        expected_len = len(headers)
+        for row_index, row in enumerate(rows):
+            if not isinstance(row, list):
+                errors.append(f'第{slide_index}页：table_config.rows[{row_index}]必须是数组')
+                continue
+            if len(row) != expected_len:
+                errors.append(
+                    f'第{slide_index}页：table_config.rows[{row_index}]列数应为{expected_len}，实际为{len(row)}'
+                )
+        return errors
+
     async def _validate_and_repair_outline_json(self, outline_data: Dict[str, Any], confirmed_requirements: Dict[str, Any]) -> Dict[str, Any]:
         """验证大纲JSON数据的正确性，如果有错误则调用AI修复，最多修复10次"""
         try:
@@ -158,10 +186,14 @@ class ProjectOutlineRepairService:
                             errors.append(f'第{slide_index}页：content_points[{j}]必须是非空字符串')
             if 'slide_type' in slide:
                 slide_type = slide['slide_type']
-                valid_types = ['title', 'content', 'agenda', 'thankyou', 'conclusion']
+                valid_types = ['title', 'content', 'table', 'agenda', 'thankyou', 'conclusion']
                 if slide_type not in valid_types:
                     valid_types_str = ', '.join(valid_types)
                     errors.append(f'第{slide_index}页：slide_type必须是{valid_types_str}中的一个，实际为{slide_type}')
+            table_errors = self._validate_table_config(slide.get('table_config'), slide_index)
+            errors.extend(table_errors)
+            if slide.get('slide_type') == 'table' and table_errors:
+                errors.append(f'第{slide_index}页：table类型页面必须提供合法table_config')
             return errors
         except Exception as e:
             errors.append(f'第{slide_index}页验证出错: {str(e)}')

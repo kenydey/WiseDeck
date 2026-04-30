@@ -456,6 +456,43 @@ class PPTService:
             white-space: pre-line;
         }}
 
+        .slide.table-slide .table-caption {{
+            margin-bottom: 12px;
+            color: #5d6b80;
+            font-size: 1em;
+        }}
+
+        .slide.table-slide .table-wrapper {{
+            margin-top: 14px;
+            max-height: 480px;
+            overflow: hidden;
+        }}
+
+        .slide.table-slide .content-table {{
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            background: #fff;
+            font-size: 0.95em;
+        }}
+
+        .slide.table-slide .content-table th {{
+            text-align: left;
+            padding: 10px 12px;
+            border: 1px solid #d9e2f0;
+            background: #f3f6fb;
+            color: #2f3d52;
+            font-weight: 600;
+        }}
+
+        .slide.table-slide .content-table td {{
+            padding: 9px 12px;
+            border: 1px solid #e1e8f5;
+            color: #2f3d52;
+            vertical-align: top;
+            word-break: break-word;
+        }}
+
         .slide.title-slide {{
             text-align: center;
             display: flex;
@@ -625,6 +662,29 @@ class PPTService:
             <div class="slide thankyou-slide" id="slide-{slide_id}">
                 <h1>{title}</h1>
                 {f'<h3>{subtitle}</h3>' if subtitle else ''}
+            </div>
+            """
+        elif slide_type == "table":
+            table_config = slide.get("table_config") if isinstance(slide.get("table_config"), dict) else {}
+            headers = table_config.get("headers") or []
+            rows = table_config.get("rows") or []
+            caption = str(table_config.get("caption") or "").strip()
+            header_html = "".join([f"<th>{header}</th>" for header in headers])
+            row_html = ""
+            for row in rows[:12]:
+                row_html += "<tr>" + "".join([f"<td>{cell}</td>" for cell in row]) + "</tr>"
+            caption_html = f'<div class="table-caption">{caption}</div>' if caption else ""
+            return f"""
+            <div class="slide content-slide table-slide" id="slide-{slide_id}">
+                <h2>{title}</h2>
+                {f'<h3>{subtitle}</h3>' if subtitle else ''}
+                {caption_html}
+                <div class="table-wrapper">
+                    <table class="content-table">
+                        <thead><tr>{header_html}</tr></thead>
+                        <tbody>{row_html}</tbody>
+                    </table>
+                </div>
             </div>
             """
 

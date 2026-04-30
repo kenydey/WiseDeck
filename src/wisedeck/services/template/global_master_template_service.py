@@ -129,10 +129,15 @@ class GlobalMasterTemplateService:
         try:
             template_settings = ai_config.get_model_config_for_role("template", provider_override=self.provider_name)
             # Validate required fields
-            required_fields = ['template_name', 'html_template']
-            for field in required_fields:
-                if not template_data.get(field):
-                    raise ValueError(f"Missing required field: {field}")
+            if not template_data.get("template_name"):
+                raise ValueError("Missing required field: template_name")
+
+            html_template = template_data.get("html_template")
+            svg_template = template_data.get("svg_template")
+            has_html = isinstance(html_template, str) and html_template.strip()
+            has_svg = isinstance(svg_template, str) and svg_template.strip()
+            if not has_html and not has_svg:
+                raise ValueError("Either html_template or svg_template must be provided")
 
             # Check if template name already exists
             async with AsyncSessionLocal() as session:
@@ -146,11 +151,21 @@ class GlobalMasterTemplateService:
 
             # Generate preview image if not provided
             if not template_data.get('preview_image'):
-                template_data['preview_image'] = await self._generate_preview_image(template_data['html_template'])
+                # Preview is best-effort; current implementation is placeholder SVG regardless of HTML/SVG input.
+                template_data['preview_image'] = await self._generate_preview_image(
+                    template_data.get("html_template") or template_data.get("svg_template") or ""
+                )
 
             # Extract style config if not provided
             if not template_data.get('style_config'):
-                template_data['style_config'] = self._extract_style_config(template_data['html_template'])
+                if has_html:
+                    template_data['style_config'] = self._extract_style_config(template_data['html_template'])
+                else:
+                    template_data['style_config'] = {
+                        "dimensions": "1280x720",
+                        "aspect_ratio": "16:9",
+                        "framework": "SVG + DrawingML",
+                    }
 
             # Set default values
             template_data.setdefault('description', '')
@@ -304,6 +319,7 @@ class GlobalMasterTemplateService:
                     "template_name": template.template_name,
                     "description": template.description,
                     "html_template": template.html_template,
+                    "svg_template": getattr(template, "svg_template", None),
                     "preview_image": template.preview_image,
                     "style_config": template.style_config,
                     "tags": template.tags,
@@ -334,12 +350,20 @@ class GlobalMasterTemplateService:
                         raise ValueError(f"Template name '{update_data['template_name']}' already exists")
 
             # Update preview image if HTML template is updated
-            if 'html_template' in update_data and 'preview_image' not in update_data:
+            if ('html_template' in update_data and update_data.get('html_template') and 'preview_image' not in update_data):
                 update_data['preview_image'] = await self._generate_preview_image(update_data['html_template'])
+            elif ('svg_template' in update_data and update_data.get('svg_template') and 'preview_image' not in update_data):
+                update_data['preview_image'] = await self._generate_preview_image(update_data.get('svg_template') or "")
 
             # Update style config if HTML template is updated
-            if 'html_template' in update_data and 'style_config' not in update_data:
+            if ('html_template' in update_data and update_data.get('html_template') and 'style_config' not in update_data):
                 update_data['style_config'] = self._extract_style_config(update_data['html_template'])
+            elif ('svg_template' in update_data and update_data.get('svg_template') and 'style_config' not in update_data):
+                update_data['style_config'] = {
+                    "dimensions": "1280x720",
+                    "aspect_ratio": "16:9",
+                    "framework": "SVG + DrawingML",
+                }
 
             async with AsyncSessionLocal() as session:
                 db_service = DatabaseService(session)
@@ -425,6 +449,7 @@ class GlobalMasterTemplateService:
                     "template_name": template.template_name,
                     "description": template.description,
                     "html_template": template.html_template,
+                    "svg_template": getattr(template, "svg_template", None),
                     "preview_image": template.preview_image,
                     "style_config": template.style_config,
                     "tags": template.tags,
@@ -468,12 +493,20 @@ class GlobalMasterTemplateService:
         """组装模板生成提示词。"""
         return TemplatePrompts.build_template_generation_prompt(user_prompt, mode_instruction=mode_instruction)
 
+    def _build_svg_template_generation_prompt(self, user_prompt: str, mode_instruction: str = "") -> str:
+        """组装 SVG 母版生成提示词。"""
+        return TemplatePrompts.build_svg_template_generation_prompt(user_prompt, mode_instruction=mode_instruction)
+
     async def generate_template_with_ai(self, prompt: str, template_name: str, description: str = "",
                                       tags: List[str] = None, generation_mode: str = "text_only",
                                       reference_image: dict = None, reference_pptx: dict = None,
-                                      prompt_is_ready: bool = False):
+                                      prompt_is_ready: bool = False,
+                                      output_format: str = "html"):
         """Generate a new template using AI (non-streaming) - does not save to database"""
         import json
+
+        wants_svg = str(output_format or "").strip().lower() in ("svg", "svg_output", "dual")
+        build_fn = self._build_svg_template_generation_prompt if wants_svg else self._build_template_generation_prompt
 
         if generation_mode == "pptx_extract":
             if not reference_pptx:
@@ -485,10 +518,14 @@ class GlobalMasterTemplateService:
 
             prompt = (
                 f"{prompt}\n\n"
-                "请基于以下从上传PPTX中提取的模板信息生成HTML母版模板。"
-                "重点提取视觉风格、版式结构、字体与配色规律，不要照搬原始文案内容。\n\n"
-                "如果从多页中推断出稳定的母版元素（如页眉、页脚、页码区域），请在生成结果中保留它们的相对位置和风格。\n\n"
-                f"{extracted_summary}"
+                + (
+                    "请基于以下从上传PPTX中提取的模板信息生成 SVG 母版模板。"
+                    if wants_svg
+                    else "请基于以下从上传PPTX中提取的模板信息生成HTML母版模板。"
+                )
+                + "重点提取视觉风格、版式结构、字体与配色规律，不要照搬原始文案内容。\n\n"
+                + "如果从多页中推断出稳定的母版元素（如页眉、页脚、页码区域），请在生成结果中保留它们的相对位置和风格。\n\n"
+                + f"{extracted_summary}"
             )
 
             if extracted_image:
@@ -500,7 +537,7 @@ class GlobalMasterTemplateService:
         # 构建AI提示词
         if generation_mode == "text_only" or not reference_image:
             # 纯文本生成模式
-            ai_prompt = prompt if prompt_is_ready else self._build_template_generation_prompt(prompt)
+            ai_prompt = prompt if prompt_is_ready else build_fn(prompt)
             messages = [{"role": "user", "content": ai_prompt}]
         else:
             # 多模态生成模式
@@ -513,7 +550,7 @@ class GlobalMasterTemplateService:
 请尽量贴近上传图片的风格和版式特征，同时保留可复用的标题、内容和页脚结构。
 """
 
-            ai_prompt = prompt if prompt_is_ready else self._build_template_generation_prompt(
+            ai_prompt = prompt if prompt_is_ready else build_fn(
                 prompt,
                 mode_instruction=mode_instruction,
             )
@@ -584,15 +621,25 @@ class GlobalMasterTemplateService:
             if not full_response or not full_response.strip():
                 raise ValueError("AI服务返回空响应")
 
-            html_template = self._extract_html_from_response(full_response)
-            if not html_template or not html_template.strip():
-                raise ValueError("AI响应中未找到有效的HTML模板")
+            if wants_svg:
+                svg_template = self._extract_svg_from_response(full_response)
+                if not svg_template or not svg_template.strip():
+                    raise ValueError("AI响应中未找到有效的SVG模板")
+                self._validate_svg_template_basic(svg_template)
 
-            logger.info(f"Generated HTML template length: {len(html_template)}")
+                html_template = self._wrap_svg_into_html_document(svg_template, template_name=template_name)
+                logger.info(f"Generated SVG template length: {len(svg_template)}")
+            else:
+                html_template = self._extract_html_from_response(full_response)
+                if not html_template or not html_template.strip():
+                    raise ValueError("AI响应中未找到有效的HTML模板")
+                svg_template = None
+                logger.info(f"Generated HTML template length: {len(html_template)}")
 
             # 返回结果（不保存到数据库）
             return {
                 'html_template': html_template,
+                'svg_template': svg_template,
                 'template_name': template_name,
                 'description': description or f"AI生成的模板：{prompt[:100]}",
                 'tags': tags or ['AI生成'],
@@ -605,15 +652,19 @@ class GlobalMasterTemplateService:
 
     async def generate_template_with_ai_stream(self, prompt: str, template_name: str, description: str = "",
                                              tags: List[str] = None, generation_mode: str = "text_only",
-                                             reference_image: dict = None, prompt_is_ready: bool = False):
+                                             reference_image: dict = None, prompt_is_ready: bool = False,
+                                             output_format: str = "html"):
         """Generate a new template using AI with streaming response"""
         import asyncio
         import json
 
+        wants_svg = str(output_format or "").strip().lower() in ("svg", "svg_output", "dual")
+        build_fn = self._build_svg_template_generation_prompt if wants_svg else self._build_template_generation_prompt
+
         # 构建AI提示词
         if generation_mode == "text_only" or not reference_image:
             # 纯文本生成模式
-            ai_prompt = prompt if prompt_is_ready else self._build_template_generation_prompt(prompt)
+            ai_prompt = prompt if prompt_is_ready else build_fn(prompt)
         else:
             # 多模态生成模式
             if generation_mode == "reference_style":
@@ -625,7 +676,7 @@ class GlobalMasterTemplateService:
 请尽量贴近参考图片的风格和版式特征，同时保留可复用的标题、内容和页脚结构。
 """
 
-            ai_prompt = prompt if prompt_is_ready else self._build_template_generation_prompt(
+            ai_prompt = prompt if prompt_is_ready else build_fn(
                 prompt,
                 mode_instruction=mode_instruction,
             )
@@ -710,10 +761,17 @@ class GlobalMasterTemplateService:
                 await asyncio.sleep(0.5)
 
                 # 处理AI响应
-                html_template = self._extract_html_from_response(full_response)
-
-                if not html_template or not html_template.strip():
-                    raise ValueError("Generated HTML template is empty")
+                if wants_svg:
+                    svg_template = self._extract_svg_from_response(full_response)
+                    if not svg_template or not svg_template.strip():
+                        raise ValueError("AI响应中未找到有效的SVG模板")
+                    self._validate_svg_template_basic(svg_template)
+                    html_template = self._wrap_svg_into_html_document(svg_template, template_name=template_name)
+                else:
+                    svg_template = None
+                    html_template = self._extract_html_from_response(full_response)
+                    if not html_template or not html_template.strip():
+                        raise ValueError("Generated HTML template is empty")
 
                 yield {'type': 'thinking', 'content': '✅ 模板生成完成，准备预览...\n'}
                 await asyncio.sleep(0.3)
@@ -723,6 +781,7 @@ class GlobalMasterTemplateService:
                     'type': 'complete',
                     'message': '模板生成完成！',
                     'html_template': html_template,
+                    'svg_template': svg_template,
                     'template_name': template_name,
                     'description': description or f"AI生成的模板：{prompt[:100]}",
                     'tags': tags or ['AI生成'],
@@ -1390,6 +1449,133 @@ class GlobalMasterTemplateService:
         # Return original content as last resort
         logger.warning(f"Could not extract HTML from response, returning original content. Preview: {response_content[:200]}")
         return response_content.strip()
+
+    def _extract_svg_from_response(self, response_content: str) -> str:
+        """Extract SVG code from AI response with improved extraction"""
+        import re
+
+        logger.info(f"Extracting SVG from response. Content length: {len(response_content)}")
+
+        # Most common: ```svg ... ```
+        svg_match = re.search(r'```svg\s*(.*?)\s*```', response_content, re.DOTALL | re.IGNORECASE)
+        if svg_match:
+            extracted = svg_match.group(1).strip()
+            logger.info(f"Extracted SVG from code block. Length: {len(extracted)}")
+            return extracted
+
+        # Generic: any code block containing an <svg> root
+        generic_match = re.search(
+            r'```[a-zA-Z]*\s*(<svg\b.*?</svg>)\s*```',
+            response_content,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if generic_match:
+            extracted = generic_match.group(1).strip()
+            logger.info(f"Extracted SVG from generic code block. Length: {len(extracted)}")
+            return extracted
+
+        # Direct: best-effort locate first <svg ... </svg>
+        direct_match = re.search(r'(<svg\b.*?</svg>)', response_content, re.DOTALL | re.IGNORECASE)
+        if direct_match:
+            extracted = direct_match.group(1).strip()
+            logger.info(f"Extracted SVG from direct match. Length: {len(extracted)}")
+            return extracted
+
+        logger.warning(f"Could not extract SVG from response, returning original content. Preview: {response_content[:200]}")
+        return response_content.strip()
+
+    def _validate_svg_template_basic(self, svg_template: str) -> None:
+        """
+        Basic SVG validation for AI outputs:
+        - well-formed XML
+        - viewBox exists and looks like 0 0 <w> <h>
+        - placeholder strictness (only allowed ppt-master placeholders)
+        - partial forbidden-syntax checks (quality gate is done later by svg_quality_checker)
+        """
+        import re
+        from xml.etree import ElementTree as ET
+
+        if not svg_template or not isinstance(svg_template, str) or not svg_template.strip():
+            raise ValueError("SVG validation failed: content is empty")
+
+        content = svg_template.strip()
+
+        # 0) well-formed XML
+        try:
+            ET.fromstring(content)
+        except Exception as e:
+            raise ValueError(f"SVG validation failed: not well-formed XML: {e}") from e
+
+        # 1) viewBox check
+        viewbox_match = re.search(r'viewBox\s*=\s*["\']\s*0\s+0\s+(\d+)\s+(\d+)\s*["\']', content, re.IGNORECASE)
+        if not viewbox_match:
+            raise ValueError("SVG validation failed: missing/invalid viewBox (expected viewBox=\"0 0 <w> <h>\")")
+
+        # 2) placeholder strictness
+        allowed_exact = {
+            "TITLE", "SUBTITLE", "DATE", "AUTHOR", "AUTHOR_EN",
+            "CHAPTER_NUM", "CHAPTER_TITLE", "CHAPTER_TITLE_EN",
+            "PAGE_TITLE", "CONTENT_AREA", "PAGE_NUM", "SOURCE",
+            "THANK_YOU", "ENDING_SUBTITLE", "CLOSING_MESSAGE", "CONTACT_INFO",
+        }
+
+        raw_tokens = re.findall(r'\{\{\s*[^}]+\}\}', content)
+        if not raw_tokens:
+            raise ValueError("SVG validation failed: no {{...}} placeholders found")
+
+        def _is_allowed_placeholder(token: str) -> bool:
+            t = token.strip().upper()
+            if t in allowed_exact:
+                return True
+            if re.match(r'^TOC_ITEM_\d+(?:_(?:TITLE|DESC))?$', t):
+                return True
+            return False
+
+        # Ensure there are no placeholders outside the allowed set
+        for raw in raw_tokens:
+            inner = re.sub(r'^\{\{\s*', '', raw)
+            inner = re.sub(r'\s*\}\}$', '', inner).strip()
+            # Reject unexpected casing/format early (placeholder spec uses uppercase identifiers)
+            if inner != inner.upper():
+                raise ValueError(f"SVG validation failed: placeholder must be uppercase, got: {raw}")
+            if not _is_allowed_placeholder(inner):
+                raise ValueError(f"SVG validation failed: unsupported placeholder: {raw}")
+
+        # 3) partial forbidden syntax checks (match ppt-master svg_quality_checker blocklist)
+        forbidden_patterns = [
+            r'<\s*style\b',
+            r'\bclass\s*=',
+            r'<\s*foreignobject\b',
+            r'<\s*mask\b',
+            r'<\s*iframe\b',
+            r'<\s*script\b',
+            r'<\s*textpath\b',
+            r'<\s*animate\b',
+            r'<\s*set\b',
+            r'rgba\s*\(',
+            r'<\s*g[^>]*\sopacity\s*=',
+            r'<\s*image[^>]*\sopacity\s*=',
+            r'on\w+\s*=',  # onclick/onload...
+        ]
+        for pat in forbidden_patterns:
+            if re.search(pat, content, flags=re.IGNORECASE):
+                raise ValueError(f"SVG validation failed: forbidden syntax detected: pattern={pat}")
+
+    def _wrap_svg_into_html_document(self, svg_template: str, template_name: str = "SVG Template") -> str:
+        """Wrap raw SVG into a minimal HTML document for WiseDeck preview/saving."""
+        # Note: This wrapper is only to satisfy WiseDeck's existing html preview pipeline.
+        # Native SVG export later should use svg_template directly.
+        safe_title = (template_name or "SVG Template").replace("<", "").replace(">", "")
+        return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{safe_title}</title>
+</head>
+<body style="margin:0; padding:0; width:1280px; height:720px; overflow:hidden; background:#ffffff;">
+{svg_template}
+</body>
+</html>"""
 
     def _validate_html_template(self, html_content: str) -> bool:
         """Validate HTML template with improved error reporting"""

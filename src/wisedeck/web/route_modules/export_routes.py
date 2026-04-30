@@ -92,12 +92,12 @@ async def export_project_pdf(
         )
 
         logging.info("Generating PDF with Pyppeteer")
-        success = await _generate_pdf_with_pyppeteer(project, temp_pdf_path, individual)
+        success, pdf_error = await _generate_pdf_with_pyppeteer(project, temp_pdf_path, individual)
 
         if not success:
             # Clean up temp file and raise error
             await run_blocking_io(lambda: os.unlink(temp_pdf_path) if os.path.exists(temp_pdf_path) else None)
-            raise HTTPException(status_code=500, detail="PDF generation failed")
+            raise HTTPException(status_code=500, detail=f"PDF generation failed: {pdf_error or 'unknown error'}")
 
         # Return PDF file
         logging.info("PDF generated successfully using Pyppeteer")
@@ -201,6 +201,7 @@ def _project_to_structured_deck(project, outline: dict):
                 slide_type=str(merged.get("slide_type") or merged.get("type") or "content"),
                 content_points=[str(p) for p in points],
                 chart_config=chart_model,
+                table_config=(merged.get("table_config") if isinstance(merged.get("table_config"), dict) else None),
                 presenton_layout_group=lg_hint,
                 presenton_layout=lay_hint,
             )
@@ -236,6 +237,7 @@ async def export_project_structured_pptx(
         export_structured_pptx_auto,
         export_structured_pptx_via_homomorphic_html,
         export_structured_pptx_via_homomorphic_dom_to_pptx,
+        export_structured_pptx_via_svg_native,
     )
 
     try:
@@ -323,6 +325,53 @@ async def export_project_structured_pptx(
                     export_base_url=export_base_url,
                 )
                 export_method = "WiseDeck-Structured-Homomorphic-Editable-Fallback-Images"
+        elif m == "svg_native":
+            # Native editable pipeline via SVG->DrawingML conversion (ppt-master style).
+            from wisedeck.services.template.global_master_template_service import (
+                GlobalMasterTemplateService,
+            )
+
+            tmpl_service = GlobalMasterTemplateService(user_id=user.id)
+            meta = project.project_metadata if isinstance(project.project_metadata, dict) else {}
+            selected_id = meta.get("selected_global_template_id")
+            try:
+                selected_id_int = int(selected_id) if selected_id is not None else None
+            except (TypeError, ValueError):
+                selected_id_int = None
+
+            template = None
+            if selected_id_int:
+                template = await tmpl_service.get_template_by_id(selected_id_int)
+            if not template:
+                template = await tmpl_service.get_default_template()
+
+            svg_template = (template or {}).get("svg_template") if isinstance(template, dict) else None
+            if not isinstance(svg_template, str) or not svg_template.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="SVG native export requires a selected global template with svg_template",
+                )
+
+            try:
+                pptx_bytes = await export_structured_pptx_via_svg_native(
+                    deck,
+                    svg_template=svg_template,
+                    canvas_format=None,
+                    spec_lock=None,
+                )
+                export_method = "WiseDeck-Structured-SVG-Native"
+            except Exception as svg_exc:
+                logging.getLogger(__name__).warning(
+                    "svg_native export failed, falling back to homomorphic_editable: %s",
+                    svg_exc,
+                )
+                export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
+                pptx_bytes = await export_structured_pptx_via_homomorphic_dom_to_pptx(
+                    deck,
+                    project_id=project_id,
+                    export_base_url=export_base_url,
+                )
+                export_method = "WiseDeck-Structured-SVG-Native-Fallback-DOM"
         elif m == "python":
             pptx_bytes = await build_pptx_bytes_from_deck(deck)
             export_method = "WiseDeck-Structured-Python"
@@ -330,7 +379,7 @@ async def export_project_structured_pptx(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Invalid mode; expected auto|homomorphic|homomorphic_editable|python. "
+                    "Invalid mode; expected auto|homomorphic|homomorphic_editable|svg_native|python. "
                     "Legacy modes render|stable are accepted as aliases for homomorphic_editable."
                 ),
             )
@@ -583,7 +632,7 @@ async def export_project_pdf_async(
                 
                 logging.info(f"Starting background PDF generation for {total_slides} slides")
                 
-                success = await _generate_pdf_with_pyppeteer(project, temp_pdf_path, individual=False)
+                success, pdf_error = await _generate_pdf_with_pyppeteer(project, temp_pdf_path, individual=False)
                 
                 if success and os.path.exists(temp_pdf_path):
                     return {
@@ -601,7 +650,7 @@ async def export_project_pdf_async(
                         pass
                     return {
                         "success": False,
-                        "error": "PDF generation failed"
+                        "error": f"PDF generation failed: {pdf_error or 'unknown error'}"
                     }
                     
             except Exception as e:
@@ -747,7 +796,7 @@ async def export_project_pptx(
                 
                 # Step 1: 生成 PDF
                 logging.info(f"Step 1: Generating PDF for {total_slides} slides")
-                pdf_success = await _generate_pdf_with_pyppeteer(project, temp_pdf_path, individual=False)
+                pdf_success, pdf_error = await _generate_pdf_with_pyppeteer(project, temp_pdf_path, individual=False)
                 
                 if not pdf_success:
                     # 清理临时文件
@@ -758,7 +807,7 @@ async def export_project_pptx(
                         pass
                     return {
                         "success": False,
-                        "error": "PDF generation failed"
+                        "error": f"PDF generation failed: {pdf_error or 'unknown error'}"
                     }
                 
                 logging.info("Step 1 completed: PDF generated successfully")
@@ -927,6 +976,8 @@ async def export_project_pptx_from_images(
         async def html_to_pptx_task():
             """使用Playwright截图并生成PPTX"""
             screenshot_paths = []
+            successful_slide_indexes: list[int] = []
+            current_stage = "prepare"
             try:
                 logging.info(f"Starting screenshot-based PPTX export for {len(slides)} slides")
                 total_slides = len(slides)
@@ -945,6 +996,7 @@ async def export_project_pptx_from_images(
                         logging.debug(f"Failed to update screenshot export progress: {progress_error}")
 
                 # 第1步：获取演讲稿数据
+                current_stage = "load_scripts"
                 update_export_progress(5, "正在加载图片导出任务...")
                 speech_scripts = {}
                 try:
@@ -961,6 +1013,7 @@ async def export_project_pptx_from_images(
                     # 继续执行，即使没有演讲稿也可以生成PPTX
 
                 # 第2步：为每张幻灯片创建临时HTML文件
+                current_stage = "prepare_html"
                 update_export_progress(12, "正在准备幻灯片HTML文件...")
                 html_files = []
                 for i, slide in enumerate(slides):
@@ -975,38 +1028,79 @@ async def export_project_pptx_from_images(
                     prep_progress = 12 + ((i + 1) / max(total_slides, 1)) * 13
                     update_export_progress(prep_progress, f"正在准备第 {i + 1}/{total_slides} 张幻灯片...")
 
-                # 第3步：使用Playwright对每张幻灯片进行截图
+                # 第3步：使用线程化 Playwright 对每张幻灯片进行截图（与结构化导出同链路）
+                current_stage = "screenshot"
                 update_export_progress(25, "正在渲染幻灯片图片...")
-                for i, html_file in enumerate(html_files):
-                    screenshot_path = os.path.join(temp_dir, f"slide_{i}.png")
+                png_files = [os.path.join(temp_dir, f"slide_{i}.png") for i in range(len(html_files))]
+                ok_list: list[bool] | None = None
+                batch_error: str | None = None
+                try:
+                    from ...services.structured_export.service import screenshot_html_files_to_png_via_playwright
 
-                    # 使用PDF converter的截图功能
-                    success = await pdf_converter.screenshot_html(
-                        html_file,
-                        screenshot_path,
-                        width=1280,
-                        height=720,
-                        optimize_for_static=True,
-                        stability_checks=1,
-                        stability_interval=0.2,
+                    ok_list = await screenshot_html_files_to_png_via_playwright(
+                        html_files=html_files,
+                        png_files=png_files,
                     )
+                except Exception as batch_exc:
+                    # 可选兜底：若批量截图异常，回退到逐页截图，避免整批失败。
+                    batch_error = str(batch_exc)
+                    logging.warning(f"Batch screenshot pipeline failed, fallback to per-slide screenshot: {batch_exc}")
+                    ok_list = []
+                    for i, html_file in enumerate(html_files):
+                        screenshot_path = png_files[i]
+                        success = await pdf_converter.screenshot_html(
+                            html_file,
+                            screenshot_path,
+                            width=1280,
+                            height=720,
+                            optimize_for_static=True,
+                            stability_checks=1,
+                            stability_interval=0.2,
+                        )
+                        ok_list.append(bool(success))
+                        screenshot_progress = 25 + ((i + 1) / max(len(html_files), 1)) * 55
+                        update_export_progress(
+                            screenshot_progress,
+                            f"正在渲染第 {i + 1}/{len(html_files)} 张幻灯片图片..."
+                        )
 
-                    if success:
-                        screenshot_paths.append(screenshot_path)
-                        logging.info(f"Screenshot {i+1}/{len(html_files)} completed")
-                    else:
-                        logging.warning(f"Screenshot {i+1} failed, skipping")
-
+                failed_slide_indexes: list[int] = []
+                for i, ok in enumerate(ok_list or []):
                     screenshot_progress = 25 + ((i + 1) / max(len(html_files), 1)) * 55
                     update_export_progress(
                         screenshot_progress,
                         f"正在渲染第 {i + 1}/{len(html_files)} 张幻灯片图片..."
                     )
+                    if ok:
+                        screenshot_paths.append(png_files[i])
+                        successful_slide_indexes.append(i)
+                        logging.info(f"Screenshot {i+1}/{len(html_files)} completed")
+                    else:
+                        failed_slide_indexes.append(i)
+                        logging.warning(f"Screenshot {i+1} failed, skipping")
+
+                try:
+                    task = task_manager.tasks.get(task_id)
+                    if task is not None:
+                        task.metadata["failed_slide_indexes"] = failed_slide_indexes
+                        task.metadata["successful_slide_count"] = len(screenshot_paths)
+                        task.metadata["total_slide_count"] = len(html_files)
+                        if batch_error:
+                            task.metadata["screenshot_batch_error"] = batch_error
+                except Exception as meta_error:
+                    logging.debug(f"Failed to update screenshot export metadata: {meta_error}")
 
                 if len(screenshot_paths) == 0:
-                    raise Exception("No screenshots were generated")
+                    fail_reason = (
+                        f"图片导出在截图阶段失败（0/{len(html_files)} 成功）。"
+                        f"failed_slide_indexes={failed_slide_indexes}"
+                    )
+                    if batch_error:
+                        fail_reason += f"; batch_error={batch_error}"
+                    raise RuntimeError(fail_reason)
 
                 # 第4步：将截图转换为PPTX
+                current_stage = "assemble_pptx"
                 logging.info("Creating PPTX from screenshots...")
                 update_export_progress(82, "正在组装PPTX文件...")
                 prs = Presentation()
@@ -1016,6 +1110,7 @@ async def export_project_pptx_from_images(
                 prs.slide_height = Inches(5.625)
 
                 for i, screenshot_path in enumerate(screenshot_paths):
+                    source_slide_index = successful_slide_indexes[i]
                     # 添加空白幻灯片
                     blank_slide_layout = prs.slide_layouts[6]
                     slide = prs.slides.add_slide(blank_slide_layout)
@@ -1029,11 +1124,11 @@ async def export_project_pptx_from_images(
                     slide.shapes.add_picture(screenshot_path, left, top, width=width, height=height)
 
                     # 如果该幻灯片有演讲稿，添加到备注中
-                    if i in speech_scripts:
+                    if source_slide_index in speech_scripts:
                         notes_slide = slide.notes_slide
                         text_frame = notes_slide.notes_text_frame
-                        text_frame.text = speech_scripts[i]
-                        logging.info(f"Added speech script to slide {i+1} notes")
+                        text_frame.text = speech_scripts[source_slide_index]
+                        logging.info(f"Added speech script to slide {i+1} notes (source slide {source_slide_index + 1})")
 
                     pptx_progress = 82 + ((i + 1) / max(len(screenshot_paths), 1)) * 13
                     update_export_progress(
@@ -1042,6 +1137,7 @@ async def export_project_pptx_from_images(
                     )
 
                 # 保存PPTX文件
+                current_stage = "save_pptx"
                 update_export_progress(97, "正在保存PPTX文件...")
                 prs.save(temp_pptx_path)
                 logging.info(f"PPTX saved to {temp_pptx_path}")
@@ -1057,7 +1153,8 @@ async def export_project_pptx_from_images(
                 traceback.print_exc()
                 return {
                     "success": False,
-                    "error": str(e)
+                    "error": f"{str(e)} (stage={current_stage})",
+                    "stage": current_stage,
                 }
             finally:
                 # 清理临时HTML和截图文件

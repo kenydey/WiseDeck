@@ -45,6 +45,8 @@ class StructuredSlideModel(BaseModel):
     slide_type: str = "content"
     content_points: List[str] = Field(default_factory=list)
     chart_config: Optional[ChartConfigModel] = None
+    # Optional table layout hint (from outline.table_config) for native editable table merge.
+    table_config: Optional[Dict[str, Any]] = None
     # When set, bypass chart_config and use native pptx chart directly
     native_chart_only: bool = False
     # Optional Presenton template overrides (historically aligned with TSX pdf-maker layouts).

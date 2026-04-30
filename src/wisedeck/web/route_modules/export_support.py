@@ -7,18 +7,19 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 import tempfile
 import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Request
 from pydantic import BaseModel
 
 from ...core.config import ai_config
-from ...services.pyppeteer_pdf_converter import get_pdf_converter
+from ...services.pyppeteer_pdf_converter import PlaywrightPDFConverter, get_pdf_converter
 from ...utils.thread_pool import run_blocking_io
 from .support import logger
 
@@ -1142,11 +1143,55 @@ def _clean_html_for_pdf(original_html: str, slide_number: int, total_slides: int
     return cleaned_html
 
 
-async def _generate_pdf_with_pyppeteer(project, output_path: str, individual: bool = False) -> bool:
+async def _convert_multiple_html_to_pdf_via_playwright_thread(
+    html_files: List[str],
+    output_dir: str,
+    merged_pdf_path: Optional[str] = None,
+) -> Tuple[List[str], Optional[str]]:
+    """
+    Run Playwright batch PDF conversion in a dedicated worker thread.
+
+    On Windows, this guarantees a Proactor-compatible event loop for subprocess creation.
+    """
+
+    def _run() -> List[str]:
+        import asyncio
+
+        if sys.platform == "win32":
+            proactor = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
+            if proactor is not None:
+                try:
+                    asyncio.set_event_loop_policy(proactor())
+                except Exception:
+                    pass
+
+        async def _async_run() -> List[str]:
+            converter = PlaywrightPDFConverter()
+            try:
+                return await converter.convert_multiple_html_to_pdf(
+                    html_files,
+                    output_dir,
+                    merged_pdf_path,
+                )
+            finally:
+                try:
+                    await converter.close()
+                except Exception:
+                    pass
+
+        return asyncio.run(_async_run())
+
+    try:
+        pdf_files = await run_blocking_io(_run)
+        return pdf_files, None
+    except Exception as exc:
+        logging.exception("Threaded Playwright PDF conversion failed")
+        return [], str(exc)
+
+
+async def _generate_pdf_with_pyppeteer(project, output_path: str, individual: bool = False) -> Tuple[bool, Optional[str]]:
     """Generate PDF using Pyppeteer (Python)"""
     try:
-        pdf_converter = get_pdf_converter()
-
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
@@ -1175,20 +1220,23 @@ async def _generate_pdf_with_pyppeteer(project, output_path: str, individual: bo
             logging.info(f"Starting PDF generation for {len(html_files)} files")
 
             # Convert HTML files to PDFs and merge them
-            pdf_files = await pdf_converter.convert_multiple_html_to_pdf(
+            pdf_files, threaded_error = await _convert_multiple_html_to_pdf_via_playwright_thread(
                 html_files, str(pdf_dir), output_path
             )
 
             if pdf_files and os.path.exists(output_path):
                 logging.info("Pyppeteer PDF generation successful")
-                return True
+                return True, None
             else:
+                if threaded_error:
+                    logging.error(f"Pyppeteer PDF generation failed: {threaded_error}")
+                    return False, threaded_error
                 logging.error("Pyppeteer PDF generation failed: No output file created")
-                return False
+                return False, "No output file created"
 
     except Exception as e:
         logging.error(f"Pyppeteer PDF generation failed: {e}")
-        return False
+        return False, str(e)
 
 
 async def _generate_combined_html_for_pdf(project) -> str:

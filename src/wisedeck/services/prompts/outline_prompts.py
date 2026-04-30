@@ -82,9 +82,11 @@ class OutlinePrompts:
    - 每个要点内容简洁清晰，可做适当解释，但**不超过50字符**。
    - 内容分布需均衡，避免信息堆积或重复。
 
-4. **图表展示优化**：
+4. **图表与表格展示优化**：
    - 对适合可视化的信息，**建议并提供图表配置**，写入 `chart_config` 字段中。
    - 图表需明确类型（如柱状图、折线图、饼图、甘特图、森林图、韦恩图、upset图、生存曲线图、漏斗图、环形图、和弦图、词云图、关联图、瀑布图、条形图、面积图等）、说明含义、配置样式及数据结构。
+   - 对于多维参数对比、规格矩阵、方案横向比较等场景，可输出 `slide_type="table"` 并提供 `table_config`。
+   - 仅当信息天然是“行列结构”时使用 `table_config`，不要把普通段落强行转表格。
 
 5. **语言风格与语境一致性**：
    - 使用统一语言（{language}），保持语境一致，适合目标受众理解与接受。
@@ -106,8 +108,8 @@ class OutlinePrompts:
       "page_number": 1,
       "title": "页面标题",
       "content_points": ["要点1", "要点2", "要点3"],
-      "slide_type": "title|agenda|content|conclusion|thankyou",
-      "type": "title|agenda|content|conclusion|thankyou",
+      "slide_type": "title|agenda|content|table|conclusion|thankyou",
+      "type": "title|agenda|content|table|conclusion|thankyou",
       "description": "此页的简要说明与目的",
       "chart_config": {{
         "type": "bar",
@@ -128,6 +130,17 @@ class OutlinePrompts:
             "title": {{"display": true, "text": "图表标题"}}
           }},
           "scales": {{"y": {{"beginAtZero": true}}}}
+        }}
+      }},
+      "table_config": {{
+        "headers": ["指标", "方案A", "方案B"],
+        "rows": [
+          ["响应时间", "120ms", "95ms"],
+          ["部署复杂度", "中", "低"]
+        ],
+        "caption": "方案对比表（示例）",
+        "style": {{
+          "compact": true
         }}
       }}
     }}
@@ -191,9 +204,11 @@ class OutlinePrompts:
    - Each point should be **no more than 50 characters**.
    - Distribute content evenly across slides to avoid overload or redundancy.
 
-4. **Chart Suggestions**:
+4. **Chart and Table Suggestions**:
    - For any data, comparisons, or visual-friendly content, suggest a chart and include its configuration under `chart_config`.
    - Specify chart type (e.g., bar, pie, line), provide sample data, and chart options.
+   - For multidimensional comparisons, parameter matrices, or side-by-side options, you may use `slide_type="table"` with `table_config`.
+   - Use `table_config` only when the information is naturally tabular, not for regular narrative text.
 
 5. **Language & Tone**:
    - The entire outline should be in **{language}** and aligned with the communication preferences of the target audience.
@@ -215,8 +230,8 @@ Please follow the exact JSON format below, and **wrap the result in a code block
       "page_number": 1,
       "title": "Slide Title",
       "content_points": ["Point 1", "Point 2", "Point 3"],
-      "slide_type": "title|agenda|content|conclusion|thankyou",
-      "type": "title|agenda|content|conclusion|thankyou",
+      "slide_type": "title|agenda|content|table|conclusion|thankyou",
+      "type": "title|agenda|content|table|conclusion|thankyou",
       "description": "Brief description of this slide",
       "chart_config": {{
         "type": "bar",
@@ -237,6 +252,17 @@ Please follow the exact JSON format below, and **wrap the result in a code block
             "title": {{"display": true, "text": "Chart Title"}}
           }},
           "scales": {{"y": {{"beginAtZero": true}}}}
+        }}
+      }},
+      "table_config": {{
+        "headers": ["Metric", "Option A", "Option B"],
+        "rows": [
+          ["Latency", "120ms", "95ms"],
+          ["Deployment Complexity", "Medium", "Low"]
+        ],
+        "caption": "Comparison table (example)",
+        "style": {{
+          "compact": true
         }}
       }}
     }}
@@ -291,6 +317,7 @@ Please follow the exact JSON format below, and **wrap the result in a code block
  slide_type可选值：
  - "title": 标题页/封面页
  - "content": 内容页
+ - "table": 表格页（用于对比矩阵/参数表）
  - "agenda": 目录页
  - "conclusion": 总结/结论页
  - "thankyou": 结束页/感谢页
@@ -304,6 +331,7 @@ Please follow the exact JSON format below, and **wrap the result in a code block
 6. 内容要点要具体实用
 7. 根据重点内容和技术亮点安排页面内容
 8. 如果需要使用“当前 / 今年 / 本月 / 本季度 / 最近”等时间语义，请以上述当前时间为准；若输入信息已给出明确时间，以输入信息为准
+9. 只有在内容是天然行列结构时，才输出 `table_config`；普通页面继续使用 `content_points`
 
 请只返回JSON，使用```json```代码块包裹，不要包含其他文字说明。
 
@@ -387,6 +415,7 @@ Please follow the exact JSON format below, and **wrap the result in a code block
  slide_type可选值：
  - "title": 标题页/封面页
  - "content": 内容页
+ - "table": 表格页（用于对比矩阵/参数表）
  - "agenda": 目录页
  - "conclusion": 总结/结论页
  - "thankyou": 结束页/感谢页
@@ -400,6 +429,7 @@ Please follow the exact JSON format below, and **wrap the result in a code block
 6. 内容要点要具体实用
 7. 根据重点内容和技术亮点安排页面内容
 8. 如果需要使用“当前 / 今年 / 本月 / 本季度 / 最近”等时间语义，请以上述当前时间为准；若输入信息已给出明确时间，以输入信息为准
+9. 只有在内容是天然行列结构时，才输出 `table_config`；普通页面继续使用 `content_points`
 
 请只返回JSON，使用```json```代码块包裹，不要包含其他文字说明。
 
@@ -460,7 +490,7 @@ Please follow the exact JSON format below, and **wrap the result in a code block
             "page_number": 1,
             "title": "页面标题",
             "content_points": ["要点1", "要点2", "要点3"],
-            "slide_type": "title|agenda|content|conclusion|thankyou",
+            "slide_type": "title|agenda|content|table|conclusion|thankyou",
             "description": "页面内容描述"
         }}
     ]

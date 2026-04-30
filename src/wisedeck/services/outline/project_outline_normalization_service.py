@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class ProjectOutlineNormalizationService:
     """统一处理大纲文本解析与结构标准化。"""
 
-    _VALID_SLIDE_TYPES = {"title", "content", "agenda", "thankyou", "conclusion"}
+    _VALID_SLIDE_TYPES = {"title", "content", "table", "agenda", "thankyou", "conclusion"}
     _SLIDE_TYPE_ALIASES = {
         "title": "title",
         "cover": "title",
@@ -29,6 +29,9 @@ class ProjectOutlineNormalizationService:
         "content": "content",
         "body": "content",
         "main": "content",
+        "table": "table",
+        "tabular": "table",
+        "matrix": "table",
         "thankyou": "thankyou",
         "thanks": "thankyou",
         "thank_you": "thankyou",
@@ -264,6 +267,52 @@ class ProjectOutlineNormalizationService:
         return points
 
     @classmethod
+    def _normalize_table_config(cls, table_config: Any) -> Optional[Dict[str, Any]]:
+        """规范化表格配置，保证 headers/rows 可被稳定渲染。"""
+        if not isinstance(table_config, dict):
+            return None
+
+        raw_headers = table_config.get("headers")
+        raw_rows = table_config.get("rows")
+        headers = [str(item).strip() for item in (raw_headers or []) if str(item).strip()]
+        rows: List[List[str]] = []
+
+        if isinstance(raw_rows, list):
+            for raw_row in raw_rows:
+                if isinstance(raw_row, (list, tuple)):
+                    cells = [str(cell).strip()[:200] for cell in raw_row]
+                elif isinstance(raw_row, dict) and headers:
+                    cells = [str(raw_row.get(header, "")).strip()[:200] for header in headers]
+                else:
+                    continue
+                rows.append(cells)
+
+        if not headers and rows:
+            max_cols = max(len(row) for row in rows)
+            headers = [f"列{i}" for i in range(1, max_cols + 1)]
+
+        if not headers:
+            return None
+
+        column_count = len(headers)
+        normalized_rows: List[List[str]] = []
+        for row in rows:
+            aligned = (row + [""] * column_count)[:column_count]
+            normalized_rows.append(aligned)
+
+        normalized: Dict[str, Any] = {
+            "headers": headers,
+            "rows": normalized_rows,
+        }
+        caption = str(table_config.get("caption") or "").strip()
+        if caption:
+            normalized["caption"] = caption
+        style = table_config.get("style")
+        if isinstance(style, dict):
+            normalized["style"] = style
+        return normalized
+
+    @classmethod
     def _normalize_content_points_for_slide(
         cls,
         content_points: List[str],
@@ -468,6 +517,9 @@ class ProjectOutlineNormalizationService:
                 page_number,
                 total_slides,
             )
+            table_config = self._normalize_table_config(slide.get("table_config"))
+            if table_config and slide_type == "content":
+                slide_type = "table"
             content_points = self._normalize_content_points_for_slide(
                 content_points=self._coerce_content_points(slide),
                 slide_type=slide_type,
@@ -476,6 +528,10 @@ class ProjectOutlineNormalizationService:
                 slide_title=title_text,
                 description=description,
             )
+            if table_config and not content_points:
+                content_points = [f"{row[0]}：{' | '.join(row[1:])}".strip("： ") for row in table_config.get("rows", []) if row]
+                if not content_points:
+                    content_points = ["表格信息概览"]
 
             standardized_slide = {
                 "page_number": index,
@@ -498,6 +554,8 @@ class ProjectOutlineNormalizationService:
                     )
                 except Exception:
                     standardized_slide["chart_config"] = slide["chart_config"]
+            if table_config:
+                standardized_slide["table_config"] = table_config
 
             standardized_slides.append(standardized_slide)
 

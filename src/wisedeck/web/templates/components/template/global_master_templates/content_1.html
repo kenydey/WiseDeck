@@ -103,8 +103,19 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="htmlTemplate">HTML 模板代码 *</label>
-                    <textarea id="htmlTemplate" name="html_template" required rows="15" style="font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; font-size: 13px; line-height: 1.4;"></textarea>
+                    <label for="htmlTemplate">HTML 模板代码（可选）</label>
+                    <textarea id="htmlTemplate" name="html_template" rows="12" style="font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; font-size: 13px; line-height: 1.4;"></textarea>
+                    <div style="margin-top: 6px; color: #64748b; font-size: 12px;">
+                        HTML 路线用于现有 dom-to-pptx 可编辑导出。若只填写 SVG，则仍可保存并用于原生 SVG/DrawingML 导出。
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="svgTemplate">SVG 模板代码（可选）</label>
+                    <textarea id="svgTemplate" name="svg_template" rows="12" style="font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; font-size: 13px; line-height: 1.4;"></textarea>
+                    <div style="margin-top: 6px; color: #64748b; font-size: 12px;">
+                        SVG 路线遵循 ppt-master 的技术约束与占位符（例如 `{{PAGE_TITLE}}` / `{{CONTENT_AREA}}` / `{{PAGE_NUM}}`）。
+                    </div>
                 </div>
 
                 <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;">

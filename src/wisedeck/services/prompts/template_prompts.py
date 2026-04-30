@@ -314,3 +314,79 @@ class TemplatePrompts:
 
 直接输出完整 HTML 模板，使用```html```代码块返回，不要附加解释。
 """.strip()
+
+    # ------------------------------------------------------------------
+    # SVG 模板生成（ppt-master 风格）
+    # ------------------------------------------------------------------
+    @staticmethod
+    def get_svg_template_generation_requirements_prompt_text() -> str:
+        """SVG 模板生成技术要求（护栏层）。"""
+        return """
+**SVG 技术要求**
+- 你必须输出一个完整、可被严格 XML 解析的 SVG（PPT 导出依赖 SVG 为 well-formed XML）。
+- 固定画布：1280x720，16:9。根 `<svg>` 必须包含：
+  - `xmlns="http://www.w3.org/2000/svg"`
+  - `width="1280"`、`height="720"`
+  - `viewBox="0 0 1280 720"`
+- 禁止出现任何滚动条（虽然 SVG 不存在滚动条，但不要通过外部 HTML/CSS 表达；只输出 SVG 本体）。
+- 文本与换行：
+  - 不要使用 `<foreignObject>`；手动换行必须用 `<text>` + `<tspan>`（例如用多个 `<tspan>` 或通过 `x/dy` 实现）。
+  - 禁止 `<textPath>`。
+- 严格禁用元素/属性（任何一项出现都视为不合格）：
+  - `<style>`、`class=`、`<link rel="stylesheet">`、`@import`
+  - `<script>`、任何事件属性 `on*=`（如 onclick/onload）
+  - `<animate` / `<set>`（SMIL 动画）
+  - `<foreignObject>`
+  - `<mask>`
+  - `<iframe>`
+  - `rgba(` 颜色写法
+  - `<g ... opacity=...>`（禁止 g opacity；需要的话把 opacity 写到子元素上）
+  - `<image ... opacity=...>`（禁止 image opacity）
+  - `clip-path`：
+    - clip-path 只允许出现在 `<image>` 元素上；不要在非 image 元素使用 clip-path。
+- 字体纪律：
+  - 所有 `font-family` 必须使用“PPT-safe 字体栈”，且堆栈最后一项必须是跨平台预装字体（例如：Microsoft YaHei / Arial / Times New Roman 等）。
+- 占位符合约（strict）：
+  - **SVG 内仅允许使用以下占位符**，不得出现任何其它 `{{...}}`：
+    - 标题/封面：`{{TITLE}}` `{{SUBTITLE}}` `{{DATE}}` `{{AUTHOR}}` `{{AUTHOR_EN}}`
+    - 章节：`{{CHAPTER_NUM}}` `{{CHAPTER_TITLE}}` `{{CHAPTER_TITLE_EN}}`
+    - 内容页：`{{PAGE_TITLE}}` `{{CONTENT_AREA}}` `{{PAGE_NUM}}` `{{SOURCE}}`
+    - 目录页：`{{TOC_ITEM_1_TITLE}} ~ {{TOC_ITEM_N_TITLE}}`
+      `{{TOC_ITEM_1_DESC}} ~ {{TOC_ITEM_N_DESC}}`
+      以及可选 legacy：`{{TOC_ITEM_1}} ~ {{TOC_ITEM_N}}`
+    - 结尾页：`{{THANK_YOU}}` `{{ENDING_SUBTITLE}}` `{{CLOSING_MESSAGE}}` `{{CONTACT_INFO}}`
+- 禁止硬编码示例文案：
+  - 任何会变化的文字（标题/正文/页码/章节/致谢等）必须用占位符，禁止直接写死具体内容。
+- 输出格式：
+  - 直接输出完整 SVG，使用```svg```代码块返回，不要附加任何解释或额外文本。
+
+""".strip()
+
+    @staticmethod
+    def get_svg_template_generation_method_prompt_text() -> str:
+        """SVG 模板生成过程（把 HTML/CSS 思路替换为 SVG shape 思路）。"""
+        return """
+**SVG 创作过程**
+1. **感知** — 阅读项目信息和大纲全貌，决定视觉主题的情绪重心、节奏与层级。
+2. **提炼视觉主张** — 用一句话定义这套 SVG 视觉系统的“生成原则”（对应后续可复用的几何/颜色/字体语言）。
+3. **建立设计语汇** — 从主张推导：颜色与渐变逻辑、字体性格、几何语言（rect/path/polygon/line）、空间节奏。
+4. **构建系统骨架** — 在 1280x720 画布内定义稳定锚点：标题区域、内容区域、页码/章节区域（用 `<g>` 做语义分组即可）。
+5. **编码落地为 SVG** — 把上述规则落到 SVG 原生元素与属性上（仅用内联属性；不使用 `<style>` / 外链 CSS）。
+""".strip()
+
+    @staticmethod
+    def build_svg_template_generation_prompt(user_prompt: str, mode_instruction: str = "") -> str:
+        """组装 SVG 母版生成提示词（ppt-master 风格）。"""
+        mode_section = f"{mode_instruction.strip()}\n\n" if mode_instruction else ""
+        return f"""
+{TemplatePrompts._get_role_framing()}
+
+{mode_section}用户需求：
+{user_prompt}
+
+{TemplatePrompts.get_template_generation_creative_prompt_text()}
+
+{TemplatePrompts.get_svg_template_generation_method_prompt_text()}
+
+{TemplatePrompts.get_svg_template_generation_requirements_prompt_text()}
+""".strip()

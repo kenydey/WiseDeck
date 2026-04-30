@@ -128,7 +128,7 @@ class SlideContentService:
 
     def _normalize_slide_type(self, slide_type: str) -> str:
         """Normalize slide type to supported values"""
-        type_mapping = {'agenda': 'agenda', 'section': 'section', 'conclusion': 'conclusion', 'thankyou': 'thankyou', 'title': 'title', 'content': 'content', 'image': 'image', 'chart': 'chart', 'list': 'list', 'overview': 'content', 'summary': 'conclusion', 'intro': 'content', 'ending': 'thankyou'}
+        type_mapping = {'agenda': 'agenda', 'section': 'section', 'conclusion': 'conclusion', 'thankyou': 'thankyou', 'title': 'title', 'content': 'content', 'table': 'table', 'image': 'image', 'chart': 'chart', 'list': 'list', 'overview': 'content', 'summary': 'conclusion', 'intro': 'content', 'ending': 'thankyou'}
         return type_mapping.get(slide_type, 'content')
 
     async def _generate_enhanced_content(self, outline: PPTOutline, request: PPTGenerationRequest) -> List[SlideContent]:
@@ -137,11 +137,17 @@ class SlideContentService:
         for i, slide_data in enumerate(outline.slides):
             try:
                 content = await self.generate_slide_content(slide_data['title'], request.scenario, request.topic, request.language)
-                slide_content = SlideContent(type=self._normalize_slide_type(slide_data.get('type', 'content')), title=slide_data['title'], subtitle=slide_data.get('subtitle', ''), content=content, bullet_points=self._extract_bullet_points(content), image_suggestions=await self._suggest_images(slide_data['title'], request.scenario, content, request.topic, i + 1, len(outline.slides)), layout='default')
+                normalized_type = self._normalize_slide_type(slide_data.get('type', slide_data.get('slide_type', 'content')))
+                if slide_data.get('table_config') and normalized_type == 'content':
+                    normalized_type = 'table'
+                slide_content = SlideContent(type=normalized_type, title=slide_data['title'], subtitle=slide_data.get('subtitle', ''), content=content, bullet_points=self._extract_bullet_points(content), image_suggestions=await self._suggest_images(slide_data['title'], request.scenario, content, request.topic, i + 1, len(outline.slides)), table_data=slide_data.get('table_config'), layout='default')
                 enhanced_slides.append(slide_content)
             except Exception as e:
                 logger.error(f"Error generating content for slide {slide_data['title']}: {e}")
-                slide_content = SlideContent(type=self._normalize_slide_type(slide_data.get('type', 'content')), title=slide_data['title'], subtitle=slide_data.get('subtitle', ''), content=slide_data.get('content', ''), layout='default')
+                normalized_type = self._normalize_slide_type(slide_data.get('type', slide_data.get('slide_type', 'content')))
+                if slide_data.get('table_config') and normalized_type == 'content':
+                    normalized_type = 'table'
+                slide_content = SlideContent(type=normalized_type, title=slide_data['title'], subtitle=slide_data.get('subtitle', ''), content=slide_data.get('content', ''), table_data=slide_data.get('table_config'), layout='default')
                 enhanced_slides.append(slide_content)
         return enhanced_slides
 
@@ -168,6 +174,8 @@ class SlideContentService:
                 verified_slide.layout = 'list_layout'
             elif slide.type == 'chart':
                 verified_slide.layout = 'chart_layout'
+            elif slide.type == 'table':
+                verified_slide.layout = 'table_layout'
             elif slide.type == 'image':
                 verified_slide.layout = 'image_layout'
             else:
@@ -182,7 +190,7 @@ class SlideContentService:
         try:
             slides_dict = []
             for i, slide in enumerate(slides):
-                slide_dict = {'id': i + 1, 'type': slide.type, 'title': slide.title, 'subtitle': slide.subtitle or '', 'content': slide.content or '', 'bullet_points': slide.bullet_points or [], 'layout': slide.layout}
+                slide_dict = {'id': i + 1, 'type': slide.type, 'title': slide.title, 'subtitle': slide.subtitle or '', 'content': slide.content or '', 'bullet_points': slide.bullet_points or [], 'table_config': slide.table_data or {}, 'layout': slide.layout}
                 slides_dict.append(slide_dict)
             from ...api.models import PPTOutline
             temp_outline = PPTOutline(title='Generated PPT', slides=slides_dict, metadata={'theme_config': theme_config})

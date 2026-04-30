@@ -5,7 +5,7 @@ Global Master Template API endpoints
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .models import (
     GlobalMasterTemplateCreate, GlobalMasterTemplateUpdate, GlobalMasterTemplateResponse,
@@ -233,6 +233,7 @@ async def generate_template_with_ai(
             description=request.description,
             tags=request.tags,
             generation_mode=request.generation_mode,
+            output_format=getattr(request, "output_format", "html"),
             reference_image=reference_image_data,
             reference_pptx=reference_pptx_data,
         )
@@ -261,6 +262,7 @@ async def save_generated_template(
             'template_name': request.get('template_name'),
             'description': request.get('description', ''),
             'html_template': request.get('html_template'),
+            'svg_template': request.get('svg_template'),
             'tags': request.get('tags', []),
             'created_by': 'AI'
         }
@@ -437,6 +439,7 @@ async def duplicate_template(
             'template_name': new_name,
             'description': f"复制自: {original['template_name']}",
             'html_template': original['html_template'],
+            'svg_template': original.get('svg_template'),
             'tags': original['tags'] + ['复制'],
             'created_by': 'duplicate'
         }
@@ -465,13 +468,65 @@ async def get_template_preview(template_id: int, user=Depends(get_current_user_r
             "id": template['id'],
             "template_name": template['template_name'],
             "preview_image": template['preview_image'],
-            "html_template": template['html_template']
+            "html_template": template['html_template'],
+            "svg_template": template.get('svg_template'),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get template preview {template_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get template preview")
+
+
+@router.get("/{template_id}/export-native-pptx")
+async def export_template_as_native_pptx(template_id: int, user=Depends(get_current_user_required)):
+    """
+    Export a single global master template as a native editable PPTX via SVG->DrawingML.
+
+    This is intended as a quick template smoke export (1 slide) for validating svg_template.
+    """
+    from wisedeck.svg_export import render_pptx_from_svg_templates
+
+    try:
+        template_service = _template_service_for_user(user)
+        template = await template_service.get_template_by_id(template_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+
+        svg_template = template.get("svg_template") if isinstance(template, dict) else None
+        if not isinstance(svg_template, str) or not svg_template.strip():
+            raise HTTPException(status_code=400, detail="Template has no svg_template")
+
+        pptx_bytes = render_pptx_from_svg_templates(
+            svg_xmls=[svg_template],
+            slide_placeholders=[
+                {
+                    "PAGE_TITLE": "模板预览",
+                    "CONTENT_AREA": "CONTENT_AREA",
+                    "PAGE_NUM": "1",
+                }
+            ],
+            spec_lock=None,
+            canvas_format=None,
+            native_shapes=True,
+            quiet=True,
+        )
+
+        safe_name = (template.get("template_name") or "template").strip()
+        safe_name = "".join(ch for ch in safe_name if ch not in '\\/:*?"<>|')[:80] or "template"
+        return Response(
+            content=pptx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_name}_native.pptx"',
+                "X-Export-Method": "WiseDeck-Template-SVG-Native",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export native pptx for template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to export native pptx")
 
 
 # Add increment usage endpoint for internal use

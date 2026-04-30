@@ -235,6 +235,7 @@ function buildTemplateCard(template) {
         `<button class="btn btn-sm btn-secondary" data-action="duplicate" data-template-id="${template.id}"><i class="fas fa-clone"></i> 复制</button>`,
         `<button class="btn btn-sm btn-outline" data-action="export-json" data-template-id="${template.id}"><i class="fas fa-download"></i> 导出JSON</button>`,
         `<button class="btn btn-sm btn-outline" data-action="export-pptx" data-template-id="${template.id}"><i class="fas fa-file-powerpoint"></i> 导出PPTX</button>`,
+        `<button class="btn btn-sm btn-outline" data-action="export-native-pptx" data-template-id="${template.id}"><i class="fas fa-file-powerpoint"></i> 导出原生PPTX</button>`,
         canSetDefault && !showDefaultBadge ? `<button class="btn btn-sm btn-success" data-action="set-default" data-template-id="${template.id}"><i class="fas fa-check"></i> 设为默认</button>` : '',
         canEditOrDelete && !template.is_default ? `<button class="btn btn-sm btn-danger" data-action="delete" data-template-id="${template.id}"><i class="fas fa-trash"></i> 删除</button>` : '',
     ].filter(Boolean).join('');
@@ -293,23 +294,31 @@ async function loadTemplatePreview(templateId, iframe) {
     try {
         const cached = previewCache.get(templateId);
         if (cached) {
-            setIframeContent(iframe, cached.html_template);
+            setIframeContent(iframe, cached.html_template, cached.svg_template, cached.template_name);
             return;
         }
 
         const template = await apiClient.get(`/api/global-master-templates/${templateId}`);
         previewCache.set(templateId, template);
-        setIframeContent(iframe, template.html_template, template.template_name);
+        setIframeContent(iframe, template.html_template, template.svg_template, template.template_name);
     } catch (error) {
         console.warn('预览加载失败', error);
         iframe.replaceWith(createPreviewFallback());
     }
 }
 
-function setIframeContent(iframe, htmlTemplate, title = '') {
-    if (!iframe || !htmlTemplate) return;
+function setIframeContent(iframe, htmlTemplate, svgTemplate = '', title = '') {
+    if (!iframe) return;
 
-    let previewHtml = htmlTemplate;
+    const hasHtml = typeof htmlTemplate === 'string' && htmlTemplate.trim().length > 0;
+    const hasSvg = typeof svgTemplate === 'string' && svgTemplate.trim().length > 0;
+    if (!hasHtml && !hasSvg) return;
+
+    let previewHtml = hasHtml
+        ? htmlTemplate
+        : `<!doctype html><html><head><meta charset="UTF-8"><title>${title || '模板预览'}</title></head><body style="margin:0;padding:0;width:1280px;height:720px;overflow:hidden;background:#fff;">${svgTemplate}</body></html>`;
+
+    // Legacy placeholder replacements for preview-only templates (best-effort).
     previewHtml = previewHtml.replace(/\{\{\s*title\s*\}\}/g, title || '模板预览');
     previewHtml = previewHtml.replace(/\{\{\s*content\s*\}\}/g, '预览内容');
     previewHtml = previewHtml.replace(/\{\{\s*slide_number\s*\}\}/g, '1');
@@ -357,6 +366,9 @@ function handleTemplateGridClick(event) {
         case 'export-pptx':
             exportTemplateAsPptxTemplate(templateId, target);
             break;
+        case 'export-native-pptx':
+            exportTemplateAsNativePptx(templateId);
+            break;
         case 'set-default':
             setDefaultTemplate(templateId);
             break;
@@ -368,6 +380,16 @@ function handleTemplateGridClick(event) {
             break;
         default:
             break;
+    }
+}
+
+async function exportTemplateAsNativePptx(templateId) {
+    // Best-effort: triggers a file download from backend.
+    try {
+        const url = `/api/global-master-templates/${templateId}/export-native-pptx`;
+        window.location.href = url;
+    } catch (error) {
+        alert('导出原生PPTX失败: ' + (error?.message || '未知错误'));
     }
 }
 
@@ -439,6 +461,10 @@ async function loadTemplateForEdit(templateId) {
         document.getElementById('templateTags').value = (template.tags || []).join(', ');
         document.getElementById('isDefault').checked = Boolean(template.is_default);
         document.getElementById('htmlTemplate').value = template.html_template || '';
+        const svgEl = document.getElementById('svgTemplate');
+        if (svgEl) {
+            svgEl.value = template.svg_template || '';
+        }
     } catch (error) {
         alert('加载模板失败: ' + error.message);
     }
@@ -456,9 +482,17 @@ async function handleTemplateSubmit(event) {
         template_name: formData.get('template_name'),
         description: formData.get('description'),
         html_template: formData.get('html_template'),
+        svg_template: formData.get('svg_template'),
         tags: (formData.get('tags') || '').split(',').map((tag) => tag.trim()).filter(Boolean),
         is_default: formData.get('is_default') === 'on',
     };
+
+    const hasHtml = typeof payload.html_template === 'string' && payload.html_template.trim().length > 0;
+    const hasSvg = typeof payload.svg_template === 'string' && payload.svg_template.trim().length > 0;
+    if (!hasHtml && !hasSvg) {
+        alert('请至少填写 HTML 或 SVG 模板代码');
+        return;
+    }
 
     try {
         if (state.editingTemplateId) {
@@ -476,12 +510,21 @@ async function handleTemplateSubmit(event) {
 }
 
 function previewCurrentTemplate() {
-    const htmlTemplate = document.getElementById('htmlTemplate')?.value;
-    if (!htmlTemplate) {
-        alert('请先输入HTML模板内容');
+    const htmlTemplate = document.getElementById('htmlTemplate')?.value || '';
+    const svgTemplate = document.getElementById('svgTemplate')?.value || '';
+
+    if (htmlTemplate.trim()) {
+        showPreview(htmlTemplate);
         return;
     }
-    showPreview(htmlTemplate);
+
+    if (svgTemplate.trim()) {
+        const wrapped = `<!doctype html><html><head><meta charset="UTF-8"><title>SVG Preview</title></head><body style="margin:0;padding:0;width:1280px;height:720px;overflow:hidden;background:#fff;">${svgTemplate}</body></html>`;
+        showPreview(wrapped);
+        return;
+    }
+
+    alert('请至少输入 HTML 或 SVG 模板内容');
 }
 
 function openAIGenerationModal() {
