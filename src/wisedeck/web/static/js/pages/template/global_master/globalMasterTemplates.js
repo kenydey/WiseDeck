@@ -1,8 +1,8 @@
-import { apiClient } from '../../../modules/apiClient.js';
+import { apiClient } from '../../../modules/apiClient.js?v=20260501';
 import { debounce, formatBytes } from '../../../modules/domUtils.js';
 import { emit } from '../../../modules/eventBus.js';
-import { ensureDomToPptxReady, sanitizeFileName, setButtonLoadingState, renderTemplateSampleHtml, loadHtmlIntoIframe, waitForIframeVisualReady } from './globalMasterTemplates.exportHelpers.js';
-import { createGlobalMasterTemplatesUpload } from './globalMasterTemplates.upload.js';
+import { ensureDomToPptxReady, sanitizeFileName, setButtonLoadingState, renderTemplateSampleHtml, loadHtmlIntoIframe, waitForIframeVisualReady } from './globalMasterTemplates.exportHelpers.js?v=20260501';
+import { createGlobalMasterTemplatesUpload } from './globalMasterTemplates.upload.js?v=20260501';
 
 const currentUser = window.__WISEDECK_USER__ || {};
 const isAdminUser = Boolean(currentUser.is_admin);

@@ -26,8 +26,22 @@ async function request(url, options = {}) {
     }
 
     if (!response.ok) {
-        const message = payload?.message || response.statusText;
-        throw new Error(message);
+        let message = response.statusText;
+        if (payload && typeof payload === 'object') {
+            if (payload.detail !== undefined && payload.detail !== null) {
+                message = Array.isArray(payload.detail)
+                    ? payload.detail
+                        .map((item) => (item && (item.msg || item.message)) || JSON.stringify(item))
+                        .join('; ')
+                    : (typeof payload.detail === 'string' ? payload.detail : JSON.stringify(payload.detail));
+            } else if (payload.message) {
+                message = payload.message;
+            }
+        }
+        const error = new Error(message);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
     }
 
     if (returnResponse) {
