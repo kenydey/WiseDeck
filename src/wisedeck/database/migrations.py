@@ -150,6 +150,157 @@ class DatabaseMigration:
             "down": self._migration_014_down,
         })
 
+        # Migration 015: Allow SVG-only templates by relaxing html_template NOT NULL
+        self.migrations.append({
+            "version": "015",
+            "name": "relax_global_master_templates_html_template_nullability",
+            "description": "Relax global_master_templates.html_template NOT NULL so SVG-only templates can be saved",
+            "up": self._migration_015_up,
+            "down": self._migration_015_down,
+        })
+
+    async def _migration_015_up(self, session: AsyncSession):
+        """Migration 015: Relax NOT NULL constraint on global_master_templates.html_template (sqlite rebuild; postgres drop not null)."""
+        logger.info("Applying migration 015: Relax global_master_templates.html_template nullability")
+        try:
+            if not await self._table_exists(session, "global_master_templates"):
+                logger.info("global_master_templates table not found; skipping migration 015")
+                return
+            if not await self._column_exists(session, "global_master_templates", "html_template"):
+                logger.info("html_template column not found on global_master_templates; skipping migration 015")
+                return
+
+            dialect = self._dialect_name(session)
+            if dialect == "sqlite":
+                # Check if html_template is currently NOT NULL
+                result = await session.execute(text("PRAGMA table_info(global_master_templates)"))
+                cols = result.fetchall() or []
+                html_info = None
+                for c in cols:
+                    # PRAGMA table_info: cid, name, type, notnull, dflt_value, pk
+                    if str(c[1]).lower() == "html_template":
+                        html_info = c
+                        break
+                if not html_info:
+                    logger.info("PRAGMA table_info returned no html_template; skipping migration 015")
+                    await session.commit()
+                    return
+                notnull = int(html_info[3] or 0)
+                if notnull == 0:
+                    logger.info("html_template is already nullable on sqlite; skipping rebuild")
+                    await session.commit()
+                    return
+
+                # Rebuild table to drop NOT NULL (SQLite doesn't support ALTER COLUMN).
+                await session.execute(text("ALTER TABLE global_master_templates RENAME TO global_master_templates_old"))
+                await session.execute(
+                    text(
+                        """
+                        CREATE TABLE global_master_templates (
+                            id INTEGER PRIMARY KEY,
+                            user_id INTEGER,
+                            template_name VARCHAR(255) NOT NULL,
+                            description TEXT,
+                            html_template TEXT,
+                            svg_template TEXT,
+                            preview_image TEXT,
+                            style_config JSON,
+                            tags JSON,
+                            is_default BOOLEAN DEFAULT 0,
+                            is_active BOOLEAN DEFAULT 1,
+                            usage_count INTEGER DEFAULT 0,
+                            created_by VARCHAR(100),
+                            created_at FLOAT,
+                            updated_at FLOAT
+                        )
+                        """
+                    )
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO global_master_templates (
+                            id, user_id, template_name, description, html_template, svg_template, preview_image,
+                            style_config, tags, is_default, is_active, usage_count, created_by, created_at, updated_at
+                        )
+                        SELECT
+                            id, user_id, template_name, description, html_template, svg_template, preview_image,
+                            style_config, tags, is_default, is_active, usage_count, created_by, created_at, updated_at
+                        FROM global_master_templates_old
+                        """
+                    )
+                )
+                await session.execute(text("DROP TABLE global_master_templates_old"))
+
+                # Recreate key indexes (best-effort).
+                await session.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_global_master_templates_user_name "
+                        "ON global_master_templates(user_id, template_name) "
+                        "WHERE user_id IS NOT NULL"
+                    )
+                )
+                await session.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_global_master_templates_user_id "
+                        "ON global_master_templates(user_id)"
+                    )
+                )
+
+                await session.commit()
+                logger.info("Migration 015 completed successfully (sqlite rebuild)")
+                return
+
+            # PostgreSQL / others: drop NOT NULL constraint.
+            if dialect.startswith("postgres"):
+                await session.execute(
+                    text("ALTER TABLE global_master_templates ALTER COLUMN html_template DROP NOT NULL")
+                )
+            else:
+                # Best-effort generic SQL; may fail on some dialects but should be safe to try.
+                try:
+                    await session.execute(
+                        text("ALTER TABLE global_master_templates ALTER COLUMN html_template DROP NOT NULL")
+                    )
+                except Exception:
+                    # Some dialects don't support this syntax; rely on service-layer wrapper for compatibility.
+                    logger.warning("Migration 015: dialect does not support DROP NOT NULL; leaving schema unchanged")
+
+            await session.commit()
+            logger.info("Migration 015 completed successfully")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 015 failed: {e}")
+            raise
+
+    async def _migration_015_down(self, session: AsyncSession):
+        """Migration 015 rollback (best-effort): re-apply NOT NULL on postgres; sqlite no-op."""
+        logger.info("Rolling back migration 015 (best-effort)")
+        try:
+            if not await self._table_exists(session, "global_master_templates"):
+                return
+            if not await self._column_exists(session, "global_master_templates", "html_template"):
+                return
+
+            dialect = self._dialect_name(session)
+            if dialect == "sqlite":
+                logger.warning("SQLite rollback for migration 015 skipped (table rebuild would be required)")
+                await session.commit()
+                return
+
+            if dialect.startswith("postgres"):
+                await session.execute(
+                    text(
+                        "ALTER TABLE global_master_templates "
+                        "ALTER COLUMN html_template SET NOT NULL"
+                    )
+                )
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 015 rollback failed: {e}")
+            raise
+
     @staticmethod
     def _dialect_name(session: AsyncSession) -> str:
         try:

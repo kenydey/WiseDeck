@@ -695,6 +695,20 @@ async function autoRepairSlideLayout() {
             updateThumbnailDisplay(currentSlideIndex, slidesData[currentSlideIndex]);
             updateCodeEditorContent(result.repaired_html);
 
+            try {
+                const diag = result.layout_diagnostics;
+                if (diag?.before || diag?.after) {
+                    console.info('[layout-diagnostics]', diag);
+                    const beforeScore = diag.before?.score;
+                    const afterScore = diag.after?.score;
+                    if (typeof beforeScore === 'number' && typeof afterScore === 'number') {
+                        showNotification(`排版评分 ${beforeScore} → ${afterScore}（仅供参考）`, 'info');
+                    }
+                }
+            } catch (_) {
+                /* ignore diagnostic UI failures */
+            }
+
             updateProgressToast(progressToast, '正在保存最新内容...', 90);
             if (typeof saveToServer === 'function') {
                 await saveToServer();

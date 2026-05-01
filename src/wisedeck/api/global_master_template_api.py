@@ -10,9 +10,13 @@ from fastapi.responses import JSONResponse, Response
 from .models import (
     GlobalMasterTemplateCreate, GlobalMasterTemplateUpdate, GlobalMasterTemplateResponse,
     GlobalMasterTemplateDetailResponse, GlobalMasterTemplateGenerateRequest,
+    TemplateImportUploadRequest,
+    TemplateImportUploadResponse,
+    TemplateReferenceWorkspacePaths,
     TemplateSelectionRequest, TemplateSelectionResponse
 )
 from ..services.template.global_master_template_service import GlobalMasterTemplateService
+from ..services.template.template_import_service import TemplateImportService
 from ..auth.middleware import get_current_user_required
 from ..core.config import app_config
 from ..database.database import AsyncSessionLocal
@@ -35,6 +39,55 @@ def _template_service_for_user(
             allow_system_template_write and getattr(user, "is_admin", False)
         ),
     )
+
+
+def _template_import_service() -> TemplateImportService:
+    extract_holder: dict = {}
+
+    def _extract(reference_pptx: dict):
+        svc = extract_holder.get("svc")
+        if svc is None:
+            extract_holder["svc"] = GlobalMasterTemplateService()
+            svc = extract_holder["svc"]
+        return svc._extract_pptx_template_reference(reference_pptx)
+
+    return TemplateImportService(extract_fn=_extract)
+
+
+@router.post("/template-import/workspace", response_model=TemplateImportUploadResponse)
+async def import_template_workspace(
+    request: TemplateImportUploadRequest,
+    user=Depends(get_current_user_required),
+):
+    """Build TemplateReferenceWorkspace from uploaded PPT/PPTX (LibreOffice + PyMuPDF)."""
+    del user  # reserved for quotas / auditing
+    try:
+        importer = _template_import_service()
+        ws = importer.import_from_upload(
+            filename=request.filename,
+            data=request.data,
+            png_zoom=float(request.png_zoom or 2.0),
+        )
+        summary = ws.to_summary_dict()
+        return TemplateImportUploadResponse(
+            workspace=TemplateReferenceWorkspacePaths(
+                workspace_id=summary["workspace_id"],
+                root_dir=summary["root_dir"],
+                pptx_path=summary["pptx_path"],
+                pdf_path=summary["pdf_path"],
+                manifest_path=summary["manifest_path"],
+                svg_dir=str(ws.svg_dir.resolve()),
+                png_dir=str(ws.png_dir.resolve()),
+                slide_count=summary.get("slide_count"),
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"Template import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/", response_model=GlobalMasterTemplateResponse)
@@ -226,6 +279,8 @@ async def generate_template_with_ai(
                 "type": request.reference_pptx.type,
             }
 
+        workspace_hint = getattr(request, "template_workspace_id", None)
+
         # 使用AI生成服务（不保存到数据库）
         result = await user_template_service.generate_template_with_ai(
             prompt=request.prompt,
@@ -233,9 +288,10 @@ async def generate_template_with_ai(
             description=request.description,
             tags=request.tags,
             generation_mode=request.generation_mode,
-            output_format=getattr(request, "output_format", "html"),
+            output_format=(request.output_format or "html"),
             reference_image=reference_image_data,
             reference_pptx=reference_pptx_data,
+            template_workspace_id=workspace_hint,
         )
 
         return {

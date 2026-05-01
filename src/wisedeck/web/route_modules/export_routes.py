@@ -1045,19 +1045,25 @@ async def export_project_pptx_from_images(
                     # 可选兜底：若批量截图异常，回退到逐页截图，避免整批失败。
                     batch_error = str(batch_exc)
                     logging.warning(f"Batch screenshot pipeline failed, fallback to per-slide screenshot: {batch_exc}")
-                    ok_list = []
+                    # Keep ok_list aligned with html_files/png_files indices even if per-slide fails mid-loop.
+                    ok_list = [False] * len(html_files)
                     for i, html_file in enumerate(html_files):
-                        screenshot_path = png_files[i]
-                        success = await pdf_converter.screenshot_html(
-                            html_file,
-                            screenshot_path,
-                            width=1280,
-                            height=720,
-                            optimize_for_static=True,
-                            stability_checks=1,
-                            stability_interval=0.2,
-                        )
-                        ok_list.append(bool(success))
+                        try:
+                            screenshot_path = png_files[i]
+                            success = await pdf_converter.screenshot_html(
+                                html_file,
+                                screenshot_path,
+                                width=1280,
+                                height=720,
+                                optimize_for_static=True,
+                                stability_checks=1,
+                                stability_interval=0.2,
+                            )
+                            ok_list[i] = bool(success)
+                        except Exception as per_slide_exc:
+                            ok_list[i] = False
+                            logging.warning(f"Fallback screenshot {i+1}/{len(html_files)} failed: {per_slide_exc}")
+
                         screenshot_progress = 25 + ((i + 1) / max(len(html_files), 1)) * 55
                         update_export_progress(
                             screenshot_progress,

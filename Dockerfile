@@ -95,6 +95,8 @@ RUN set -eux; \
     fi; \
     apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update; \
     apt-get install -y --no-install-recommends \
+    libreoffice-impress \
+    libreoffice-writer-nogui \
     ffmpeg \
     poppler-utils \
     libmagic1 \
@@ -151,7 +153,7 @@ COPY --from=builder /opt/playwright-browsers /opt/playwright-browsers
 RUN /opt/venv/bin/python -c "import fastapi, uvicorn; print('Runtime venv OK')"
 
 # Set permissions for landppt user and playwright browsers
-RUN chown -R wisedeck:landppt /home/landppt && \
+RUN chown -R landppt:landppt /home/landppt && \
     chmod -R 755 /opt/playwright-browsers
 
 # Set work directory
@@ -169,7 +171,7 @@ RUN sed -i 's/\r$//' /usr/local/bin/docker-healthcheck.sh /usr/local/bin/docker-
     chmod +x /usr/local/bin/docker-healthcheck.sh /usr/local/bin/docker-entrypoint.sh && \
     mkdir -p temp/ai_responses_cache temp/style_genes_cache temp/summeryanyfile_cache temp/templates_cache \
              research_reports lib/Linux lib/MacOS lib/Windows uploads data && \
-    chown -R wisedeck:landppt /app /home/landppt && \
+    chown -R landppt:landppt /app /home/landppt && \
     chmod -R 755 /app /home/landppt && \
     chmod 666 /app/.env
 

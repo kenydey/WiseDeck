@@ -30,6 +30,7 @@ from ...core.config import ai_config, app_config, resolve_timeout_seconds
 from ...database.database import AsyncSessionLocal, get_db
 from ...database.models import User
 from ...services.enhanced_ppt_service import EnhancedPPTService
+from ...services.slide.layout_scorer import score_slide_layout_html
 from ...services.pdf_to_pptx_converter import get_pdf_to_pptx_converter
 from ...services.pyppeteer_pdf_converter import get_pdf_converter
 from ...utils.thread_pool import run_blocking_io, to_thread
@@ -160,6 +161,9 @@ async def auto_repair_layout(
             total_pages or slide_index
         )
 
+        layout_before = score_slide_layout_html(html_content)
+        layout_after = score_slide_layout_html(repaired_html)
+
         changed = repaired_html.strip() != html_content
 
         if project.slides_data is None:
@@ -217,7 +221,11 @@ async def auto_repair_layout(
         return {
             "success": True,
             "repaired_html": repaired_html,
-            "changed": changed
+            "changed": changed,
+            "layout_diagnostics": {
+                "before": layout_before,
+                "after": layout_after,
+            },
         }
 
     except HTTPException:

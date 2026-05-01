@@ -556,8 +556,8 @@ async def export_structured_pptx_via_svg_native(
         )
         return _merge_native_tables_into_pptx_bytes(merged, deck=deck)
     except SVGExportError as e:
-        # Let callers decide fallback strategy.
-        raise RuntimeError(f"SVG native export failed: {e}") from e
+        # Let callers decide fallback strategy (preserve error type).
+        raise
 
 
 def _merge_native_tables_into_pptx_bytes(pptx_bytes: bytes, *, deck: StructuredSlideDeckModel) -> bytes:

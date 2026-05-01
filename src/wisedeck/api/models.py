@@ -287,7 +287,39 @@ class ReferencePptxData(BaseModel):
     filename: str = Field(..., description="PPTX filename")
     data: str = Field(..., description="Base64 encoded PPTX data (raw base64 or data URL)")
     size: int = Field(..., description="File size in bytes")
-    type: str = Field("application/vnd.openxmlformats-officedocument.presentationml.presentation", description="MIME type")
+    type: str = Field(
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        description="MIME type",
+    )
+
+
+class TemplateImportUploadRequest(BaseModel):
+    """Upload PPT/PPTX and build TemplateReferenceWorkspace (LibreOffice + PyMuPDF)."""
+
+    filename: str = Field(..., description="Original filename (.ppt or .pptx)")
+    data: str = Field(..., description="Base64 encoded file bytes (raw base64 or data URL)")
+    png_zoom: Optional[float] = Field(
+        2.0,
+        description="PNG rasterization zoom factor for PDF pages (PyMuPDF)",
+        ge=1.0,
+        le=4.0,
+    )
+
+
+class TemplateReferenceWorkspacePaths(BaseModel):
+    workspace_id: str
+    root_dir: str
+    pptx_path: str
+    pdf_path: str
+    manifest_path: str
+    svg_dir: str
+    png_dir: str
+    slide_count: Optional[int] = None
+
+
+class TemplateImportUploadResponse(BaseModel):
+    success: bool = True
+    workspace: TemplateReferenceWorkspacePaths
 
 
 class GlobalMasterTemplateGenerateRequest(BaseModel):
@@ -303,6 +335,10 @@ class GlobalMasterTemplateGenerateRequest(BaseModel):
     )
     reference_image: Optional[ReferenceImageData] = Field(None, description="Reference image for multimodal generation")
     reference_pptx: Optional[ReferencePptxData] = Field(None, description="Reference PPTX for template extraction")
+    template_workspace_id: Optional[str] = Field(
+        None,
+        description="Optional cached TemplateReferenceWorkspace id from /template-import/workspace",
+    )
 
 
 class TemplateSelectionRequest(BaseModel):

@@ -4,9 +4,11 @@ Global Master Template Service for managing reusable master templates
 
 import json
 import logging
+import os
 import time
 import base64
 from collections import Counter
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from io import BytesIO
 from sqlalchemy.exc import IntegrityError
@@ -138,6 +140,16 @@ class GlobalMasterTemplateService:
             has_svg = isinstance(svg_template, str) and svg_template.strip()
             if not has_html and not has_svg:
                 raise ValueError("Either html_template or svg_template must be provided")
+
+            # Backward-compatible persistence:
+            # - DB schemas prior to migration may still enforce NOT NULL on html_template.
+            # - Even after relaxing the constraint, WiseDeck's preview pipeline expects HTML.
+            if (not has_html) and has_svg:
+                template_data["html_template"] = self._wrap_svg_into_html_document(
+                    str(svg_template),
+                    template_name=str(template_data.get("template_name") or "SVG Template"),
+                )
+                has_html = True
 
             # Check if template name already exists
             async with AsyncSessionLocal() as session:
@@ -497,23 +509,113 @@ class GlobalMasterTemplateService:
         """组装 SVG 母版生成提示词。"""
         return TemplatePrompts.build_svg_template_generation_prompt(user_prompt, mode_instruction=mode_instruction)
 
+    def _template_workspace_manifest_path(self, workspace_id: str) -> Path:
+        wid = (workspace_id or "").strip()
+        if not wid:
+            raise ValueError("template_workspace_id 不能为空")
+
+        env_root = (os.getenv("WISEDECK_TEMPLATE_IMPORT_CACHE") or "").strip()
+        cache_root = Path(env_root) if env_root else Path(os.getcwd()) / "temp" / "templates_cache" / "template_import"
+
+        manifest = cache_root / wid / "manifest.json"
+        if not manifest.is_file():
+            raise ValueError(f"未找到模板工作区 manifest：{manifest}")
+        return manifest
+
+    def _load_workspace_slide_png_paths(self, workspace_id: str, *, limit: int = 6) -> List[str]:
+        manifest_path = self._template_workspace_manifest_path(workspace_id)
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            raise ValueError(f"无法读取模板工作区 manifest: {e}") from e
+
+        assets = data.get("slide_assets") or {}
+        png_paths = assets.get("png_paths") or []
+        out: List[str] = []
+        for p in png_paths[: max(1, min(limit, 12))]:
+            pp = Path(str(p))
+            if pp.is_file():
+                out.append(str(pp.resolve()))
+        return out
+
+    def _normalize_reference_images_for_ai(self, ref: Any) -> List[Dict[str, Any]]:
+        if ref is None:
+            return []
+        if isinstance(ref, list):
+            raw_list = ref
+        else:
+            raw_list = [ref]
+
+        normalized: List[Dict[str, Any]] = []
+        for item in raw_list:
+            if not isinstance(item, dict):
+                continue
+            data = item.get("data")
+            if not data:
+                continue
+            mime = (item.get("type") or "image/png").strip()
+            data_str = str(data)
+            if data_str.startswith("data:"):
+                data_out = data_str
+            else:
+                data_out = f"data:{mime};base64,{data_str}"
+
+            normalized.append(
+                {
+                    "filename": item.get("filename") or "reference.png",
+                    "size": int(item.get("size") or 0),
+                    "type": mime,
+                    "data": data_out,
+                }
+            )
+        return normalized
+
     async def generate_template_with_ai(self, prompt: str, template_name: str, description: str = "",
                                       tags: List[str] = None, generation_mode: str = "text_only",
                                       reference_image: dict = None, reference_pptx: dict = None,
                                       prompt_is_ready: bool = False,
-                                      output_format: str = "html"):
+                                      output_format: str = "html",
+                                      template_workspace_id: Optional[str] = None):
         """Generate a new template using AI (non-streaming) - does not save to database"""
         import json
 
         wants_svg = str(output_format or "").strip().lower() in ("svg", "svg_output", "dual")
         build_fn = self._build_svg_template_generation_prompt if wants_svg else self._build_template_generation_prompt
 
+        workspace_slide_pngs: List[str] = []
+        workspace_manifest_hint = ""
+        if template_workspace_id:
+            workspace_slide_pngs = self._load_workspace_slide_png_paths(template_workspace_id)
+            workspace_manifest_hint = (
+                f"\n\n【模板导入工作区】workspace_id={template_workspace_id}\n"
+                f"- 参考渲染页（PNG）数量：{len(workspace_slide_pngs)}\n"
+                "- 这些图片来自 LibreOffice→PDF→PNG，可与 python-pptx 结构化摘要对照。\n"
+            )
+
         if generation_mode == "pptx_extract":
             if not reference_pptx:
-                raise ValueError("PPTX提取模式需要上传PPTX文件")
+                raise ValueError("PPTX提取模式需要上传演示文稿文件（.ppt/.pptx）")
 
             pptx_context = self._extract_pptx_template_reference(reference_pptx)
+
+            if template_workspace_id:
+                try:
+                    ws_manifest_path = self._template_workspace_manifest_path(template_workspace_id)
+                    ws_data = json.loads(ws_manifest_path.read_text(encoding="utf-8"))
+                    merged_summary_extra = ws_data.get("python_pptx", {}).get("analysis_summary")
+                    if merged_summary_extra and merged_summary_extra not in (
+                        pptx_context.get("analysis_summary") or "",
+                    ):
+                        pptx_context["analysis_summary"] = (
+                            (pptx_context.get("analysis_summary") or "").rstrip()
+                            + "\n\n【工作区manifest中的附加摘要】\n"
+                            + str(merged_summary_extra)
+                        )
+                except Exception as merge_error:
+                    logger.warning("Failed to merge workspace manifest into pptx context: %s", merge_error)
+
             extracted_summary = pptx_context.get("analysis_summary", "")
+            extracted_summary = (extracted_summary or "").rstrip() + workspace_manifest_hint
             extracted_image = pptx_context.get("reference_image")
 
             prompt = (
@@ -528,14 +630,61 @@ class GlobalMasterTemplateService:
                 + f"{extracted_summary}"
             )
 
-            if extracted_image:
-                reference_image = extracted_image
+            ref_images = self._normalize_reference_images_for_ai(extracted_image)
+
+            if workspace_slide_pngs:
+                for idx, png_path in enumerate(workspace_slide_pngs, start=1):
+                    try:
+                        blob = Path(png_path).read_bytes()
+                        if len(blob) > 8 * 1024 * 1024:
+                            continue
+                        b64 = base64.b64encode(blob).decode("ascii")
+                        ref_images.append(
+                            {
+                                "filename": f"workspace_slide_{idx}.png",
+                                "size": len(blob),
+                                "type": "image/png",
+                                "data": f"data:image/png;base64,{b64}",
+                            }
+                        )
+                    except Exception as img_error:
+                        logger.warning("Failed to load workspace png %s: %s", png_path, img_error)
+
+            if ref_images:
+                reference_image = ref_images if len(ref_images) > 1 else ref_images[0]
                 generation_mode = "reference_style"
             else:
                 generation_mode = "text_only"
 
+        elif workspace_slide_pngs and generation_mode == "text_only":
+            # Allow workspace-only multimodal references without pptx_extract mode.
+            ref_images = []
+            for idx, png_path in enumerate(workspace_slide_pngs, start=1):
+                try:
+                    blob = Path(png_path).read_bytes()
+                    if len(blob) > 8 * 1024 * 1024:
+                        continue
+                    b64 = base64.b64encode(blob).decode("ascii")
+                    ref_images.append(
+                        {
+                            "filename": f"workspace_slide_{idx}.png",
+                            "size": len(blob),
+                            "type": "image/png",
+                            "data": f"data:image/png;base64,{b64}",
+                        }
+                    )
+                except Exception as img_error:
+                    logger.warning("Failed to load workspace png %s: %s", png_path, img_error)
+
+            if ref_images:
+                reference_image = ref_images if len(ref_images) > 1 else ref_images[0]
+                generation_mode = "reference_style"
+                prompt = (prompt or "").rstrip() + workspace_manifest_hint
+
         # 构建AI提示词
-        if generation_mode == "text_only" or not reference_image:
+        ref_images_for_msg = self._normalize_reference_images_for_ai(reference_image)
+
+        if generation_mode == "text_only" or not ref_images_for_msg:
             # 纯文本生成模式
             ai_prompt = prompt if prompt_is_ready else build_fn(prompt)
             messages = [{"role": "user", "content": ai_prompt}]
@@ -555,27 +704,27 @@ class GlobalMasterTemplateService:
                 mode_instruction=mode_instruction,
             )
 
-            # 构建多模态消息
-            # 确保图片URL格式正确
-            image_data = reference_image['data']
-            if not image_data.startswith("data:"):
-                # 如果是纯base64数据,添加data URL前缀
-                image_data = f"data:{reference_image['type']};base64,{image_data}"
+            if len(ref_images_for_msg) > 1:
+                ai_prompt = (
+                    ai_prompt
+                    + "\n\n【多参考页说明】你将收到多张来自同一模板的不同页面截图/SVG导出图。"
+                    + "请综合推断稳定的母版骨架（标题区、内容栅格、页脚/页码区等），不要逐页复制正文。\n"
+                )
 
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": ai_prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": image_data
-                            }
-                        }
-                    ]
-                }
-            ]
+            content_parts: List[Dict[str, Any]] = [{"type": "text", "text": ai_prompt}]
+            for img in ref_images_for_msg[:12]:
+                image_data = img["data"]
+                if not image_data.startswith("data:"):
+                    image_data = f"data:{img['type']};base64,{image_data}"
+
+                content_parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_data},
+                    }
+                )
+
+            messages = [{"role": "user", "content": content_parts}]
 
         try:
             # 获取模板生成任务的配置（使用异步版本以支持 WiseDeck 系统级配置）
@@ -1064,19 +1213,19 @@ class GlobalMasterTemplateService:
 
         pptx_bytes = self._decode_uploaded_base64_file(reference_pptx.get("data", ""))
         if not pptx_bytes:
-            raise ValueError("PPTX文件为空")
+            raise ValueError("演示文稿文件为空")
 
         if len(pptx_bytes) > 50 * 1024 * 1024:
-            raise ValueError("PPTX文件过大，请控制在 50MB 以内")
+            raise ValueError("演示文稿过大，请控制在 50MB 以内")
 
         try:
             prs = Presentation(BytesIO(pptx_bytes))
         except Exception as e:
-            raise ValueError(f"PPTX解析失败，请确认文件有效: {e}") from e
+            raise ValueError(f"演示文稿解析失败，请确认文件有效: {e}") from e
 
         slide_count = len(prs.slides)
         if slide_count == 0:
-            raise ValueError("PPTX中没有幻灯片，无法提取模板")
+            raise ValueError("演示文稿中没有幻灯片，无法提取模板")
 
         slide_width = int(getattr(prs, "slide_width", 0) or 0)
         slide_height = int(getattr(prs, "slide_height", 0) or 0)
@@ -1502,14 +1651,46 @@ class GlobalMasterTemplateService:
 
         # 0) well-formed XML
         try:
-            ET.fromstring(content)
+            root = ET.fromstring(content)
         except Exception as e:
             raise ValueError(f"SVG validation failed: not well-formed XML: {e}") from e
 
         # 1) viewBox check
-        viewbox_match = re.search(r'viewBox\s*=\s*["\']\s*0\s+0\s+(\d+)\s+(\d+)\s*["\']', content, re.IGNORECASE)
-        if not viewbox_match:
-            raise ValueError("SVG validation failed: missing/invalid viewBox (expected viewBox=\"0 0 <w> <h>\")")
+        # Prefer parsing the root attribute (robust to formatting / quotes / floats).
+        try:
+            tag = str(getattr(root, "tag", "") or "")
+            if not tag.lower().endswith("svg"):
+                raise ValueError(f"SVG validation failed: root element is not <svg>: {tag}")
+
+            view_box_raw = None
+            if isinstance(getattr(root, "attrib", None), dict):
+                view_box_raw = root.attrib.get("viewBox") or root.attrib.get("viewbox")
+            if not (isinstance(view_box_raw, str) and view_box_raw.strip()):
+                # Fallback: regex scan in case root.attrib misses it due to edge XML quirks.
+                m = re.search(r'\bviewBox\s*=\s*["\']([^"\']+)["\']', content, flags=re.IGNORECASE)
+                view_box_raw = m.group(1) if m else None
+
+            if not (isinstance(view_box_raw, str) and view_box_raw.strip()):
+                raise ValueError("SVG validation failed: missing viewBox")
+
+            parts = [p for p in re.split(r"[\s,]+", view_box_raw.strip()) if p]
+            if len(parts) != 4:
+                raise ValueError(
+                    f'SVG validation failed: invalid viewBox "{view_box_raw}" (expected 4 numbers: 0 0 w h)'
+                )
+            x, y, w, h = (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
+            if abs(x) > 1e-6 or abs(y) > 1e-6:
+                raise ValueError(
+                    f'SVG validation failed: viewBox must start at 0 0, got "{view_box_raw}"'
+                )
+            if not (w > 0 and h > 0):
+                raise ValueError(
+                    f'SVG validation failed: viewBox width/height must be > 0, got "{view_box_raw}"'
+                )
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"SVG validation failed: invalid viewBox: {e}") from e
 
         # 2) placeholder strictness
         allowed_exact = {

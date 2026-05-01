@@ -178,7 +178,7 @@
                                 </div>
                                 <div class="mode-option">
                                     <input type="radio" id="mode_pptx_extract" name="generation_mode" value="pptx_extract">
-                                    <label for="mode_pptx_extract">从PPTX提取模板（版式/字体/配色）</label>
+                                    <label for="mode_pptx_extract">从 PPT/PPTX 提取模板（版式/字体/配色）</label>
                                 </div>
                             </div>
 
@@ -210,22 +210,22 @@
                                 </div>
                             </div>
 
-                            <!-- PPTX 上传 -->
+                            <!-- PPT/PPTX 上传 -->
                             <div id="pptxUploadArea" class="image-upload-area" style="display: none;">
                                 <div class="upload-dropzone">
                                     <div class="upload-content">
                                         <div class="upload-icon"><i class="fas fa-file-powerpoint"></i></div>
                                         <div class="upload-text">
-                                            <p><strong>上传 PPTX 文件</strong> 或 <button type="button" class="upload-btn" id="selectPptxBtn">选择 PPTX</button></p>
-                                            <p class="upload-hint">支持 .pptx 格式，最大 50MB</p>
+                                            <p><strong>上传 PPT / PPTX</strong> 或 <button type="button" class="upload-btn" id="selectPptxBtn">选择文件</button></p>
+                                            <p class="upload-hint">支持 .ppt / .pptx，最大 50MB（服务端需 LibreOffice）</p>
                                         </div>
                                     </div>
-                                    <input type="file" id="pptxFileInput" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" style="display: none;">
+                                    <input type="file" id="pptxFileInput" accept=".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" style="display: none;">
                                 </div>
 
                                 <div id="pptxPreviewContainer" class="image-preview-container" style="display: none;">
                                     <div class="image-preview-header">
-                                        <h4><i class="fas fa-file-powerpoint"></i> 已上传 PPTX</h4>
+                                        <h4><i class="fas fa-file-powerpoint"></i> 已上传演示文稿</h4>
                                         <button type="button" class="remove-image-btn" id="removePptxBtn" title="移除">✕</button>
                                     </div>
                                     <div class="image-preview-content">

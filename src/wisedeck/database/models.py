@@ -305,7 +305,8 @@ class GlobalMasterTemplate(Base):
     user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     template_name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
-    html_template: Mapped[str] = mapped_column(Text, nullable=False)
+    # Allow SVG-only templates; HTML preview wrapper can be derived from svg_template when needed.
+    html_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Optional: ppt-master 风格的 SVG 母版载体（用于 native DrawingML 导出）
     svg_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     preview_image: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Base64 encoded preview image

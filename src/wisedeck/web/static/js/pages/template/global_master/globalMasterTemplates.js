@@ -18,6 +18,7 @@ const state = {
     currentTag: '',
     uploadedImage: null,
     uploadedPptx: null,
+    templateWorkspaceId: null,
     generatedTemplate: null,
     effectiveDefaultTemplateId: null,
 };
@@ -534,6 +535,7 @@ function openAIGenerationModal() {
     state.generatedTemplate = null;
     uploadApi.clearUploadedImage();
     uploadApi.clearUploadedPptx();
+    state.templateWorkspaceId = null;
 }
 
 function showAIGenerationForm() {
@@ -548,6 +550,7 @@ function closeAIGenerationModal() {
     state.generatedTemplate = null;
     uploadApi.clearUploadedImage();
     uploadApi.clearUploadedPptx();
+    state.templateWorkspaceId = null;
 }
 
 async function handleAIGeneration(event) {
@@ -563,10 +566,31 @@ async function handleAIGeneration(event) {
 
     if (payload.generation_mode === 'pptx_extract') {
         if (!state.uploadedPptx) {
-            alert('请上传 PPTX 文件后再生成');
+            alert('请先上传 .ppt / .pptx 演示文稿后再生成');
             return;
         }
         payload.reference_pptx = { ...state.uploadedPptx };
+
+        try {
+            updateStatusText('正在导入模板页面渲染（LibreOffice→PDF→PNG）…');
+            const wsResult = await apiClient.post('/api/global-master-templates/template-import/workspace', {
+                filename: state.uploadedPptx.filename,
+                data: state.uploadedPptx.data,
+                png_zoom: 2,
+            });
+            const wsId = wsResult?.workspace?.workspace_id;
+            if (!wsId) {
+                throw new Error('服务端未返回 workspace_id');
+            }
+            state.templateWorkspaceId = wsId;
+            payload.template_workspace_id = wsId;
+        } catch (err) {
+            console.error('模板工作区导入失败', err);
+            dom.aiFormContainer.style.display = 'block';
+            dom.aiGenerationProgress.style.display = 'none';
+            showAIGenerationError(err.message || '模板工作区导入失败（需要服务器安装 LibreOffice）');
+            return;
+        }
     } else if (state.uploadedImage && payload.generation_mode !== 'text_only') {
         payload.reference_image = { ...state.uploadedImage };
     } else if (payload.generation_mode !== 'text_only') {

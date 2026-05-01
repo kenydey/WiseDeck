@@ -93,23 +93,33 @@ function handleImageFile(file) {
 function handlePptxFile(file) {
     const lowerName = String(file?.name || '').toLowerCase();
     const isPptxMime = file?.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-    if (!lowerName.endsWith('.pptx') && !isPptxMime) {
-        alert('请上传 .pptx 文件');
+    const isPptMime =
+        file?.type === 'application/vnd.ms-powerpoint' ||
+        file?.type === 'application/mspowerpoint';
+    const okExt = lowerName.endsWith('.pptx') || lowerName.endsWith('.ppt');
+    if (!okExt && !isPptxMime && !isPptMime) {
+        alert('请上传 .ppt 或 .pptx 文件');
         return;
     }
     if (file.size > 50 * 1024 * 1024) {
-        alert('PPTX 文件过大，请控制在 50MB 以内');
+        alert('演示文稿过大，请控制在 50MB 以内');
         return;
     }
 
     const reader = new FileReader();
     reader.onload = (e) => {
+        let mime =
+            file.type ||
+            (lowerName.endsWith('.ppt')
+                ? 'application/vnd.ms-powerpoint'
+                : 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
         state.uploadedPptx = {
             filename: file.name,
             size: file.size,
-            type: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            type: mime,
             data: e.target.result,
         };
+        state.templateWorkspaceId = null;
         showPptxPreview();
     };
     reader.onerror = () => alert('读取 PPTX 文件失败');
@@ -141,7 +151,10 @@ function showPptxPreview() {
     previewContainer.style.display = 'block';
     if (filename) filename.textContent = state.uploadedPptx.filename;
     if (size) size.textContent = formatBytes(state.uploadedPptx.size);
-    if (hint) hint.textContent = '生成时将自动提取 PPTX 的版式、字体、配色与布局特征';
+    if (hint) {
+        hint.textContent =
+            '生成时将先用 LibreOffice 渲染多页 PNG/SVG，再结合 python-pptx 抽取版式、字体与配色特征';
+    }
 }
 
 function clearUploadedImage() {
@@ -154,6 +167,7 @@ function clearUploadedImage() {
 
 function clearUploadedPptx() {
     state.uploadedPptx = null;
+    state.templateWorkspaceId = null;
     const previewContainer = document.getElementById('pptxPreviewContainer');
     if (previewContainer) previewContainer.style.display = 'none';
     const fileInput = document.getElementById('pptxFileInput');

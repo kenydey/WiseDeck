@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import json
 import logging
 import os
 import tempfile
@@ -10,6 +11,7 @@ from ...ai import AIMessage, MessageRole, get_ai_provider
 from ...ai.base import ImageContent, TextContent
 from ...core.config import ai_config
 from ..pyppeteer_pdf_converter import get_pdf_converter
+from .layout_scorer import apply_rule_based_layout_fixes, score_slide_layout_html
 
 
 logger = logging.getLogger(__name__)
@@ -187,6 +189,10 @@ class LayoutRepairService:
             if not html_content or not feature_flag_enabled:
                 return html_content
 
+            layout_diagnostics = score_slide_layout_html(html_content)
+            rule_fixed = apply_rule_based_layout_fixes(html_content, layout_diagnostics)
+            working_html = rule_fixed if rule_fixed.strip() != html_content.strip() else html_content
+
             try:
                 # 优先使用异步方法获取用户配置的视觉分析提供者
                 vision_provider, vision_settings = await self._get_role_provider_async("vision_analysis")
@@ -235,21 +241,21 @@ class LayoutRepairService:
                         "Vision analysis role not configured (missing provider). Original error: %s",
                         role_error,
                     )
-                    return html_content
+                    return working_html
 
 
             try:
                 pdf_converter = get_pdf_converter()
                 if not pdf_converter.is_available():
                     logger.debug("PDF converter unavailable, skipping auto layout repair")
-                    return html_content
+                    return working_html
 
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     tmp_path = Path(tmp_dir)
                     html_path = tmp_path / "slide.html"
                     screenshot_path = tmp_path / "slide.png"
 
-                    html_path.write_text(html_content, encoding="utf-8")
+                    html_path.write_text(working_html, encoding="utf-8")
 
                     screenshot_ok = await pdf_converter.screenshot_html(
                         str(html_path),
@@ -260,7 +266,7 @@ class LayoutRepairService:
 
                     if not screenshot_ok or not screenshot_path.exists():
                         logger.warning("Auto layout repair skipped: screenshot capture failed")
-                        return html_content
+                        return working_html
 
                     try:
                         # 调试
@@ -289,6 +295,13 @@ class LayoutRepairService:
                     screenshot_b64 = base64.b64encode(screenshot_path.read_bytes()).decode("utf-8")
 
                 inspection_prompt = self._build_layout_inspection_prompt(slide_data, page_number, total_pages)
+                diag_json = json.dumps(layout_diagnostics, ensure_ascii=False)
+                inspection_prompt = (
+                    inspection_prompt
+                    + "\n\n【本地规则诊断（无视觉）】\n"
+                    + diag_json
+                    + "\n请结合截图与上述指标判断 severity。"
+                )
 
                 messages = [
                     AIMessage(
@@ -329,7 +342,7 @@ class LayoutRepairService:
                         "Vision inspection could not be completed after retries for slide %s, skipping repair",
                         page_number
                     )
-                    return html_content
+                    return working_html
 
                 inspection_report = self._strip_think_tags(inspection_response.content)
                 logger.info(
@@ -340,16 +353,16 @@ class LayoutRepairService:
 
                 if not inspection_report:
                     logger.debug("Vision analysis returned empty report, keeping original HTML")
-                    return html_content
+                    return working_html
 
                 if self._should_skip_layout_repair(inspection_report):
                     logger.info(
                         "Skipping auto layout repair for slide %s due to low-severity findings",
                         page_number
                     )
-                    return html_content
+                    return working_html
 
-                repair_prompt = self._build_layout_repair_prompt(html_content, inspection_report)
+                repair_prompt = self._build_layout_repair_prompt(working_html, inspection_report)
                 repair_response = None
                 for attempt in range(3):
                     try:
@@ -378,7 +391,7 @@ class LayoutRepairService:
                         "Layout repair could not be completed after retries for slide %s, returning original HTML",
                         page_number
                     )
-                    return html_content
+                    return working_html
 
                 repair_content = self._strip_think_tags(repair_response.content)
                 logger.debug(
@@ -388,7 +401,7 @@ class LayoutRepairService:
                 )
 
                 repaired_html = self._clean_html_response(repair_content)
-                if repaired_html and repaired_html.strip() and repaired_html.strip() != html_content.strip():
+                if repaired_html and repaired_html.strip() and repaired_html.strip() != working_html.strip():
                     logger.info(f"Auto layout repair applied for slide {page_number}")
                     return repaired_html
 
@@ -397,7 +410,7 @@ class LayoutRepairService:
             except Exception as e:
                 logger.error(f"Auto layout repair failed for slide {page_number}: {e}", exc_info=True)
 
-            return html_content
+            return working_html
 
     def _build_layout_inspection_prompt(
             self,
