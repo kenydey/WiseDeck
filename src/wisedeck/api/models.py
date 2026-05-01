@@ -322,6 +322,44 @@ class TemplateImportUploadResponse(BaseModel):
     workspace: TemplateReferenceWorkspacePaths
 
 
+class TemplateOfficeConvertRequest(BaseModel):
+    """Convert uploaded PPT/PPTX into html_template (+ optional svg_template) for template import."""
+
+    filename: str = Field(..., description="Original filename (.ppt or .pptx)")
+    data: str = Field(..., description="Base64 encoded file bytes (raw base64 or data URL)")
+    png_zoom: Optional[float] = Field(
+        2.0,
+        description="PNG zoom for svg_stack path only (PyMuPDF)",
+        ge=1.0,
+        le=4.0,
+    )
+    export_engine: Literal["svg_stack", "libreoffice_html"] = Field(
+        "svg_stack",
+        description="svg_stack: PDF→SVG merge; libreoffice_html: Impress HTML export + inline",
+    )
+    bundle_mode: Literal["vertical_stack", "first_slide_only"] = Field(
+        "vertical_stack",
+        description="Applies only when export_engine_used is svg_stack",
+    )
+    fallback_to_svg_stack: bool = Field(
+        False,
+        description="If libreoffice_html fails, convert via svg_stack instead",
+    )
+
+
+class TemplateOfficeConvertResponse(BaseModel):
+    success: bool = True
+    html_template: str = Field(..., description="Full HTML document for create_template")
+    svg_template: Optional[str] = Field(
+        None,
+        description="Composite SVG when export_engine_used is svg_stack; null for pure HTML path",
+    )
+    suggested_template_name: str = Field(..., description="Stem from filename for default naming")
+    slide_count: int = Field(..., ge=0)
+    export_engine_used: Literal["svg_stack", "libreoffice_html"]
+    warnings: List[str] = Field(default_factory=list)
+
+
 class GlobalMasterTemplateGenerateRequest(BaseModel):
     """Request model for AI-generated global master template"""
     prompt: str = Field(..., description="AI generation prompt")

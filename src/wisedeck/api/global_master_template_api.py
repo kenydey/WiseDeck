@@ -2,7 +2,9 @@
 Global Master Template API endpoints
 """
 
+import asyncio
 import logging
+from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -12,11 +14,19 @@ from .models import (
     GlobalMasterTemplateDetailResponse, GlobalMasterTemplateGenerateRequest,
     TemplateImportUploadRequest,
     TemplateImportUploadResponse,
+    TemplateOfficeConvertRequest,
+    TemplateOfficeConvertResponse,
     TemplateReferenceWorkspacePaths,
     TemplateSelectionRequest, TemplateSelectionResponse
 )
 from ..services.template.global_master_template_service import GlobalMasterTemplateService
-from ..services.template.template_import_service import TemplateImportService
+from ..services.template.libreoffice_html_exporter import export_presentation_html_bundle
+from ..services.template.slide_svg_bundler import bundle_workspace_svgs
+from ..services.template.template_import_service import (
+    TemplateImportService,
+    _resolve_soffice,
+    materialize_office_upload_to_pptx,
+)
 from ..auth.middleware import get_current_user_required
 from ..core.config import app_config
 from ..database.database import AsyncSessionLocal
@@ -52,6 +62,91 @@ def _template_import_service() -> TemplateImportService:
         return svc._extract_pptx_template_reference(reference_pptx)
 
     return TemplateImportService(extract_fn=_extract)
+
+
+def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> TemplateOfficeConvertResponse:
+    suggested = (
+        Path(body.filename or "upload").stem.replace("\x00", "") or "imported_template"
+    )
+    warnings_acc: List[str] = []
+
+    if body.export_engine == "libreoffice_html":
+        try:
+            pptx_path, root, safe_name = materialize_office_upload_to_pptx(
+                filename=body.filename,
+                data=body.data,
+            )
+            soffice = _resolve_soffice()
+            html_t, slide_count, warnings = export_presentation_html_bundle(
+                pptx_path,
+                work_dir=root,
+                soffice=soffice,
+            )
+            stem = Path(safe_name).stem or suggested
+            return TemplateOfficeConvertResponse(
+                html_template=html_t,
+                svg_template=None,
+                suggested_template_name=stem,
+                slide_count=slide_count,
+                export_engine_used="libreoffice_html",
+                warnings=warnings,
+            )
+        except Exception as e:
+            if not body.fallback_to_svg_stack:
+                raise
+            warnings_acc.append(f"libreoffice_html 失败，已回退 svg_stack：{e}")
+
+    importer = _template_import_service()
+    ws = importer.import_from_upload(
+        filename=body.filename,
+        data=body.data,
+        png_zoom=float(body.png_zoom or 2.0),
+    )
+    svg_t, html_t, w_bundle = bundle_workspace_svgs(ws.svg_dir, body.bundle_mode)
+    warnings_acc.extend(w_bundle)
+    slide_assets = ws.manifest.get("slide_assets") or {}
+    slide_count = int(slide_assets.get("page_count") or 0)
+
+    return TemplateOfficeConvertResponse(
+        html_template=html_t,
+        svg_template=svg_t,
+        suggested_template_name=suggested,
+        slide_count=slide_count,
+        export_engine_used="svg_stack",
+        warnings=warnings_acc,
+    )
+
+
+@router.post("/import/convert-office-template", response_model=TemplateOfficeConvertResponse)
+async def convert_office_template(
+    request: TemplateOfficeConvertRequest,
+    user=Depends(get_current_user_required),
+):
+    """Convert PPT/PPTX to html_template (+ svg_template for svg_stack) for template import."""
+    del user
+    try:
+        return await asyncio.to_thread(_convert_office_template_sync, request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"convert-office-template failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/import/office-engine-status")
+async def office_engine_status(user=Depends(get_current_user_required)):
+    """Lightweight health check for the LibreOffice (soffice) binary used by Office template import."""
+    del user
+    try:
+        soffice = await asyncio.to_thread(_resolve_soffice)
+        return {"available": True, "soffice_path": soffice, "error": None}
+    except FileNotFoundError as e:
+        return {"available": False, "soffice_path": None, "error": str(e)}
+    except Exception as e:
+        logger.warning("office-engine-status check failed: %s", e)
+        return {"available": False, "soffice_path": None, "error": str(e)}
 
 
 @router.post("/template-import/workspace", response_model=TemplateImportUploadResponse)

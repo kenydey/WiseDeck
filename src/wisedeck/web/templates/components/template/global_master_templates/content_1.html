@@ -8,10 +8,17 @@
             </h2>
             <p>创建、编辑和管理您的 PPT 模板</p>
         </div>
-        <div class="page-header-actions">
+        <div class="page-header-actions" style="flex-wrap: wrap; gap: 8px;">
             <button id="createTemplateBtn" class="btn btn-primary"><i class="fas fa-plus"></i> 新建模板</button>
             <button id="generateWithAIBtn" class="btn btn-success"><i class="fas fa-wand-magic-sparkles"></i> AI生成</button>
-            <input type="file" id="importTemplateInput" accept=".html,.json" style="display: none;">
+            <select id="importExportEngineSelect" title="PPT/PPTX 导入引擎" style="font-size:0.85rem;padding:6px 10px;border-radius:6px;border:1px solid var(--glass-border, #ccc);background:var(--glass-bg, #fff);color:inherit;max-width:200px;">
+                <option value="svg_stack">Office→SVG 纵向合并</option>
+                <option value="libreoffice_html">Office→LibreOffice HTML</option>
+            </select>
+            <label style="font-size:0.85rem;display:inline-flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+                <input type="checkbox" id="importFallbackSvgStack"/> HTML 失败回退 SVG
+            </label>
+            <input type="file" id="importTemplateInput" accept=".html,.json,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" style="display: none;">
             <button id="importTemplateBtn" class="btn btn-outline"><i class="fas fa-file-import"></i> 导入</button>
         </div>
     </div>

@@ -103,6 +103,55 @@ def _run_soffice_convert(soffice: str, src_path: Path, out_dir: Path, target_ext
     )
 
 
+def materialize_office_upload_to_pptx(
+    *,
+    filename: str,
+    data: str,
+    cache_root: Optional[Path] = None,
+) -> tuple[Path, Path, str]:
+    """
+    Decode upload and normalize to .pptx on disk. Returns (pptx_path, workspace_root, safe_filename).
+
+    Used when only LibreOffice HTML export is needed (skips PDF/SVG rasterization).
+    """
+    raw_bytes = _decode_uploaded_base64_file(data)
+    if not raw_bytes:
+        raise ValueError("上传文件为空")
+
+    lower = (filename or "").lower()
+    if not (lower.endswith(".pptx") or lower.endswith(".ppt")):
+        raise ValueError("仅支持上传 .ppt 或 .pptx 模板文件")
+
+    if len(raw_bytes) > 50 * 1024 * 1024:
+        raise ValueError("演示文稿过大，请控制在 50MB 以内")
+
+    env_root = (os.getenv("WISEDECK_TEMPLATE_IMPORT_CACHE") or "").strip()
+    if cache_root is not None:
+        root_base = Path(cache_root)
+    elif env_root:
+        root_base = Path(env_root)
+    else:
+        root_base = Path(os.getcwd()) / "temp" / "templates_cache" / "template_import"
+
+    workspace_id = str(uuid.uuid4())
+    root = root_base / workspace_id
+    root.mkdir(parents=True, exist_ok=True)
+
+    src_ext = ".pptx" if lower.endswith(".pptx") else ".ppt"
+    safe_name = Path(filename or "upload").name.replace("\x00", "")
+    raw_path = root / f"source{src_ext}"
+    raw_path.write_bytes(raw_bytes)
+
+    soffice = _resolve_soffice()
+
+    pptx_path = raw_path
+    if src_ext == ".ppt":
+        conv_dir = root / "convert_ppt"
+        pptx_path = _run_soffice_convert(soffice, raw_path, conv_dir, "pptx")
+
+    return pptx_path, root, safe_name
+
+
 def _pdf_to_page_assets(pdf_path: Path, svg_dir: Path, png_dir: Path, png_zoom: float = 2.0) -> Dict[str, Any]:
     try:
         import fitz  # PyMuPDF

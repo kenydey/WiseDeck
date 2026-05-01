@@ -625,6 +625,31 @@ function previewTemplate() {
 // editTemplate, duplicateTemplate, setDefaultTemplate, deleteTemplate
 
 // 导入模板功能
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = (e) => reject(new Error('文件读取失败'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function getOfficeImportOptionsLegacy() {
+    const engineEl = document.getElementById('importExportEngineSelect');
+    const fallbackEl = document.getElementById('importFallbackSvgStack');
+    return {
+        export_engine: engineEl && engineEl.value === 'libreoffice_html' ? 'libreoffice_html' : 'svg_stack',
+        fallback_to_svg_stack: !!(fallbackEl && fallbackEl.checked),
+    };
+}
+
+function detailMessage(detail) {
+    if (!detail) return '';
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) return detail.map((x) => x.msg || JSON.stringify(x)).join('; ');
+    return String(detail);
+}
+
 async function handleTemplateImport(event) {
     const file = event.target.files[0];
     if (!file) {
@@ -632,32 +657,79 @@ async function handleTemplateImport(event) {
     }
 
     try {
-        const fileContent = await readFileContent(file);
+        const lower = String(file.name || '').toLowerCase();
+        const isOffice =
+            lower.endsWith('.ppt') ||
+            lower.endsWith('.pptx') ||
+            file.type === 'application/vnd.ms-powerpoint' ||
+            file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
         let templateData;
 
-        if (file.name.endsWith('.json')) {
-            // JSON格式导入
-            templateData = JSON.parse(fileContent);
-
-            // 验证必要字段
-            if (!templateData.template_name || !templateData.html_template) {
-                throw new Error('JSON文件格式不正确，缺少必要字段 template_name 或 html_template');
+        if (isOffice) {
+            if (file.size > 50 * 1024 * 1024) {
+                throw new Error('演示文稿过大，请控制在 50MB 以内');
             }
-        } else if (file.name.endsWith('.html')) {
-            // HTML文件导入
-            const fileName = file.name.replace('.html', '');
+            const dataUrl = await readFileAsDataURL(file);
+            const opts = getOfficeImportOptionsLegacy();
+            const convRes = await fetch('/api/global-master-templates/import/convert-office-template', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    filename: file.name,
+                    data: dataUrl,
+                    export_engine: opts.export_engine,
+                    bundle_mode: 'vertical_stack',
+                    fallback_to_svg_stack: opts.fallback_to_svg_stack,
+                }),
+            });
+            const convPayload = await convRes.json().catch(() => ({}));
+            if (!convRes.ok) {
+                throw new Error(detailMessage(convPayload.detail) || convPayload.message || '转换失败');
+            }
+            const stem =
+                convPayload.suggested_template_name ||
+                file.name.replace(/\.(pptx|ppt)$/i, '');
             templateData = {
-                template_name: fileName,
-                description: `从文件 ${file.name} 导入`,
-                html_template: fileContent,
+                template_name: stem,
+                description: `从文件 ${file.name} 导入（${convPayload.export_engine_used}）`,
+                html_template: convPayload.html_template,
                 tags: ['导入'],
-                is_default: false
+                is_default: false,
             };
+            if (convPayload.svg_template) {
+                templateData.svg_template = convPayload.svg_template;
+            }
+            if (convPayload.warnings && convPayload.warnings.length) {
+                console.warn('模板导入警告', convPayload.warnings);
+            }
         } else {
-            throw new Error('不支持的文件格式，请选择 .html 或 .json 文件');
+            const fileContent = await readFileContent(file);
+
+            if (file.name.endsWith('.json')) {
+                templateData = JSON.parse(fileContent);
+                if (!templateData.template_name || !templateData.html_template) {
+                    throw new Error('JSON文件格式不正确，缺少必要字段 template_name 或 html_template');
+                }
+            } else if (file.name.endsWith('.html')) {
+                const fileName = file.name.replace('.html', '');
+                templateData = {
+                    template_name: fileName,
+                    description: `从文件 ${file.name} 导入`,
+                    html_template: fileContent,
+                    tags: ['导入'],
+                    is_default: false,
+                };
+            } else {
+                throw new Error('不支持的文件格式，请选择 .html、.json、.ppt 或 .pptx 文件');
+            }
         }
 
-        // 确保标签是数组格式
+        if (!templateData.template_name || !templateData.html_template) {
+            throw new Error('文件缺少模板名称或HTML内容');
+        }
+
         if (typeof templateData.tags === 'string') {
             templateData.tags = templateData.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
         }
@@ -665,31 +737,24 @@ async function handleTemplateImport(event) {
             templateData.tags = [];
         }
 
-        // 创建模板
         const response = await fetch('/api/global-master-templates/', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(templateData)
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(templateData),
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Failed to import template');
+            const error = await response.json().catch(() => ({}));
+            throw new Error(detailMessage(error.detail) || error.message || 'Failed to import template');
         }
 
-        // 清空文件输入
         event.target.value = '';
-
-        // 重新加载模板列表
-        loadTemplates(1); // 回到第一页查看新导入的模板
+        loadTemplates(1);
         alert('模板导入成功！');
-
     } catch (error) {
         console.error('Error importing template:', error);
         alert('导入模板失败: ' + error.message);
-        // 清空文件输入
         event.target.value = '';
     }
 }

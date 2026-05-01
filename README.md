@@ -316,6 +316,11 @@ UNSPLASH_ACCESS_KEY=your_unsplash_key_here    # Unsplash 图库
 SILICONFLOW_API_KEY=your_siliconflow_key_here # AI图像生成
 POLLINATIONS_API_KEY=your_pollinations_api_key_here # Pollinations AI (gen.pollinations.ai)
 
+# Office 模板导入（模板管理中导入 .ppt/.pptx → SVG/HTML；需本机安装 LibreOffice）
+WISEDECK_SOFFICE_PATH=                          # 可选：soffice 可执行文件完整路径
+WISEDECK_TEMPLATE_IMPORT_CACHE=                 # 可选：转换缓存目录（默认项目下 temp/templates_cache/template_import）
+WISEDECK_TEMPLATE_IMPORT_SLIDE_WARN=40          # 可选：幻灯片达到该数量时在转换接口响应中加入体积警告
+
 # 自动化鉴权
 WISEDECK_API_KEY=replace-with-strong-random-key
 WISEDECK_API_KEYS=admin:prod-key,robot:n8n-key

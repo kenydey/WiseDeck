@@ -772,24 +772,80 @@ function clearUploadedImage() {
     if (fileInput) fileInput.value = '';
 }
 
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function getOfficeImportOptions() {
+    const engineEl = document.getElementById('importExportEngineSelect');
+    const fallbackEl = document.getElementById('importFallbackSvgStack');
+    return {
+        export_engine: engineEl?.value === 'libreoffice_html' ? 'libreoffice_html' : 'svg_stack',
+        fallback_to_svg_stack: Boolean(fallbackEl?.checked),
+    };
+}
+
 async function handleTemplateImport(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
-        const content = await readFileContent(file);
+        const lower = String(file.name || '').toLowerCase();
+        const isOffice =
+            lower.endsWith('.ppt') ||
+            lower.endsWith('.pptx') ||
+            file.type === 'application/vnd.ms-powerpoint' ||
+            file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
         let templateData;
-        if (file.name.endsWith('.json')) {
-            templateData = JSON.parse(content);
-        } else if (file.name.endsWith('.html')) {
+        if (isOffice) {
+            if (file.size > 50 * 1024 * 1024) {
+                throw new Error('演示文稿过大，请控制在 50MB 以内');
+            }
+            const dataUrl = await readFileAsDataURL(file);
+            const opts = getOfficeImportOptions();
+            const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
+                filename: file.name,
+                data: dataUrl,
+                export_engine: opts.export_engine,
+                bundle_mode: 'vertical_stack',
+                fallback_to_svg_stack: opts.fallback_to_svg_stack,
+            });
+            const stem =
+                conv.suggested_template_name ||
+                file.name.replace(/\.(pptx|ppt)$/i, '');
             templateData = {
-                template_name: file.name.replace('.html', ''),
-                description: `从文件 ${file.name} 导入`,
-                html_template: content,
+                template_name: stem,
+                description: `从文件 ${file.name} 导入（${conv.export_engine_used}）`,
+                html_template: conv.html_template,
                 tags: ['导入'],
                 is_default: false,
             };
+            if (conv.svg_template) {
+                templateData.svg_template = conv.svg_template;
+            }
+            if (conv.warnings?.length) {
+                console.warn('模板导入警告', conv.warnings);
+            }
         } else {
-            throw new Error('请选择 .json 或 .html 文件');
+            const content = await readFileContent(file);
+            if (file.name.endsWith('.json')) {
+                templateData = JSON.parse(content);
+            } else if (file.name.endsWith('.html')) {
+                templateData = {
+                    template_name: file.name.replace('.html', ''),
+                    description: `从文件 ${file.name} 导入`,
+                    html_template: content,
+                    tags: ['导入'],
+                    is_default: false,
+                };
+            } else {
+                throw new Error('请选择 .json、.html、.ppt 或 .pptx 文件');
+            }
         }
 
         if (!templateData.template_name || !templateData.html_template) {
