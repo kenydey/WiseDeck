@@ -3,26 +3,29 @@ Global Master Template API endpoints
 """
 
 import asyncio
+import copy
 import logging
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi import APIRouter, HTTPException, Depends, Query, Request, Body
 from fastapi.responses import JSONResponse, Response
 
 from .models import (
+    DuplicateTemplateBody,
     GlobalMasterTemplateCreate, GlobalMasterTemplateUpdate, GlobalMasterTemplateResponse,
     GlobalMasterTemplateDetailResponse, GlobalMasterTemplateGenerateRequest,
     TemplateImportUploadRequest,
     TemplateImportUploadResponse,
     TemplateOfficeConvertRequest,
     TemplateOfficeConvertResponse,
+    TemplatePdfConvertRequest,
     TemplateReferenceWorkspacePaths,
     TemplateSelectionRequest, TemplateSelectionResponse
 )
 from ..services.template.global_master_template_service import GlobalMasterTemplateService
 from ..services.template.libreoffice_html_exporter import export_presentation_html_bundle
 from ..services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
-from ..services.template.slide_svg_bundler import bundle_workspace_svgs
+from ..services.template.slide_svg_bundler import BundleMode, bundle_workspace_svgs
 from ..services.template.svg_template_import_meta import build_import_summary
 from ..services.template.template_import_service import (
     TemplateImportService,
@@ -72,6 +75,40 @@ def _layout_hints_from_pptx_path(pptx_path: Path) -> dict:
     except Exception as e:
         logger.warning("extract_pptx_layout_hints failed: %s", e)
         return {"schema_version": 1, "error": str(e)[:200], "slides": []}
+
+
+def _convert_pdf_template_sync(body: TemplatePdfConvertRequest) -> TemplateOfficeConvertResponse:
+    suggested = Path(body.filename or "upload.pdf").stem.replace("\x00", "") or "imported_pdf_template"
+    importer = _template_import_service()
+    ws = importer.import_pdf_from_upload(
+        filename=body.filename,
+        data=body.data,
+        png_zoom=float(body.png_zoom or 2.0),
+    )
+    bm: BundleMode = "first_slide_only" if body.bundle_mode == "first_slide_only" else "vertical_stack"
+    svg_t, html_t, w_bundle = bundle_workspace_svgs(ws.svg_dir, bm)
+    slide_assets = ws.manifest.get("slide_assets") or {}
+    try:
+        slide_count = int(slide_assets.get("page_count") or 0)
+    except (TypeError, ValueError):
+        slide_count = 0
+
+    return TemplateOfficeConvertResponse(
+        html_template=html_t,
+        svg_template=svg_t,
+        suggested_template_name=suggested,
+        slide_count=slide_count,
+        export_engine_used="pdf_svg_stack",
+        warnings=w_bundle,
+        import_summary=build_import_summary(
+            svg_template=svg_t,
+            slide_count=slide_count,
+            bundle_mode=bm,
+            source_filename=suggested,
+            pptx_layout=None,
+            template_provenance="pdf_raster_svg_stack",
+        ),
+    )
 
 
 def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> TemplateOfficeConvertResponse:
@@ -162,6 +199,24 @@ async def convert_office_template(
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"convert-office-template failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/import/convert-pdf-template", response_model=TemplateOfficeConvertResponse)
+async def convert_pdf_template(
+    request: TemplatePdfConvertRequest,
+    user=Depends(get_current_user_required),
+):
+    """Convert PDF to html_template + svg_template (PyMuPDF pages, bundled)."""
+    del user
+    try:
+        return await asyncio.to_thread(_convert_pdf_template_sync, request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"convert-pdf-template failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -604,27 +659,54 @@ async def select_template_for_project(
 @router.post("/{template_id}/duplicate", response_model=GlobalMasterTemplateResponse)
 async def duplicate_template(
     template_id: int,
-    new_name: str = Query(..., description="New template name"),
+    new_name: Optional[str] = Query(None, description="New template name (optional if JSON body provides new_name)"),
+    body: Optional[DuplicateTemplateBody] = Body(None),
     user=Depends(get_current_user_required),
 ):
     """Duplicate an existing template"""
     try:
+        resolved_name = (
+            (body.new_name.strip() if body and isinstance(body.new_name, str) else "")
+            or (new_name.strip() if isinstance(new_name, str) else "")
+        )
+        if not resolved_name:
+            raise HTTPException(status_code=400, detail="new_name is required (query or JSON body)")
+
         template_service = _template_service_for_user(user)
         # Get the original template
         original = await template_service.get_template_by_id(template_id)
         if not original:
             raise HTTPException(status_code=404, detail="Template not found")
-        
-        # Create duplicate data
+
+        orig_tags = list(original.get("tags") or [])
+        dup_tags = orig_tags + (["复制"] if "复制" not in orig_tags else [])
+        orig_desc = (original.get("description") or "").strip()
+        desc_head = f"复制自: {original['template_name']}"
+        dup_description = desc_head + (f"\n\n{orig_desc}" if orig_desc else "")
+
+        dup_summary = (
+            copy.deepcopy(original["import_summary"])
+            if isinstance(original.get("import_summary"), dict)
+            else original.get("import_summary")
+        )
+        dup_style = (
+            copy.deepcopy(original["style_config"])
+            if isinstance(original.get("style_config"), dict)
+            else original.get("style_config")
+        )
+
         duplicate_data = {
-            'template_name': new_name,
-            'description': f"复制自: {original['template_name']}",
-            'html_template': original['html_template'],
-            'svg_template': original.get('svg_template'),
-            'tags': original['tags'] + ['复制'],
-            'created_by': 'duplicate'
+            "template_name": resolved_name,
+            "description": dup_description,
+            "html_template": original["html_template"],
+            "svg_template": original.get("svg_template"),
+            "preview_image": original.get("preview_image"),
+            "import_summary": dup_summary,
+            "style_config": dup_style,
+            "tags": dup_tags,
+            "created_by": "duplicate",
         }
-        
+
         result = await template_service.create_template(duplicate_data)
         return GlobalMasterTemplateResponse(**result)
     except ValueError as e:

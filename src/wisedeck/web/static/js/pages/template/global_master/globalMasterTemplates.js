@@ -70,6 +70,9 @@ function cacheDom() {
     dom.llmResponseContainer = document.getElementById('llmResponseContainer');
     dom.adjustmentInput = document.getElementById('adjustmentInput');
     dom.adjustmentProgress = document.getElementById('adjustmentProgress');
+    dom.editModalAiInput = document.getElementById('editModalAiAdjustInput');
+    dom.editModalAiBtn = document.getElementById('editModalAiAdjustBtn');
+    dom.editModalAiProgress = document.getElementById('editModalAiAdjustProgress');
 }
 
 function bindEvents() {
@@ -101,6 +104,7 @@ function bindEvents() {
     document.getElementById('toggleLLMResponseBtn')?.addEventListener('click', toggleLLMResponse);
     document.getElementById('copyResponseBtn')?.addEventListener('click', copyLLMResponse);
     document.getElementById('previewTemplateBtn')?.addEventListener('click', previewCurrentTemplate);
+    dom.editModalAiBtn?.addEventListener('click', applyAiEditToCurrentForm);
 
     document.getElementById('importTemplateBtn')?.addEventListener('click', () => {
         document.getElementById('importTemplateInput')?.click();
@@ -232,7 +236,7 @@ function buildTemplateCard(template) {
     const canEditOrDelete = isAdminUser || isUserOwnedTemplate;
     const canSetDefault = isUserOwnedTemplate || isAdminUser;
     const actions = [
-        canEditOrDelete ? `<button class="btn btn-sm btn-primary" data-action="edit" data-template-id="${template.id}"><i class="fas fa-pen"></i> 编辑</button>` : '',
+        `<button class="btn btn-sm btn-primary" data-action="edit" data-template-id="${template.id}"><i class="fas fa-pen"></i> 编辑</button>`,
         `<button class="btn btn-sm btn-secondary" data-action="duplicate" data-template-id="${template.id}"><i class="fas fa-clone"></i> 复制</button>`,
         `<button class="btn btn-sm btn-outline" data-action="export-json" data-template-id="${template.id}"><i class="fas fa-download"></i> 导出JSON</button>`,
         `<button class="btn btn-sm btn-outline" data-action="export-pptx" data-template-id="${template.id}"><i class="fas fa-file-powerpoint"></i> 导出PPTX</button>`,
@@ -347,6 +351,52 @@ function createPreviewFallback() {
     return div;
 }
 
+function needsForkBeforeEdit(template) {
+    if (!template || typeof template !== 'object') return true;
+    const uidRaw = currentUser.id;
+    const uid = uidRaw != null && uidRaw !== '' ? Number(uidRaw) : NaN;
+    const tid =
+        template.user_id !== null && template.user_id !== undefined
+            ? Number(template.user_id)
+            : null;
+    if (tid === null) return true;
+    if (!Number.isFinite(uid)) return true;
+    return tid !== uid;
+}
+
+function forkTemplateName(template) {
+    const base = String(template.template_name || '模板').slice(0, 180);
+    const s = new Date();
+    const y = s.getFullYear();
+    const m = String(s.getMonth() + 1).padStart(2, '0');
+    const d = String(s.getDate()).padStart(2, '0');
+    const hh = String(s.getHours()).padStart(2, '0');
+    const mm = String(s.getMinutes()).padStart(2, '0');
+    return `${base}_副本_${y}${m}${d}${hh}${mm}`;
+}
+
+async function openTemplateModalForEdit(templateId) {
+    try {
+        let template = state.templates.find((t) => Number(t.id) === Number(templateId));
+        if (!template) {
+            template = await apiClient.get(`/api/global-master-templates/${templateId}`);
+        }
+        if (needsForkBeforeEdit(template)) {
+            const newName = forkTemplateName(template);
+            const created = await apiClient.post(`/api/global-master-templates/${templateId}/duplicate`, {
+                new_name: newName,
+            });
+            alert('已为您创建可编辑副本并打开（系统或他人模板不可直接修改原件）');
+            await loadTemplates(state.currentPage);
+            openTemplateModal(created.id);
+            return;
+        }
+        openTemplateModal(templateId);
+    } catch (error) {
+        alert('打开编辑失败: ' + (error?.message || error));
+    }
+}
+
 function handleTemplateGridClick(event) {
     const target = event.target.closest('[data-action]');
     if (!target) return;
@@ -355,7 +405,7 @@ function handleTemplateGridClick(event) {
 
     switch (action) {
         case 'edit':
-            openTemplateModal(templateId);
+            openTemplateModalForEdit(templateId);
             break;
         case 'duplicate':
             duplicateTemplate(templateId);
@@ -474,6 +524,9 @@ async function loadTemplateForEdit(templateId) {
 function closeTemplateModal() {
     state.editingTemplateId = null;
     dom.templateModal.style.display = 'none';
+    if (dom.editModalAiInput) dom.editModalAiInput.value = '';
+    if (dom.editModalAiProgress) dom.editModalAiProgress.style.display = 'none';
+    if (dom.editModalAiBtn) dom.editModalAiBtn.disabled = false;
 }
 
 async function handleTemplateSubmit(event) {
@@ -775,11 +828,93 @@ async function duplicateTemplate(templateId) {
     const newName = prompt('请输入新模板名称:');
     if (!newName) return;
     try {
-        await apiClient.post(`/api/global-master-templates/${templateId}/duplicate?new_name=${encodeURIComponent(newName.trim())}`);
+        await apiClient.post(`/api/global-master-templates/${templateId}/duplicate`, {
+            new_name: newName.trim(),
+        });
         loadTemplates(state.currentPage);
         emit('templates:updated', { action: 'duplicate', id: templateId });
     } catch (error) {
         alert('复制失败: ' + error.message);
+    }
+}
+
+async function applyAiEditToCurrentForm() {
+    const htmlEl = document.getElementById('htmlTemplate');
+    const adjEl = dom.editModalAiInput || document.getElementById('editModalAiAdjustInput');
+    const adjustmentRequest = (adjEl?.value || '').trim();
+    const htmlTemplate = (htmlEl?.value || '').trim();
+    if (!htmlTemplate) {
+        alert('请先填写 HTML 模板代码后再使用 AI 修改（纯 SVG 母版请手动编辑或重新导入）');
+        return;
+    }
+    if (!adjustmentRequest) {
+        alert('请输入修改说明');
+        return;
+    }
+    const nameEl = document.getElementById('templateName');
+    const templateName = (nameEl?.value || '').trim() || '模板';
+
+    try {
+        if (dom.editModalAiProgress) dom.editModalAiProgress.style.display = 'block';
+        if (dom.editModalAiBtn) dom.editModalAiBtn.disabled = true;
+
+        const response = await fetch('/api/global-master-templates/adjust-template', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'text/event-stream',
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                html_template: htmlTemplate,
+                adjustment_request: adjustmentRequest,
+                template_name: templateName,
+                stream: true,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('AI 修改请求失败');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let applied = false;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.trim() || !line.startsWith('data: ')) continue;
+                try {
+                    const data = JSON.parse(line.slice(6));
+                    if (data.type === 'complete' && data.html_template) {
+                        htmlEl.value = data.html_template;
+                        if (adjEl) adjEl.value = '';
+                        applied = true;
+                    } else if (data.type === 'error') {
+                        throw new Error(data.message || 'AI 修改失败');
+                    }
+                } catch (parseErr) {
+                    if (parseErr instanceof SyntaxError) continue;
+                    throw parseErr;
+                }
+            }
+        }
+
+        if (!applied) {
+            throw new Error('未收到有效的 AI 输出');
+        }
+    } catch (error) {
+        alert('AI 修改失败: ' + (error?.message || error));
+    } finally {
+        if (dom.editModalAiProgress) dom.editModalAiProgress.style.display = 'none';
+        if (dom.editModalAiBtn) dom.editModalAiBtn.disabled = false;
     }
 }
 

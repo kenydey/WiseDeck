@@ -597,7 +597,9 @@ async function duplicateTemplate(templateId) {
     const newName = prompt('请输入新模板名称:');
     if (!newName) return;
     try {
-        await apiClient.post(`/api/global-master-templates/${templateId}/duplicate?new_name=${encodeURIComponent(newName.trim())}`);
+        await apiClient.post(`/api/global-master-templates/${templateId}/duplicate`, {
+            new_name: newName.trim(),
+        });
         loadTemplates(state.currentPage);
         emit('templates:updated', { action: 'duplicate', id: templateId });
     } catch (error) {

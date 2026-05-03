@@ -366,11 +366,34 @@ class TemplateOfficeConvertResponse(BaseModel):
     )
     suggested_template_name: str = Field(..., description="Stem from filename for default naming")
     slide_count: int = Field(..., ge=0)
-    export_engine_used: Literal["svg_stack", "libreoffice_html"]
+    export_engine_used: Literal["svg_stack", "libreoffice_html", "pdf_svg_stack"]
     warnings: List[str] = Field(default_factory=list)
     import_summary: Optional[Dict[str, Any]] = Field(
         None,
         description="Metadata for svg_native (placeholders, hash); pass through to create_template.import_summary",
+    )
+
+
+class DuplicateTemplateBody(BaseModel):
+    """Optional JSON body when duplicating (preferred for long Unicode names)."""
+
+    new_name: Optional[str] = Field(None, description="New template name")
+
+
+class TemplatePdfConvertRequest(BaseModel):
+    """Convert uploaded PDF into bundled HTML/SVG template (PyMuPDF per-page SVG)."""
+
+    filename: str = Field(..., description="Original filename (.pdf)")
+    data: str = Field(..., description="Base64 encoded file bytes (raw base64 or data URL)")
+    png_zoom: Optional[float] = Field(
+        2.0,
+        description="PNG rasterization zoom factor for PDF pages",
+        ge=1.0,
+        le=4.0,
+    )
+    bundle_mode: Literal["vertical_stack", "first_slide_only"] = Field(
+        "vertical_stack",
+        description="How to merge slide SVGs",
     )
 
 

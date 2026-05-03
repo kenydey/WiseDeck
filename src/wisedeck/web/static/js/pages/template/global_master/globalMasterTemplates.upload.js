@@ -243,10 +243,14 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 lower.endsWith('.pptx') ||
                 file.type === 'application/vnd.ms-powerpoint' ||
                 file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            const isPdf = lower.endsWith('.pdf') || file.type === 'application/pdf';
 
             let templateData;
             let importWarnings = [];
+            /** @type {'office'|'pdf'|null} */
+            let importKind = null;
             if (isOffice) {
+                importKind = 'office';
                 if (file.size > 50 * 1024 * 1024) {
                     throw new Error('演示文稿过大，请控制在 50MB 以内');
                 }
@@ -286,6 +290,42 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                     importWarnings = conv.warnings.slice();
                     console.warn('模板导入警告', importWarnings);
                 }
+            } else if (isPdf) {
+                importKind = 'pdf';
+                if (file.size > 50 * 1024 * 1024) {
+                    throw new Error('PDF 过大，请控制在 50MB 以内');
+                }
+                setImportButtonBusy(true, '解析 PDF…');
+                busy = true;
+                const dataUrl = await readFileAsDataURL(file);
+                const conv = await apiClient.post('/api/global-master-templates/import/convert-pdf-template', {
+                    filename: file.name,
+                    data: dataUrl,
+                    png_zoom: 2.0,
+                    bundle_mode: 'vertical_stack',
+                });
+                const stem =
+                    conv.suggested_template_name ||
+                    file.name.replace(/\.pdf$/i, '');
+                templateData = {
+                    template_name: stem,
+                    description:
+                        `从 PDF ${file.name} 导入（引擎 ${conv.export_engine_used}）。` +
+                        '此为视觉母版：PDF 无原生幻灯片占位结构；精细替换区建议优先使用 PPTX 导入。',
+                    html_template: conv.html_template,
+                    tags: ['导入', 'PDF', '视觉母版'],
+                    is_default: false,
+                };
+                if (conv.svg_template) {
+                    templateData.svg_template = conv.svg_template;
+                }
+                if (conv.import_summary && typeof conv.import_summary === 'object') {
+                    templateData.import_summary = conv.import_summary;
+                }
+                if (Array.isArray(conv.warnings) && conv.warnings.length) {
+                    importWarnings = conv.warnings.slice();
+                    console.warn('模板导入警告', importWarnings);
+                }
             } else {
                 const content = await readFileContent(file);
                 if (file.name.endsWith('.json')) {
@@ -299,7 +339,7 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                         is_default: false,
                     };
                 } else {
-                    throw new Error('请选择 .json、.html、.ppt 或 .pptx 文件');
+                    throw new Error('请选择 .json、.html、.pdf、.ppt 或 .pptx 文件');
                 }
             }
 
@@ -314,15 +354,18 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 templateData.tags = [];
             }
 
-            if (isOffice) {
+            if (importKind === 'office' || importKind === 'pdf') {
                 setImportButtonBusy(true, '保存模板…');
             }
             await apiClient.post('/api/global-master-templates/', templateData);
             event.target.value = '';
             loadTemplates(1);
             const provenanceNote =
-                isOffice &&
-                '已保存 import_summary（含 pptx_layout 等）。svg_stack 路径会在服务端尝试按 PPTX 占位符位置注入 {{PAGE_TITLE}} 等标记。';
+                importKind === 'office'
+                    ? '已保存 import_summary（含 pptx_layout 等）。svg_stack 路径会在服务端尝试按 PPTX 占位符位置注入 {{PAGE_TITLE}} 等标记。'
+                    : importKind === 'pdf'
+                      ? 'PDF 导入已写入 import_summary（template_provenance=pdf_raster_svg_stack）；不含 PPTX 占位符映射。'
+                      : '';
             if (importWarnings.length) {
                 alert(
                     '模板导入成功（包含警告）：\n- ' +

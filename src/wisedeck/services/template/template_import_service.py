@@ -396,3 +396,109 @@ class TemplateImportService:
             png_dir=png_dir,
             manifest=manifest,
         )
+
+    def import_pdf_from_upload(
+        self,
+        *,
+        filename: str,
+        data: str,
+        png_zoom: float = 2.0,
+    ) -> TemplateReferenceWorkspace:
+        """Import PDF directly into slide SVGs + PNGs (no LibreOffice). PyMuPDF required."""
+        raw_bytes = _decode_uploaded_base64_file(data)
+        if not raw_bytes:
+            raise ValueError("上传文件为空")
+
+        lower = (filename or "").lower()
+        if not lower.endswith(".pdf"):
+            raise ValueError("仅支持上传 .pdf 模板文件")
+
+        if len(raw_bytes) > 50 * 1024 * 1024:
+            raise ValueError("PDF 过大，请控制在 50MB 以内")
+
+        workspace_id = str(uuid.uuid4())
+        root = self.cache_root / workspace_id
+        root.mkdir(parents=True, exist_ok=True)
+
+        safe_name = Path(filename or "upload.pdf").name.replace("\x00", "")
+        pdf_path = root / "source.pdf"
+        pdf_path.write_bytes(raw_bytes)
+
+        svg_dir = root / "svg"
+        png_dir = root / "png"
+        slide_assets = _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=png_zoom)
+
+        manifest_path = root / "manifest.json"
+
+        from wisedeck.services.template.svg_template_import_meta import (
+            guess_canvas_format_from_svg,
+            scan_svg_dir_placeholder_markers,
+        )
+
+        per_slide_markers = scan_svg_dir_placeholder_markers(svg_dir)
+        first_svg = ""
+        try:
+            paths0 = sorted(svg_dir.glob("slide_*.svg"))
+            if paths0:
+                first_svg = paths0[0].read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            first_svg = ""
+
+        manifest: Dict[str, Any] = {
+            "workspace_id": workspace_id,
+            "source_filename": safe_name,
+            "source_kind": "pdf",
+            "paths": {
+                "root": str(root.resolve()),
+                "pptx": str(pdf_path.resolve()),
+                "pdf": str(pdf_path.resolve()),
+                "manifest": str(manifest_path.resolve()),
+                "svg_dir": str(svg_dir.resolve()),
+                "png_dir": str(png_dir.resolve()),
+            },
+            "slide_assets": slide_assets,
+            "python_pptx": {},
+            "pptx_layout": {"schema_version": 1, "slides": [], "source": "pdf_upload"},
+            "svg_native_meta": {
+                "placeholder_markers": per_slide_markers,
+                "canvas_format_guess": guess_canvas_format_from_svg(first_svg),
+            },
+            "pptx_readable": {"schema_version": 1, "error": "skipped_pdf_import"},
+            "pptx_readable_summary": {},
+        }
+
+        from wisedeck.services.layout_package.manifest import (
+            enrich_template_manifest_with_layout_package,
+            overlay_layout_package_with_pptx_readable,
+        )
+
+        page_ct = 0
+        try:
+            page_ct = int((slide_assets or {}).get("page_count") or 0)
+        except (TypeError, ValueError):
+            page_ct = 0
+
+        manifest = enrich_template_manifest_with_layout_package(
+            manifest,
+            workspace_id=workspace_id,
+            slide_count=page_ct,
+            source="pdf_template_import",
+        )
+        manifest = overlay_layout_package_with_pptx_readable(manifest)
+
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        return TemplateReferenceWorkspace(
+            workspace_id=workspace_id,
+            root_dir=root,
+            source_filename=safe_name,
+            pptx_path=pdf_path,
+            pdf_path=pdf_path,
+            manifest_path=manifest_path,
+            svg_dir=svg_dir,
+            png_dir=png_dir,
+            manifest=manifest,
+        )

@@ -18,7 +18,7 @@
             <label style="font-size:0.85rem;display:inline-flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
                 <input type="checkbox" id="importFallbackSvgStack"/> HTML 失败回退 SVG
             </label>
-            <input type="file" id="importTemplateInput" accept=".html,.json,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" style="display: none;">
+            <input type="file" id="importTemplateInput" accept=".html,.json,.ppt,.pptx,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" style="display: none;">
             <button id="importTemplateBtn" class="btn btn-outline"><i class="fas fa-file-import"></i> 导入</button>
         </div>
     </div>
@@ -123,6 +123,29 @@
                     <div style="margin-top: 6px; color: #64748b; font-size: 12px;">
                         SVG 路线遵循 ppt-master 的技术约束与占位符（例如 `{{PAGE_TITLE}}` / `{{CONTENT_AREA}}` / `{{PAGE_NUM}}`）。
                     </div>
+                </div>
+
+                <div class="form-group" id="editModalAiSection">
+                    <label for="editModalAiAdjustInput">AI 修改（基于当前 HTML）</label>
+                    <div style="display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap;">
+                        <input type="text" id="editModalAiAdjustInput" placeholder="例如：主色改为深蓝、标题区加大、去掉页脚装饰…" style="flex: 1; min-width: 200px;">
+                        <button type="button" id="editModalAiAdjustBtn" class="btn btn-primary"><i class="fas fa-wand-magic-sparkles"></i> 应用 AI 建议</button>
+                    </div>
+                    <div id="editModalAiAdjustProgress" style="display: none; margin-top: 8px;">
+                        <div style="height: 3px; background: #f1f5f9; border-radius: 2px; overflow: hidden;">
+                            <div style="width: 100%; height: 100%; background: #111; animation: indeterminate 1.5s ease-in-out infinite;"></div>
+                        </div>
+                        <small style="color: #94a3b8; font-size: 0.82rem;">正在根据说明调整 HTML…</small>
+                    </div>
+                    <div style="margin-top: 6px; color: #64748b; font-size: 12px;">
+                        将改写「HTML 模板代码」文本框内容；不会自动保存，请检查后点击「保存」。若仅使用 SVG 母版且无 HTML，请先补充或改用导入/手调。
+                    </div>
+                    <style>
+                        @keyframes indeterminate {
+                            0% { transform: translateX(-100%); }
+                            100% { transform: translateX(100%); }
+                        }
+                    </style>
                 </div>
 
                 <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;">
