@@ -453,11 +453,15 @@ class DatabaseMigration:
                 await session.execute(text("DROP TABLE IF EXISTS export_jobs"))
             if await self._table_exists(session, "project_reference_files"):
                 await session.execute(text("DROP TABLE IF EXISTS project_reference_files"))
-            if dialect != "sqlite" and await self._table_exists(session, "projects"):
-                if await self._column_exists(session, "projects", "design_spec_version"):
-                    await session.execute(text("ALTER TABLE projects DROP COLUMN IF EXISTS design_spec_version"))
-                if await self._column_exists(session, "projects", "design_spec"):
-                    await session.execute(text("ALTER TABLE projects DROP COLUMN IF EXISTS design_spec"))
+            if await self._table_exists(session, "projects"):
+                for col in ("design_spec_version", "design_spec"):
+                    if await self._column_exists(session, "projects", col):
+                        if dialect == "sqlite":
+                            await session.execute(text(f"ALTER TABLE projects DROP COLUMN {col}"))
+                        else:
+                            await session.execute(
+                                text(f"ALTER TABLE projects DROP COLUMN IF EXISTS {col}")
+                            )
             await session.commit()
         except Exception as e:
             await session.rollback()
@@ -557,15 +561,25 @@ class DatabaseMigration:
             dialect = self._dialect_name(session)
             if await self._table_exists(session, "reference_chunks"):
                 await session.execute(text("DROP TABLE IF EXISTS reference_chunks"))
-            if dialect != "sqlite" and await self._table_exists(session, "project_reference_files"):
+            if await self._table_exists(session, "project_reference_files"):
                 for col in ("parse_mode_used", "include_in_prompt", "sort_order"):
                     if await self._column_exists(session, "project_reference_files", col):
-                        await session.execute(
-                            text(f"ALTER TABLE project_reference_files DROP COLUMN IF EXISTS {col}")
-                        )
-            if dialect != "sqlite" and await self._table_exists(session, "projects"):
+                        if dialect == "sqlite":
+                            await session.execute(
+                                text(f"ALTER TABLE project_reference_files DROP COLUMN {col}")
+                            )
+                        else:
+                            await session.execute(
+                                text(f"ALTER TABLE project_reference_files DROP COLUMN IF EXISTS {col}")
+                            )
+            if await self._table_exists(session, "projects"):
                 if await self._column_exists(session, "projects", "design_spec_locked"):
-                    await session.execute(text("ALTER TABLE projects DROP COLUMN IF EXISTS design_spec_locked"))
+                    if dialect == "sqlite":
+                        await session.execute(text("ALTER TABLE projects DROP COLUMN design_spec_locked"))
+                    else:
+                        await session.execute(
+                            text("ALTER TABLE projects DROP COLUMN IF EXISTS design_spec_locked")
+                        )
             await session.commit()
         except Exception as e:
             await session.rollback()
