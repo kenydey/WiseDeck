@@ -25,6 +25,67 @@ REFERENCE_PARAPHRASE_ZH = (
 )
 
 
+def editability_matrix() -> List[Dict[str, Any]]:
+    """
+    可编辑粒度矩阵（产品/集成对照），与 modes[].id 对齐。
+    取值：full | high | partial | low | none | unknown | mixed
+    """
+    return [
+        {
+            "mode_id": "client_dom_merge_charts",
+            "body_text_in_powerpoint": "partial",
+            "vector_shapes": "partial",
+            "native_charts": "full",
+            "per_slide_raster_baseline": "mixed",
+            "notes_zh": "dom-to-pptx 文本多为占位形状；图表由合并链路写入原生序列。",
+        },
+        {
+            "mode_id": "structured_homomorphic_editable",
+            "body_text_in_powerpoint": "high",
+            "vector_shapes": "high",
+            "native_charts": "full",
+            "per_slide_raster_baseline": "mixed",
+            "notes_zh": "服务端同构路径优先保留形状层级；失败时可能降级栅格。",
+        },
+        {
+            "mode_id": "structured_python_native",
+            "body_text_in_powerpoint": "high",
+            "vector_shapes": "low",
+            "native_charts": "full",
+            "per_slide_raster_baseline": "none",
+            "notes_zh": "拼装简单矩形文本框为主，视觉贴近模板能力弱于同构路径。",
+        },
+        {
+            "mode_id": "structured_auto",
+            "body_text_in_powerpoint": "mixed",
+            "vector_shapes": "mixed",
+            "native_charts": "mixed",
+            "per_slide_raster_baseline": "mixed",
+            "notes_zh": (
+                "对应 GET …/export/structured-pptx 省略 mode 或 mode=auto：由 "
+                "WISEDECK_STRUCTURED_PPTX_MEASUREMENT_SOURCE 等在截图同构与 python-pptx 等分支间选择；"
+                "可编辑粒度随实际分支而定。"
+            ),
+        },
+        {
+            "mode_id": "pptx_images_raster",
+            "body_text_in_powerpoint": "none",
+            "vector_shapes": "none",
+            "native_charts": "none",
+            "per_slide_raster_baseline": "full",
+            "notes_zh": "整页图片为主，PowerPoint 内不适配逐段改字。",
+        },
+        {
+            "mode_id": "standard_apryse_if_enabled",
+            "body_text_in_powerpoint": "unknown",
+            "vector_shapes": "unknown",
+            "native_charts": "none",
+            "per_slide_raster_baseline": "unknown",
+            "notes_zh": "取决于 Apryse 转换策略与 HTML 复杂度；需部署实测矩阵。",
+        },
+    ]
+
+
 def export_modes_catalog() -> Dict[str, Any]:
     """返回结构化导出目录（中英字段主要为 zh UI）。"""
     modes: List[Dict[str, Any]] = [
@@ -64,6 +125,20 @@ def export_modes_catalog() -> Dict[str, Any]:
             "risk_zh": "视觉模板贴合度低于同构/HTML 路径。",
         },
         {
+            "id": "structured_auto",
+            "label_zh": "结构化导出（自动策略）",
+            "summary_zh": (
+                "服务端按站点配置在结构化导出链路间自动选择： "
+                "默认参考 WISEDECK_STRUCTURED_PPTX_MEASUREMENT_SOURCE（如 homomorphic-editable），"
+                "可在截图同构、python-pptx 拼装等之间切换；明细取决于环境与输入。"
+            ),
+            "editable_text_shapes": "mixed",
+            "editable_vector": "mixed",
+            "editable_native_charts": True,
+            "api_hint": "GET …/export/structured-pptx 或 GET …/export/structured-pptx?mode=auto",
+            "risk_zh": "实际可编辑性与落走路径随配置与降级逻辑变化；集成时请查阅日志或显式指定 mode。",
+        },
+        {
             "id": "pptx_images_raster",
             "label_zh": "以图片形式导出",
             "summary_zh": "每页栅格化为图片写入 PPTX，保真度高但在 PowerPoint 中不可逐字编辑正文。",
@@ -84,6 +159,7 @@ def export_modes_catalog() -> Dict[str, Any]:
             "risk_zh": "取决于许可证与转换器版本；不一定优于结构化路径。",
         },
     ]
+    matrix = editability_matrix()
     return {
         "schema_version": 1,
         "fidelity_ranking": FIDELITY_RANKING,
@@ -92,5 +168,6 @@ def export_modes_catalog() -> Dict[str, Any]:
             "自动策略 → 图片型兜底 →（可选）标准 Apryse。"
         ),
         "reference_comparison_zh": REFERENCE_PARAPHRASE_ZH,
+        "editability_matrix": matrix,
         "modes": modes,
     }

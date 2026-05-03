@@ -1,0 +1,20 @@
+{# TODO 阶段进度条（基于 TodoBoard.stages） #}
+{% if todo_board is defined and todo_board.stages %}
+<div class="wd-stage-progress"
+    style="max-width: 960px; margin: 0 auto 18px; padding: 12px 14px; background: rgba(52, 152, 219, 0.06); border: 1px solid rgba(52, 152, 219, 0.2); border-radius: 12px;">
+    <div style="font-size: 12px; color: #7f8c8d; margin-bottom: 8px;">生成流水线进度（基于当前 TODO 阶段）</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        {% for st in todo_board.stages %}
+        {% set st_done = st.status == 'completed' %}
+        {% set st_run = st.status == 'running' %}
+        <span class="wd-stage-pill"
+            style="padding: 6px 12px; border-radius: 999px; font-size: 12px; border: 1px solid {% if st_done %}#27ae60{% elif st_run %}#2980b9{% else %}#dfe6e9{% endif %}; background: {% if st_done %}#27ae60{% elif st_run %}#3498db{% else %}#fff{% endif %}; color: {% if st_done or st_run %}#fff{% else %}#636e72{% endif %};">
+            {{ loop.index }}. {{ st.name }}
+        </span>
+        {% if not loop.last %}
+        <span style="color:#b2bec3;font-size:11px;">→</span>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

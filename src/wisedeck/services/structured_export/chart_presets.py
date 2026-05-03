@@ -64,3 +64,23 @@ def official_chart_sample_payload(chart_type: str) -> Dict[str, Any]:
 ICON_SLOT_HINT_ZH = (
     "建议使用语义化占位：icon:name（如 icon:trend-up）、或 Font Awesome：fas fa-chart-line。"
 )
+
+
+def chart_contract_prompt_fragment_zh() -> str:
+    """注入大纲提示词：约束 chart_config.type 与导出管线一致。"""
+    types_joined = ", ".join(OFFICIAL_CHART_TYPES)
+    return (
+        "\n   - **结构化导出图表类型约束**：`chart_config.type` 优先使用下列英文 canonical 之一："
+        f"{types_joined}。"
+        "允许中文别名（系统会归一化，如「柱状图」→ bar）；「漏斗图」请用 bar。"
+        f"{ICON_SLOT_HINT_ZH}"
+    )
+
+
+def chart_contract_prompt_fragment_en() -> str:
+    types_joined = ", ".join(OFFICIAL_CHART_TYPES)
+    return (
+        "\n   - **Structured-export chart constraint**: prefer canonical `chart_config.type` in: "
+        f"{types_joined}. Chinese aliases may be normalized; use bar instead of funnel."
+        f" Icons: use semantic placeholders like icon:name or Font Awesome classes."
+    )

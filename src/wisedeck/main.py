@@ -34,6 +34,7 @@ from .web import router as web_router
 from .web.community_routes import router as community_router
 from .database.startup_initialization import run_startup_initialization
 from .core.config import app_config
+from .auth.app_api_key_middleware import AppApiKeyMiddleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -91,6 +92,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(AppApiKeyMiddleware)
 
 # Authentication middleware/router are disabled in local anonymous mode.
 

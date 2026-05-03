@@ -842,6 +842,7 @@
 
 {% set workflow_active_step = 'todo' %}
 {% include "components/project/workflow_progress_strip.html" %}
+{% include "components/project/workflow_stage_progress.html" %}
 
 <!-- Requirements Confirmation Section -->
 {% set requirements_stage = todo_board.stages | selectattr('id', 'equalto', 'requirements_confirmation') | first %}
@@ -977,6 +978,29 @@
                     <small
                         style="color: #7f8c8d; font-size: 12px; margin-top: 5px; display: block;">详细描述您的目标受众特征，AI将据此调整内容深度和表达方式</small>
                 </div>
+                <div style="margin-top: 10px;">
+                    <span style="font-size: 12px; color: #7f8c8d; display: block; margin-bottom: 6px;">快速选择（可视化预设）</span>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="wdPickAudiencePreset('企业管理层')">企业管理层</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="wdPickAudiencePreset('技术团队')">技术团队</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="wdPickAudiencePreset('投资人')">投资人</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="wdPickAudiencePreset('学术研究者')">学术研究者</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="wdPickAudiencePreset('普通大众')">普通大众</button>
+                    </div>
+                </div>
+                <script>
+                    function wdPickAudiencePreset(v) {
+                        var s = document.getElementById('audience_type');
+                        if (!s) return;
+                        s.value = v;
+                        if (typeof toggleCustomAudience === 'function') toggleCustomAudience();
+                    }
+                </script>
             </div>
         </div>
 

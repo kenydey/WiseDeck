@@ -6,6 +6,11 @@ PPT大纲生成相关提示词
 from datetime import datetime
 from typing import Dict, Any, List
 
+from wisedeck.services.structured_export.chart_presets import (
+    chart_contract_prompt_fragment_en,
+    chart_contract_prompt_fragment_zh,
+)
+
 
 class OutlinePrompts:
     """PPT大纲生成相关的提示词集合"""
@@ -85,6 +90,7 @@ class OutlinePrompts:
 4. **图表与表格展示优化**：
    - 对适合可视化的信息，**建议并提供图表配置**，写入 `chart_config` 字段中。
    - 图表需明确类型（如柱状图、折线图、饼图、甘特图、森林图、韦恩图、upset图、生存曲线图、漏斗图、环形图、和弦图、词云图、关联图、瀑布图、条形图、面积图等）、说明含义、配置样式及数据结构。
+   {chart_contract_prompt_fragment_zh()}
    - 对于多维参数对比、规格矩阵、方案横向比较等场景，可输出 `slide_type="table"` 并提供 `table_config`。
    - 仅当信息天然是“行列结构”时使用 `table_config`，不要把普通段落强行转表格。
 
@@ -207,6 +213,7 @@ class OutlinePrompts:
 4. **Chart and Table Suggestions**:
    - For any data, comparisons, or visual-friendly content, suggest a chart and include its configuration under `chart_config`.
    - Specify chart type (e.g., bar, pie, line), provide sample data, and chart options.
+   {chart_contract_prompt_fragment_en()}
    - For multidimensional comparisons, parameter matrices, or side-by-side options, you may use `slide_type="table"` with `table_config`.
    - Use `table_config` only when the information is naturally tabular, not for regular narrative text.
 

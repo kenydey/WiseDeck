@@ -814,6 +814,8 @@ class SlideInpaintRegionRequest(BaseModel):
 
     bbox: Dict[str, Any]
     prompt: str = ""
+    image_base64: Optional[str] = None
+    save: bool = False
 
 
 @router.post("/api/projects/{project_id}/slides/{slide_index}/inpaint-region")
@@ -823,17 +825,53 @@ async def slide_inpaint_region_poc(
     body: SlideInpaintRegionRequest,
     user: User = Depends(get_current_user_required),
 ):
-    """局部 inpainting POC（对标 Banana）；默认 deferred，详见响应 JSON。"""
+    """局部 inpainting：WISEDECK_INPAINT_PROVIDER=local_blur_poc 时可本地模糊 bbox。"""
     project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    from ...services.slide.slide_region_inpaint_service import build_inpaint_poc_response
+    from ...services.slide.inpaint_local_adapter import blur_bbox_region
+    from ...services.slide.slide_region_inpaint_service import (
+        build_inpaint_poc_response,
+        configured_inpaint_providers,
+        maybe_save_inpaint_overlay,
+    )
+
+    bbox = body.bbox if isinstance(body.bbox, dict) else {}
+    prov = (configured_inpaint_providers().get("primary") or "").strip().lower()
+
+    if prov == "local_blur_poc" and body.image_base64:
+        ok_blur, err_blur, out_b64 = blur_bbox_region(
+            image_base64=body.image_base64,
+            bbox=bbox,
+        )
+        if not ok_blur or not out_b64:
+            return JSONResponse(
+                {"status": "inpaint_failed", "detail": err_blur or "unknown"},
+                status_code=400,
+            )
+        payload: Dict[str, Any] = {
+            "status": "ok",
+            "provider": prov,
+            "image_base64_png": out_b64,
+            "project_id": project_id,
+            "slide_index": slide_index,
+        }
+        if body.save:
+            saved, serr = await maybe_save_inpaint_overlay(
+                project_id=project_id,
+                slide_index=slide_index,
+                png_b64=out_b64,
+                user_id=int(user.id),
+            )
+            payload["saved"] = saved
+            payload["save_error"] = serr
+        return JSONResponse(payload)
 
     payload = build_inpaint_poc_response(
         project_id=project_id,
         slide_index=slide_index,
         prompt=(body.prompt or "").strip(),
-        bbox=body.bbox if isinstance(body.bbox, dict) else {},
+        bbox=bbox,
     )
     return JSONResponse(payload)

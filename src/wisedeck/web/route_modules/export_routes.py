@@ -41,6 +41,21 @@ async def api_export_catalog():
     return JSONResponse(export_modes_catalog())
 
 
+@router.get("/api/export/drawingml-poc-status")
+async def api_drawingml_poc_status():
+    """SVG→DrawingML POC 开关状态（无需登录）。"""
+    from wisedeck.svg_export.drawingml_poc import analyze_simple_svg_rects, drawingml_poc_enabled
+
+    return JSONResponse(
+        {
+            "enabled": drawingml_poc_enabled(),
+            "sample": analyze_simple_svg_rects(
+                '<svg xmlns="http://www.w3.org/2000/svg"><rect x="1" y="2" width="10" height="20" fill="#000"/></svg>'
+            ),
+        }
+    )
+
+
 @router.get("/api/charts/presets-catalog")
 async def api_chart_presets_catalog():
     """官方图表类型与别名（无需登录），与大纲 chart_config 字段对齐。"""
@@ -313,6 +328,21 @@ async def export_project_structured_pptx(
                 detail="Project outline has no slides; generate an outline first",
             )
         deck = _project_to_structured_deck(project, outline)
+
+        md = project.project_metadata if isinstance(project.project_metadata, dict) else {}
+        lp_raw = md.get("layout_package")
+        lp = lp_raw if isinstance(lp_raw, dict) else None
+        from wisedeck.services.layout_package.validate import (
+            collect_layout_package_issues,
+            should_raise_on_layout_issues,
+        )
+
+        lp_issues = collect_layout_package_issues(lp, outline)
+        if lp_issues and should_raise_on_layout_issues():
+            raise HTTPException(status_code=422, detail="; ".join(lp_issues))
+        if lp_issues:
+            logging.warning("layout_package validation warnings for %s: %s", project_id, lp_issues)
+
         computed_payload = deck_to_presenton_presentation_json(deck)
         title_str = outline.get("title") or project.title or "Presentation"
         dual_payload = try_assemble_presentation_from_dual_write(

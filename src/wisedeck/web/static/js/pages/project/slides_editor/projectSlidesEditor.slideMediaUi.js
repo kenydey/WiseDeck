@@ -802,6 +802,21 @@ function resizeCodeMirror() {
     }
 }
 
+/** 插入 chart_config JSON 骨架（对齐 /api/charts/presets-catalog 约定） */
+function insertWiseDeckChartConfigSkeleton() {
+    const snippet =
+        '"chart_config": {\n  "type": "bar",\n  "data": {\n    "labels": ["A", "B", "C"],\n    "datasets": [{"label": "系列1", "data": [12, 19, 8]}]\n  }\n}';
+    if (typeof codeMirrorEditor !== 'undefined' && codeMirrorEditor && isCodeMirrorInitialized) {
+        codeMirrorEditor.getDoc().replaceSelection(snippet);
+        if (typeof showNotification === 'function') {
+            showNotification('已插入 chart_config 骨架', 'success');
+        }
+        return;
+    }
+    if (typeof showNotification === 'function') {
+        showNotification('请先切换到代码模式并确保编辑器已初始化', 'warning');
+    }
+}
 
 
 // 初始化侧栏宽度调整功能

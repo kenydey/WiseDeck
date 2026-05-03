@@ -3,6 +3,16 @@
     <p>项目ID: <code>{{ project.project_id }}</code></p>
 </div>
 
+{% set ol = project.outline if project.outline else {} %}
+{% set outline_slides = ol['slides'] if ol and 'slides' in ol else [] %}
+{% if outline_slides | length == 0 %}
+<div
+    style="max-width: 960px; margin: 12px auto 0; padding: 14px 18px; background: rgba(241, 196, 15, 0.15); border: 1px solid rgba(241, 196, 15, 0.45); border-radius: 10px; font-size: 14px; color: #2c3e50;">
+    <strong>下一步：</strong>尚未检测到有效大纲。
+    <a href="/projects/{{ project.project_id }}/todo" style="margin-left: 8px; font-weight: 600;">打开工作台 → 需求确认与生成</a>
+</div>
+{% endif %}
+
 <div style="max-width: 1400px; margin: 0 auto; padding: var(--spacing-lg);">
 
     <div class="grid">
