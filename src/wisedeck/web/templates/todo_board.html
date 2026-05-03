@@ -1057,6 +1057,8 @@
             </div>
         </div>
 
+        {% include 'components/project/todo_board/design_spec_requirements_fields.html' %}
+
         <div style="text-align: center;">
             <button type="submit" id="confirm-requirements-btn"
                 style="background: var(--surface-contrast); color: var(--surface); border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: bold;">
@@ -6014,6 +6016,10 @@
                     e.preventDefault();
                     alert('请选择要上传的文件');
                     return false;
+                }
+
+                if (typeof window.wdRefreshDesignSpecHiddenInputs === 'function') {
+                    window.wdRefreshDesignSpecHiddenInputs();
                 }
 
                 // 显示加载状态

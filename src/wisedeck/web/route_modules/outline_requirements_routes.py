@@ -4,7 +4,7 @@ Requirement confirmation routes for outline workflows.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -80,6 +80,9 @@ async def confirm_project_requirements(
     content_urls: str = Form(None),
     file_processing_mode: str = Form("markitdown"),
     content_analysis_depth: str = Form("standard"),
+    design_spec_tone: Optional[str] = Form(None),
+    design_spec_density: Optional[str] = Form(None),
+    design_spec_language_style: Optional[str] = Form(None),
     user: User = Depends(get_current_user_required)
 ):
     """Confirm project requirements and generate TODO list - 支持多文件上传和联网搜索集成"""
@@ -171,6 +174,10 @@ async def confirm_project_requirements(
             "fixed_pages": fixed_pages if page_count_mode == "fixed" else None
         }
 
+        def _ds_field(val: Optional[str], default: str) -> str:
+            s = (val or "").strip()
+            return s if s else default
+
         # Update project with confirmed requirements
         confirmed_requirements = {
             "topic": topic,
@@ -188,6 +195,9 @@ async def confirm_project_requirements(
             "content_analysis_depth": content_analysis_depth if content_source in ("file", "url") else None,
             "file_generated_outline": file_outline if content_source not in ("file", "url") else None,
             "force_file_outline_regeneration": content_source in ("file", "url"),
+            "design_spec_tone": _ds_field(design_spec_tone, "专业严谨"),
+            "design_spec_density": _ds_field(design_spec_density, "平衡适中"),
+            "design_spec_language_style": _ds_field(design_spec_language_style, "简体书面"),
         }
 
         # 如果是文件项目，保存文件信息

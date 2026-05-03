@@ -698,6 +698,9 @@
                     }
                 }
 
+                if (typeof window.wdRefreshDesignSpecHiddenInputs === 'function') {
+                    window.wdRefreshDesignSpecHiddenInputs();
+                }
                 const formData = new FormData(requirementsForm);
                 if (selectedSource === 'url' && urlInput) {
                     formData.set('content_urls', urlInput.value);

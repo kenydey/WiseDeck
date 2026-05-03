@@ -548,6 +548,19 @@ class ProjectWorkflowStageService:
                 if not project:
                     return False
 
+                design_overlay: Dict[str, str] = {}
+                for form_key, spec_key in (
+                    ("design_spec_tone", "tone"),
+                    ("design_spec_density", "density"),
+                    ("design_spec_language_style", "language_style"),
+                ):
+                    raw = confirmed_requirements.pop(form_key, None)
+                    if raw is None:
+                        continue
+                    s = str(raw).strip()
+                    if s:
+                        design_overlay[spec_key] = s
+
                 # Store confirmed requirements
                 project.confirmed_requirements = confirmed_requirements
                 project.status = "in_progress"
@@ -572,6 +585,30 @@ class ProjectWorkflowStageService:
                     # Save confirmed requirements to database
                     await db_manager.save_confirmed_requirements(project_id, confirmed_requirements)
                     logger.info(f"Successfully saved confirmed requirements to database for project {project_id}")
+
+                    if design_overlay and not bool(getattr(project, "design_spec_locked", False)):
+                        from .design_spec_schema import deep_merge_design_spec, validate_design_spec_dict
+
+                        base = project.design_spec if isinstance(project.design_spec, dict) else {}
+                        merged = deep_merge_design_spec(base, design_overlay)
+                        validate_design_spec_dict(merged)
+                        new_ver = int(getattr(project, "design_spec_version", 1) or 1) + 1
+                        await db_manager.update_project_data(
+                            project_id,
+                            {"design_spec": merged, "design_spec_version": new_ver},
+                        )
+                        project.design_spec = merged
+                        project.design_spec_version = new_ver
+                        logger.info(
+                            "Merged design_spec from requirements confirm for project %s (v%s)",
+                            project_id,
+                            new_ver,
+                        )
+                    elif design_overlay and bool(getattr(project, "design_spec_locked", False)):
+                        logger.info(
+                            "Skipping design_spec merge from requirements confirm (locked) for project %s",
+                            project_id,
+                        )
 
                     # 如果有文件生成的大纲，也保存到数据库
                     if file_generated_outline:

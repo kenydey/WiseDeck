@@ -1,5 +1,6 @@
 /**
  * Design specification — GET/PUT/PATCH /api/projects/:id/design-spec，常用字段表单 + 锁定。
+ * 语气 / 密度 / 语言风格 选项与需求确认页 design_spec_requirements_fields.html 保持一致。
  */
 (function () {
     if (typeof window === 'undefined') return;
@@ -8,24 +9,143 @@
         return window.projectId || (window.wisedeckEditorConfig && window.wisedeckEditorConfig.projectId);
     }
 
+    function _tonePresets() {
+        return ['专业严谨', '亲和易懂', '销售说服', '学术客观', '简洁直接'];
+    }
+    function _densityPresets() {
+        return ['稀疏要点', '平衡适中', '高信息密度'];
+    }
+    function _langPresets() {
+        return ['简体书面', '简体口语', '英文简洁', '英文正式'];
+    }
+
+    function _tripletFieldHtml(label, selectId, customId, wrapId, presets, firstSelected) {
+        var opts;
+        if (firstSelected && presets.indexOf(firstSelected) >= 0) {
+            opts = presets
+                .map(function (v) {
+                    return (
+                        '<option value="' +
+                        v.replace(/"/g, '&quot;') +
+                        '"' +
+                        (v === firstSelected ? ' selected' : '') +
+                        '>' +
+                        v +
+                        '</option>'
+                    );
+                })
+                .join('');
+        } else {
+            opts = presets
+                .map(function (v, i) {
+                    return (
+                        '<option value="' +
+                        v.replace(/"/g, '&quot;') +
+                        '"' +
+                        (i === 0 ? ' selected' : '') +
+                        '>' +
+                        v +
+                        '</option>'
+                    );
+                })
+                .join('');
+        }
+        return (
+            '<div class="col-md-4"><label class="form-label small mb-0">' +
+            label +
+            '</label>' +
+            '<select class="form-select form-select-sm" id="' +
+            selectId +
+            '">' +
+            opts +
+            '<option value="__custom__">自定义…</option></select>' +
+            '<div id="' +
+            wrapId +
+            '" style="display:none;margin-top:6px;">' +
+            '<input type="text" class="form-control form-control-sm" id="' +
+            customId +
+            '" placeholder="自定义" autocomplete="off" />' +
+            '</div></div>'
+        );
+    }
+
+    function _applyTripletFromSaved(saved, selectId, customId, wrapId, presets, defaultPreset) {
+        var sel = document.getElementById(selectId);
+        var cust = document.getElementById(customId);
+        var wrap = document.getElementById(wrapId);
+        if (!sel) return;
+        var str = saved != null ? String(saved).trim() : '';
+        if (str && presets.indexOf(str) >= 0) {
+            sel.value = str;
+            if (wrap) wrap.style.display = 'none';
+            if (cust) cust.value = '';
+        } else if (str) {
+            sel.value = '__custom__';
+            if (cust) cust.value = str;
+            if (wrap) wrap.style.display = 'block';
+        } else {
+            sel.value = defaultPreset;
+            if (wrap) wrap.style.display = 'none';
+            if (cust) cust.value = '';
+        }
+    }
+
+    function _readTriplet(selectId, customId) {
+        var sel = document.getElementById(selectId);
+        var cust = document.getElementById(customId);
+        if (!sel) return '';
+        if (sel.value === '__custom__') {
+            return cust && cust.value.trim() ? cust.value.trim() : '';
+        }
+        return sel.value.trim();
+    }
+
+    function _wireTriplet(selectId, customId, wrapId) {
+        var sel = document.getElementById(selectId);
+        var cust = document.getElementById(customId);
+        var wrap = document.getElementById(wrapId);
+        if (!sel) return;
+        function sync() {
+            if (sel.value === '__custom__') {
+                if (wrap) wrap.style.display = 'block';
+            } else {
+                if (wrap) wrap.style.display = 'none';
+            }
+        }
+        sel.addEventListener('change', sync);
+        if (cust) cust.addEventListener('input', sync);
+        sync();
+    }
+
     function _syncFormFromSpec(spec) {
-        const s = spec && typeof spec === 'object' ? spec : {};
-        const tone = document.getElementById('wdDesignSpecTone');
-        const density = document.getElementById('wdDesignSpecDensity');
-        const lang = document.getElementById('wdDesignSpecLangStyle');
-        if (tone) tone.value = s.tone != null ? String(s.tone) : '';
-        if (density) density.value = s.density != null ? String(s.density) : '';
-        if (lang) lang.value = s.language_style != null ? String(s.language_style) : '';
+        var s = spec && typeof spec === 'object' ? spec : {};
+        _applyTripletFromSaved(s.tone, 'wdDesignSpecToneSel', 'wdDesignSpecToneCustom', 'wdDesignSpecToneWrap', _tonePresets(), '专业严谨');
+        _applyTripletFromSaved(
+            s.density,
+            'wdDesignSpecDensitySel',
+            'wdDesignSpecDensityCustom',
+            'wdDesignSpecDensityWrap',
+            _densityPresets(),
+            '平衡适中'
+        );
+        _applyTripletFromSaved(
+            s.language_style,
+            'wdDesignSpecLangSel',
+            'wdDesignSpecLangCustom',
+            'wdDesignSpecLangWrap',
+            _langPresets(),
+            '简体书面'
+        );
     }
 
     function _overlayFormOntoParsed(obj) {
-        const out = obj && typeof obj === 'object' ? JSON.parse(JSON.stringify(obj)) : {};
-        const tone = document.getElementById('wdDesignSpecTone');
-        const density = document.getElementById('wdDesignSpecDensity');
-        const lang = document.getElementById('wdDesignSpecLangStyle');
-        if (tone && tone.value.trim()) out.tone = tone.value.trim();
-        if (density && density.value.trim()) out.density = density.value.trim();
-        if (lang && lang.value.trim()) out.language_style = lang.value.trim();
+        var out = obj && typeof obj === 'object' ? JSON.parse(JSON.stringify(obj)) : {};
+        var t = _readTriplet('wdDesignSpecToneSel', 'wdDesignSpecToneCustom');
+        var d = _readTriplet('wdDesignSpecDensitySel', 'wdDesignSpecDensityCustom');
+        var l = _readTriplet('wdDesignSpecLangSel', 'wdDesignSpecLangCustom');
+        if (t) out.tone = t;
+        if (d) out.density = d;
+        if (l) out.language_style = l;
         return out;
     }
 
@@ -65,12 +185,24 @@
                 '<input class="form-check-input" type="checkbox" id="wdDesignSpecLockCb" />' +
                 '<label class="form-check-label" for="wdDesignSpecLockCb">锁定规格（锁定后无法修改 JSON 或合并字段，需先取消锁定）</label></div>' +
                 '<div class="row g-2 mb-2">' +
-                '<div class="col-md-4"><label class="form-label small mb-0">语气 tone</label>' +
-                '<input type="text" class="form-control form-control-sm" id="wdDesignSpecTone" placeholder="如：专业、亲和" /></div>' +
-                '<div class="col-md-4"><label class="form-label small mb-0">密度 density</label>' +
-                '<input type="text" class="form-control form-control-sm" id="wdDesignSpecDensity" placeholder="如：高信息密度" /></div>' +
-                '<div class="col-md-4"><label class="form-label small mb-0">语言风格 language_style</label>' +
-                '<input type="text" class="form-control form-control-sm" id="wdDesignSpecLangStyle" placeholder="如：简体书面语" /></div></div>' +
+                _tripletFieldHtml('语气 tone', 'wdDesignSpecToneSel', 'wdDesignSpecToneCustom', 'wdDesignSpecToneWrap', _tonePresets(), '专业严谨') +
+                _tripletFieldHtml(
+                    '密度 density',
+                    'wdDesignSpecDensitySel',
+                    'wdDesignSpecDensityCustom',
+                    'wdDesignSpecDensityWrap',
+                    _densityPresets(),
+                    '平衡适中'
+                ) +
+                _tripletFieldHtml(
+                    '语言风格 language_style',
+                    'wdDesignSpecLangSel',
+                    'wdDesignSpecLangCustom',
+                    'wdDesignSpecLangWrap',
+                    _langPresets(),
+                    '简体书面'
+                ) +
+                '</div>' +
                 '<label class="form-label small">完整 JSON（高级）</label>' +
                 '<textarea id="wdDesignSpecTextarea" class="form-control font-monospace" rows="12" spellcheck="false"></textarea>' +
                 '<div class="mt-2 small text-muted" id="wdDesignSpecVersion"></div>' +
@@ -80,6 +212,10 @@
                 '<button type="button" class="btn btn-primary" id="wdDesignSpecSaveBtn">保存完整 JSON</button>' +
                 '</div></div></div>';
             document.body.appendChild(el);
+
+            _wireTriplet('wdDesignSpecToneSel', 'wdDesignSpecToneCustom', 'wdDesignSpecToneWrap');
+            _wireTriplet('wdDesignSpecDensitySel', 'wdDesignSpecDensityCustom', 'wdDesignSpecDensityWrap');
+            _wireTriplet('wdDesignSpecLangSel', 'wdDesignSpecLangCustom', 'wdDesignSpecLangWrap');
 
             document.getElementById('wdDesignSpecLockCb').addEventListener('change', async function () {
                 const cb = document.getElementById('wdDesignSpecLockCb');
@@ -196,12 +332,18 @@
         const ta = document.getElementById('wdDesignSpecTextarea');
         const saveFull = document.getElementById('wdDesignSpecSaveBtn');
         const saveMerge = document.getElementById('wdDesignSpecSaveMergeBtn');
-        const tone = document.getElementById('wdDesignSpecTone');
-        const density = document.getElementById('wdDesignSpecDensity');
-        const lang = document.getElementById('wdDesignSpecLangStyle');
+        const ids = [
+            'wdDesignSpecToneSel',
+            'wdDesignSpecToneCustom',
+            'wdDesignSpecDensitySel',
+            'wdDesignSpecDensityCustom',
+            'wdDesignSpecLangSel',
+            'wdDesignSpecLangCustom',
+        ];
         if (ta) ta.readOnly = !!locked;
-        [tone, density, lang].forEach(function (inp) {
-            if (inp) inp.disabled = !!locked;
+        ids.forEach(function (id) {
+            const n = document.getElementById(id);
+            if (n) n.disabled = !!locked;
         });
         if (saveFull) saveFull.disabled = !!locked;
         if (saveMerge) saveMerge.disabled = !!locked;
