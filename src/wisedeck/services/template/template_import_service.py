@@ -298,6 +298,20 @@ class TemplateImportService:
                 logger.warning("python-pptx manifest extraction failed: %s", e)
                 pptx_meta = {"error": str(e)}
 
+        from wisedeck.services.template.svg_template_import_meta import (
+            guess_canvas_format_from_svg,
+            scan_svg_dir_placeholder_markers,
+        )
+
+        per_slide_markers = scan_svg_dir_placeholder_markers(svg_dir)
+        first_svg = ""
+        try:
+            paths0 = sorted(svg_dir.glob("slide_*.svg"))
+            if paths0:
+                first_svg = paths0[0].read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            first_svg = ""
+
         manifest: Dict[str, Any] = {
             "workspace_id": workspace_id,
             "source_filename": safe_name,
@@ -312,6 +326,10 @@ class TemplateImportService:
             },
             "slide_assets": slide_assets,
             "python_pptx": pptx_meta,
+            "svg_native_meta": {
+                "placeholder_markers": per_slide_markers,
+                "canvas_format_guess": guess_canvas_format_from_svg(first_svg),
+            },
         }
 
         manifest_path.write_text(

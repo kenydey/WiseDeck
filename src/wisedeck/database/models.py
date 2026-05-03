@@ -376,6 +376,8 @@ class GlobalMasterTemplate(Base):
     # Optional: ppt-master 风格的 SVG 母版载体（用于 native DrawingML 导出）
     svg_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     preview_image: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Base64 encoded preview image
+    # Optional summary from office/svg import (placeholder markers hash, slide_count, etc.)
+    import_summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     style_config: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # 样式配置
     tags: Mapped[List[str]] = mapped_column(JSON, nullable=True)  # 标签分类
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否为默认模板

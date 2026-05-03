@@ -177,6 +177,15 @@ class DatabaseMigration:
             "down": self._migration_017_down,
         })
 
+        # Migration 018: global_master_templates.import_summary for SVG/office import metadata
+        self.migrations.append({
+            "version": "018",
+            "name": "add_import_summary_to_global_master_templates",
+            "description": "Add import_summary JSON column for placeholder markers / slide_count snapshot",
+            "up": self._migration_018_up,
+            "down": self._migration_018_down,
+        })
+
     async def _migration_015_up(self, session: AsyncSession):
         """Migration 015: Relax NOT NULL constraint on global_master_templates.html_template (sqlite rebuild; postgres drop not null)."""
         logger.info("Applying migration 015: Relax global_master_templates.html_template nullability")
@@ -584,6 +593,58 @@ class DatabaseMigration:
         except Exception as e:
             await session.rollback()
             logger.error(f"Migration 017 rollback failed: {e}")
+            raise
+
+    async def _migration_018_up(self, session: AsyncSession):
+        """Migration 018: Add import_summary JSON to global_master_templates."""
+        logger.info("Applying migration 018: Add import_summary to global_master_templates")
+        try:
+            if not await self._table_exists(session, "global_master_templates"):
+                logger.info("global_master_templates table not found; skipping migration 018")
+                return
+            if await self._column_exists(session, "global_master_templates", "import_summary"):
+                logger.info("import_summary column already exists; skipping migration 018")
+                await session.commit()
+                return
+            dialect = self._dialect_name(session)
+            if dialect == "sqlite":
+                await session.execute(
+                    text("ALTER TABLE global_master_templates ADD COLUMN import_summary TEXT")
+                )
+            else:
+                await session.execute(
+                    text(
+                        "ALTER TABLE global_master_templates "
+                        "ADD COLUMN IF NOT EXISTS import_summary JSONB"
+                    )
+                )
+            await session.commit()
+            logger.info("Migration 018 completed successfully")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 018 failed: {e}")
+            raise
+
+    async def _migration_018_down(self, session: AsyncSession):
+        logger.info("Rolling back migration 018 (best-effort)")
+        try:
+            if not await self._table_exists(session, "global_master_templates"):
+                return
+            if not await self._column_exists(session, "global_master_templates", "import_summary"):
+                await session.commit()
+                return
+            dialect = self._dialect_name(session)
+            if dialect == "sqlite":
+                logger.warning("SQLite DROP COLUMN import_summary skipped (unsupported)")
+                await session.commit()
+                return
+            await session.execute(
+                text("ALTER TABLE global_master_templates DROP COLUMN IF EXISTS import_summary")
+            )
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 018 rollback failed: {e}")
             raise
 
     @staticmethod

@@ -263,6 +263,12 @@ async def export_project_structured_pptx(
         export_structured_pptx_via_homomorphic_dom_to_pptx,
         export_structured_pptx_via_svg_native,
     )
+    from wisedeck.svg_export.errors import (
+        SVGConversionError,
+        SVGFinalizeError,
+        SVGPlaceholdersError,
+        SVGQualityGateError,
+    )
 
     try:
         started_at = time.time()
@@ -377,16 +383,39 @@ async def export_project_structured_pptx(
                 )
 
             try:
+                imp_sum = (template or {}).get("import_summary") if isinstance(template, dict) else None
                 pptx_bytes = await export_structured_pptx_via_svg_native(
                     deck,
                     svg_template=svg_template,
                     canvas_format=None,
                     spec_lock=None,
+                    import_summary=imp_sum if isinstance(imp_sum, dict) else None,
                 )
                 export_method = "WiseDeck-Structured-SVG-Native"
+            except (SVGPlaceholdersError, SVGQualityGateError, SVGFinalizeError, SVGConversionError) as svg_exc:
+                log = logging.getLogger(__name__)
+                extra = ""
+                if getattr(svg_exc, "page_index", None) is not None:
+                    extra = f" page_index={svg_exc.page_index}"
+                if getattr(svg_exc, "details", None):
+                    extra += f" details={svg_exc.details!s}"[:500]
+                log.warning(
+                    "svg_native export failed (svg_native_fallback_reason=%s%s), falling back to homomorphic_editable: %s",
+                    type(svg_exc).__name__,
+                    extra,
+                    svg_exc,
+                )
+                export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
+                pptx_bytes = await export_structured_pptx_via_homomorphic_dom_to_pptx(
+                    deck,
+                    project_id=project_id,
+                    export_base_url=export_base_url,
+                )
+                export_method = "WiseDeck-Structured-SVG-Native-Fallback-DOM"
             except Exception as svg_exc:
                 logging.getLogger(__name__).warning(
-                    "svg_native export failed, falling back to homomorphic_editable: %s",
+                    "svg_native export failed (svg_native_fallback_reason=%s), falling back to homomorphic_editable: %s",
+                    type(svg_exc).__name__,
                     svg_exc,
                 )
                 export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""

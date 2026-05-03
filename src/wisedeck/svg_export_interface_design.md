@@ -180,3 +180,63 @@ Phase 2（增强兼容）：
 - 更完整 placeholder 集合（按 ppt-master layouts README/某个设计 spec_lock）
 - 逐步处理表格/图表的 native 可编辑性（table 可先用 python-pptx overlay 合并）
 
+---
+
+## 8) 与 ppt-master 的差异清单（设计草案 ↔ 当前实现 ↔ 缺口）
+
+下表对照本文 **§1–§6 设计**、仓库内 **`svg_export/engine.py` / `svg_export/placeholder_adapter.py` / `svg_export/errors.py`**，以及 ppt-master 工作流（`svg_quality_checker`、`finalize_svg`、`svg_to_pptx`）。
+
+| 维度 | 设计草案（本文） | WiseDeck 当前实现 | 相对 ppt-master / 设计仍缺 |
+|------|------------------|-------------------|---------------------------|
+| **占位符合约** | `adapt_wisedeck_placeholders` + `assert_all_placeholders_replaced`；WiseDeck `{{ page_* }}` → ppt-master `{{PAGE_TITLE}}` 等 | `placeholder_adapter.py`：`adapt_wisedeck_placeholders`、`fill_svg_placeholders`（strict 下检测残留 `{{…}}`）；映射仅 **page_title / page_content / current_page_number / total_page_count** → `PAGE_TITLE`、`CONTENT_AREA`、`PAGE_NUM`；`total_page_count` 在 strict adapt 中易因「非映射键」报错 | 未系统覆盖 ppt-master 可能出现的 **`TITLE` / `SUBTITLE` / 布局自定义 marker**；`build_slide_placeholders_from_wisedeck_contract` 直接产出 ppt-master 键，与 HTML 侧 `{{ page_title }}` 命名并存——需在文档与产品上统一「单一合约」 |
+| **Quality gate** | `check_svg_quality` 返回 `QualityReport`（errors/warnings/drift）；errors≠0 抛 `SVGQualityGateError` | `engine.py` 调用 ppt-master `SVGQualityChecker().check_directory(...)`，聚合 **errors** 非空即失败 | **未透传** `quality_options`；**warnings / drift_summary** 未结构化暴露给上层或日志；与设计中「由调用方决定是否 fallback」相比，当前为 **硬失败**（合理，但缺少可配置策略） |
+| **Finalize** | `finalize_svg_xml` 或临时目录桥接；可选 `assets` 注入 | `finalize_project(project_dir, options=...)` 已在临时工程目录运行；`finalize_options` 可覆盖默认布尔项 | 设计中的 **`assets: dict[str, bytes]` 显式入参** 未在公共 API 层出现；依赖写入 `svg_output/` 的文件形态；**dry_run / 按页失败** 等细粒度与设计中「按页 `page_index`」未对齐 |
+| **svg_to_pptx** | `convert_svg_to_pptx_bytes` | `create_pptx_with_native_svg` 读 `svg_final/*.svg` | 与设计一致；失败统一为 `SVGConversionError` |
+| **错误模型** | 四类异常 + `page_index` + `details`（截断） | `SVGPlaceholdersError`、`SVGQualityGateError`、`SVGFinalizeError`、`SVGConversionError` 已存在 | **缺少** 异常上的 **`page_index` / `details` 结构化字段**（目前多为字符串消息）；不利于导出 API 按页重试或前端展示 |
+| **顶层入口签名** | `notes`、`strict_placeholder`、`quality_options` 等 | `render_pptx_from_svg_templates` 已含 `svg_xmls`、`slide_placeholders`、`spec_lock`、`canvas_format`、`native_shapes`、`finalize_options`、`quiet` | **未实现**：`notes`；**strict** 在 engine 内固定为 True（占位填充）；无独立的「仅校验不填充」模式 |
+| **Structured export 连接** | `mode=svg_native` + fallback | `export_structured_pptx_via_svg_native` + `export_routes` 在失败时回退 `homomorphic_editable` | 与设计一致；可补充 **fallback 原因分类**（占位 vs 质量门 vs finalize）以便观测 |
+| **spec_lock** | 可选漂移检测 | 写入临时目录 `spec_lock.md` | 与 ppt-master 一致；若 deck 无 lock 文本则为 no-op |
+
+**结论（维护用）**：流水线主干（占位填充 → quality → finalize → svg_to_pptx）已在 `engine.py` 落地；与设计文档差距主要集中在 **占位符全集与适配策略**、**quality/finalize 的可配置与可观测性**、**异常结构体** 三类。
+
+---
+
+## 9) 导入元数据（manifest / 外置资源）：现状与可增强范围（对照 ppt-master）
+
+### WiseDeck 现状
+
+- **磁盘工作区**：`TemplateImportService.import_from_upload` 生成 `TemplateReferenceWorkspace`，写入 **`manifest.json`**（`workspace_id`、`paths`、`slide_assets` 页级 SVG/PNG 路径、`python_pptx` 可选抽取结果等）。见 `services/template/template_import_service.py`。
+- **合成母版条带**：`slide_svg_bundler.bundle_slide_svgs` 将多页 SVG 合并为 **`svg_template` + 配套 `html_template`**，供全局母版存储；与 ppt-master「每页独立 `svg_output/NN.svg`」在 **存储形态** 上不同（WiseDeck 常见为单文件竖拼或首帧）。
+- **DB**：`GlobalMasterTemplate.svg_template` 等字段承载 **成品字符串**；**manifest 全文默认不落库**，仅上传/导入流程的缓存目录可复现。
+
+### ppt-master / `pptx_template_import` 类思路可对齐的点
+
+- **layouts_index / 设计规格**：在 manifest 或 DB JSON 列中增加 **`placeholder_markers`**（从导入 SVG 正则扫描 `{{…}}`）、**`canvas_format`**、**`bundle_mode`**，便于导出前校验「模板与引擎合约」一致。
+- **外置大图与多资源**：若单条 `svg_template` 过大，可考虑 **对象存储路径引用 + manifest 片段**（或 `template_asset_refs` JSON），导入服务负责解析；属于 **中长期**，需权限与生命周期策略。
+- **低风险增量**：在 `global_master_template_api` 保存模板时，可选写入 **`import_manifest_summary`**（只存 `slide_count`、占位符列表哈希、来源文件名），不复制整份 manifest，避免 DB 膨胀。
+
+### 范围评估小结
+
+| 方案 | 工作量 | 风险 | 说明 |
+|------|--------|------|------|
+| 仅扩展 `manifest.json` schema（磁盘） | 低 | 低 | 与现有 `TemplateImportService` 兼容；管理端若需展示需 API 暴露 workspace 或摘要 |
+| DB JSON 列存摘要 + 占位符列表 | 中 | 中 | 需迁移；利于无磁盘工作区时做 strict 校验 |
+| 完整 ppt-master 式文件树 per template | 高 | 高 | 与当前「单母版 + DB」模型分歧大，不建议一步到位 |
+
+---
+
+## 10) banana-slides `PPTXBuilder` 与「非 SVG」导出路径的可复用点
+
+源码参考：`banana-slides-main/backend/utils/pptx_builder.py`（**许可证以该仓库为准**；借鉴思路而非直接拷贝）。
+
+| API / 能力 | 作用 | WiseDeck 可对接方向 |
+|------------|------|---------------------|
+| **`HTMLTableParser.parse_html_table` + `add_table_element`** | HTML 表格字符串 → `slide.shapes.add_table`，按 bbox 英寸定位，首行加粗、单元格字号估算 | **homomorphic / python-pptx 轨**：若结构化导出从 HTML 或中间 AST 产出表格，可复用「解析 + 尺寸分配」逻辑，避免手写表格 XML |
+| **`setup_presentation_size`** | 像素 + DPI → 英寸，并按 **python-pptx 1–56 英寸** 限制缩放 | 任意从 DOM/画布导出的 **自定义幻灯片尺寸** 需 clamp 时可直接参考常量与缩放公式 |
+| **`calculate_font_size` + `add_text_element`** | 按 bbox 与字数估算字号；支持 **多色 runs**（`colored_segments`）、对齐、零 margin textbox | 与 MinerU/检测框类管线类似时，可借鉴 **字号与对齐**；WiseDeck 若走「bbox → pptx」而非整页 SVG，可减少文字溢出 |
+| **`add_image_element` / `add_image_placeholder`** | 图片缺失时降级为占位文本框 | 非 SVG 导出中资源缺失时的 **一致降级 UX** |
+| **`DEFAULT_SLIDE_*` / `MIN_*` / `MAX_*` 字号与幻灯片边界** | 防止极端非法值 | 与 `errors` 或校验层对齐，减少无效 PPTX |
+| **`_set_core_properties`** | 作者、时间等 core | 产品品牌化元数据时可对照 |
+
+**边界**：`PPTXBuilder` 假设 **像素 bbox + 固定 DPI**；WiseDeck DOM 轨需统一坐标系后再调用同类数学，不宜混用未标定的 px 与 EMU。
+

@@ -208,7 +208,8 @@ class GlobalMasterTemplateService:
                     "usage_count": template.usage_count,
                     "created_by": template.created_by,
                     "created_at": template.created_at,
-                    "updated_at": template.updated_at
+                    "updated_at": template.updated_at,
+                    "import_summary": getattr(template, "import_summary", None),
                 }
 
         except IntegrityError as e:
@@ -340,7 +341,8 @@ class GlobalMasterTemplateService:
                     "usage_count": template.usage_count,
                     "created_by": template.created_by,
                     "created_at": template.created_at,
-                    "updated_at": template.updated_at
+                    "updated_at": template.updated_at,
+                    "import_summary": getattr(template, "import_summary", None),
                 }
 
         except Exception as e:
@@ -470,7 +472,8 @@ class GlobalMasterTemplateService:
                     "usage_count": template.usage_count,
                     "created_by": template.created_by,
                     "created_at": template.created_at,
-                    "updated_at": template.updated_at
+                    "updated_at": template.updated_at,
+                    "import_summary": getattr(template, "import_summary", None),
                 }
 
         except Exception as e:

@@ -230,6 +230,10 @@ class GlobalMasterTemplateCreate(BaseModel):
     description: Optional[str] = Field("", description="Template description")
     html_template: Optional[str] = Field(None, description="HTML template content")
     svg_template: Optional[str] = Field(None, description="SVG template content (ppt-master style)")
+    import_summary: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional metadata from office import (placeholder_markers, slide_count, …)",
+    )
     tags: Optional[List[str]] = Field([], description="Template tags for categorization")
     is_default: Optional[bool] = Field(False, description="Whether this is the default template")
     created_by: Optional[str] = Field("user", description="Creator identifier")
@@ -249,6 +253,7 @@ class GlobalMasterTemplateUpdate(BaseModel):
     description: Optional[str] = Field(None, description="Template description")
     html_template: Optional[str] = Field(None, description="HTML template content")
     svg_template: Optional[str] = Field(None, description="SVG template content (ppt-master style)")
+    import_summary: Optional[Dict[str, Any]] = Field(None, description="Import / SVG-native contract metadata")
     tags: Optional[List[str]] = Field(None, description="Template tags for categorization")
     is_default: Optional[bool] = Field(None, description="Whether this is the default template")
     is_active: Optional[bool] = Field(None, description="Whether the template is active")
@@ -269,6 +274,7 @@ class GlobalMasterTemplateResponse(BaseModel):
     created_at: float
     updated_at: float
     svg_template: Optional[str] = None
+    import_summary: Optional[Dict[str, Any]] = None
 
 
 class GlobalMasterTemplateDetailResponse(GlobalMasterTemplateResponse):
@@ -362,6 +368,10 @@ class TemplateOfficeConvertResponse(BaseModel):
     slide_count: int = Field(..., ge=0)
     export_engine_used: Literal["svg_stack", "libreoffice_html"]
     warnings: List[str] = Field(default_factory=list)
+    import_summary: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Metadata for svg_native (placeholders, hash); pass through to create_template.import_summary",
+    )
 
 
 class GlobalMasterTemplateGenerateRequest(BaseModel):

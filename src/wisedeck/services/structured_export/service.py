@@ -494,19 +494,43 @@ async def export_structured_pptx_via_svg_native(
     svg_template: str,
     canvas_format: str | None = None,
     spec_lock: str | None = None,
+    import_summary: dict | None = None,
 ) -> bytes:
     """
     Native SVG/DrawingML export (ppt-master style):
     - Fill placeholders into a per-slide SVG template
     - Run svg_quality_checker + finalize_svg + svg_to_pptx (via wisedeck.svg_export)
     - Return pptx bytes
+
+    Placeholder contract: slide HTML uses ``{{ page_title }}`` style in the editor; this path
+    uses ``build_slide_placeholders_from_wisedeck_contract`` as the **only** supported bridge
+    into ppt-master inner markers (PAGE_TITLE, CONTENT_AREA, …).
     """
     if not isinstance(svg_template, str) or not svg_template.strip():
         raise RuntimeError("SVG native export requires svg_template")
 
+    if isinstance(import_summary, dict):
+        stored = import_summary.get("placeholder_hash")
+        if isinstance(stored, str) and stored.strip():
+            from wisedeck.services.template.svg_template_import_meta import build_import_summary
+
+            current = build_import_summary(
+                svg_template=svg_template,
+                slide_count=len(deck.slides),
+                bundle_mode=import_summary.get("bundle_mode"),
+                source_filename=import_summary.get("source_filename"),
+            ).get("placeholder_hash")
+            if current and current != stored:
+                logger.warning(
+                    "svg_native: svg_template placeholder_hash mismatch (stored=%s current=%s)",
+                    stored[:16],
+                    (current or "")[:16],
+                )
+
     svg_xmls: list[str] = []
     placeholders: list[dict[str, str]] = []
     total = max(1, len(deck.slides))
+    deck_title = str(deck.title or "")
 
     for idx, slide in enumerate(deck.slides, start=1):
         svg_xmls.append(svg_template)
@@ -525,6 +549,8 @@ async def export_structured_pptx_via_svg_native(
                 page_content=page_content,
                 page_num=idx,
                 total_pages=total,
+                deck_title=deck_title,
+                subtitle="",
             )
         )
 
@@ -595,6 +621,18 @@ def _merge_native_tables_into_pptx_bytes(pptx_bytes: bytes, *, deck: StructuredS
         headers = cfg.get("headers") or []
         rows = cfg.get("rows") or []
         caption = cfg.get("caption")
+        html_tbl = cfg.get("html_table")
+        if isinstance(html_tbl, str) and html_tbl.strip():
+            from wisedeck.services.structured_export.pptx_layout_utils import parse_simple_html_table
+
+            parsed = parse_simple_html_table(html_tbl)
+            if parsed:
+                if len(parsed) >= 2 and cfg.get("first_row_header", True):
+                    headers = parsed[0]
+                    rows = parsed[1:]
+                else:
+                    headers = []
+                    rows = parsed
 
         # Determine column count.
         col_count = 0

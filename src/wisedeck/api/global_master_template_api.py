@@ -22,6 +22,7 @@ from .models import (
 from ..services.template.global_master_template_service import GlobalMasterTemplateService
 from ..services.template.libreoffice_html_exporter import export_presentation_html_bundle
 from ..services.template.slide_svg_bundler import bundle_workspace_svgs
+from ..services.template.svg_template_import_meta import build_import_summary
 from ..services.template.template_import_service import (
     TemplateImportService,
     _resolve_soffice,
@@ -90,6 +91,12 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                 slide_count=slide_count,
                 export_engine_used="libreoffice_html",
                 warnings=warnings,
+                import_summary=build_import_summary(
+                    svg_template=None,
+                    slide_count=slide_count,
+                    bundle_mode=None,
+                    source_filename=stem,
+                ),
             )
         except Exception as e:
             if not body.fallback_to_svg_stack:
@@ -114,6 +121,12 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
         slide_count=slide_count,
         export_engine_used="svg_stack",
         warnings=warnings_acc,
+        import_summary=build_import_summary(
+            svg_template=svg_t,
+            slide_count=slide_count,
+            bundle_mode=body.bundle_mode,
+            source_filename=suggested,
+        ),
     )
 
 
@@ -637,6 +650,7 @@ async def export_template_as_native_pptx(template_id: int, user=Depends(get_curr
     This is intended as a quick template smoke export (1 slide) for validating svg_template.
     """
     from wisedeck.svg_export import render_pptx_from_svg_templates
+    from wisedeck.svg_export.engine import build_slide_placeholders_from_wisedeck_contract
 
     try:
         template_service = _template_service_for_user(user)
@@ -648,15 +662,17 @@ async def export_template_as_native_pptx(template_id: int, user=Depends(get_curr
         if not isinstance(svg_template, str) or not svg_template.strip():
             raise HTTPException(status_code=400, detail="Template has no svg_template")
 
+        slide_ph = build_slide_placeholders_from_wisedeck_contract(
+            page_title="模板预览",
+            page_content="SVG 原生导出单页预览正文。",
+            page_num=1,
+            total_pages=1,
+            deck_title="模板预览",
+            subtitle="",
+        )
         pptx_bytes = render_pptx_from_svg_templates(
             svg_xmls=[svg_template],
-            slide_placeholders=[
-                {
-                    "PAGE_TITLE": "模板预览",
-                    "CONTENT_AREA": "CONTENT_AREA",
-                    "PAGE_NUM": "1",
-                }
-            ],
+            slide_placeholders=[slide_ph],
             spec_lock=None,
             canvas_format=None,
             native_shapes=True,
