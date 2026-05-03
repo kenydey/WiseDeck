@@ -715,7 +715,12 @@ async def adjust_template(
     return {"success": True, "data": complete_event}
 
 
-@router.post("/select", response_model=TemplateSelectionResponse)
+@router.post(
+    "/select",
+    response_model=TemplateSelectionResponse,
+    deprecated=True,
+    summary="Deprecated — use POST /api/projects/{project_id}/select-template",
+)
 async def select_template_for_project(
     request: TemplateSelectionRequest,
     user=Depends(get_current_user_required),
@@ -897,10 +902,14 @@ async def export_template_as_native_pptx(template_id: int, user=Depends(get_curr
         raise HTTPException(status_code=500, detail="Failed to export native pptx")
 
 
-# Add increment usage endpoint for internal use
-@router.post("/{template_id}/increment-usage", response_model=dict)
+@router.post(
+    "/{template_id}/increment-usage",
+    response_model=dict,
+    deprecated=True,
+    summary="Deprecated — usage is incremented via template selection flows",
+)
 async def increment_template_usage(template_id: int, user=Depends(get_current_user_required)):
-    """Increment template usage count (internal use)"""
+    """Increment template usage count (legacy HTTP shim; prefer selection endpoints)."""
     try:
         template_service = _template_service_for_user(user)
         success = await template_service.increment_template_usage(template_id)

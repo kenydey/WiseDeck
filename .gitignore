@@ -48,6 +48,9 @@ error.txt
 # Runtime artifacts
 canvas/
 
+# Local API audit matrix output (regenerate via scripts/api_ui_audit.py)
+reports/
+
 # Local test artifacts (do NOT ignore source code)
 *.pdf
 
