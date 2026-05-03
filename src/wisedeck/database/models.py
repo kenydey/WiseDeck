@@ -186,6 +186,9 @@ class Project(Base):
     slides_data: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)
     confirmed_requirements: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     project_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # 项目元数据，包括选择的模板ID等
+    design_spec: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    design_spec_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    design_spec_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1)
     share_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True, nullable=True)  # 分享token，用于公开访问
     share_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否启用分享
@@ -199,6 +202,69 @@ class Project(Base):
     slides: Mapped[List["SlideData"]] = relationship("SlideData", back_populates="project")
     speech_scripts: Mapped[List["SpeechScript"]] = relationship("SpeechScript", back_populates="project")
     narration_audios: Mapped[List["NarrationAudio"]] = relationship("NarrationAudio", back_populates="project")
+    reference_files: Mapped[List["ProjectReferenceFile"]] = relationship(
+        "ProjectReferenceFile",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProjectReferenceFile(Base):
+    """User-uploaded reference documents for prompt context (per project)."""
+
+    __tablename__ = "project_reference_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    file_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.project_id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    parse_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    parsed_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    include_in_prompt: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    parse_mode_used: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
+    updated_at: Mapped[float] = mapped_column(Float, default=time.time, onupdate=time.time, nullable=False)
+
+    project: Mapped["Project"] = relationship("Project", back_populates="reference_files")
+
+
+class ReferenceChunk(Base):
+    """Chunked reference text for retrieval-augmented prompt injection."""
+
+    __tablename__ = "reference_chunks"
+    __table_args__ = (UniqueConstraint("file_id", "chunk_index", name="uq_reference_chunks_file_chunk"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    file_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.project_id"), index=True, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
+
+
+class ExportJob(Base):
+    """Persistent record for async export tasks (PDF/PPTX etc.)."""
+
+    __tablename__ = "export_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.project_id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="queued", nullable=False)
+    progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    artifact_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    job_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time, nullable=False)
+    completed_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
 
 class TodoBoard(Base):

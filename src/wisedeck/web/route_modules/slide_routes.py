@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import aiohttp
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -77,10 +77,13 @@ async def regenerate_slide_async(
     project_id: str,
     slide_number: int,
     user: User = Depends(get_current_user_required),
+    skip_reference: bool = Query(False),
 ):
     """Regenerate a specific slide in background to avoid reverse-proxy timeouts.
 
     Returns immediately with task_id. Poll /api/wisedeck/tasks/{task_id} for progress/result.
+
+    Query ``skip_reference=true`` skips reference-document injection for this run (see ``batch_regenerate_slides``).
     """
     from ...services.background_tasks import get_task_manager, TaskStatus
 
@@ -141,7 +144,9 @@ async def regenerate_slide_async(
 
         target_index = max(0, int(slide_number) - 1)
         batch_payload = SlideBatchRegenerateRequest(slide_indices=[target_index])
-        batch_result = await batch_regenerate_slides(project_id, batch_payload, user)
+        batch_result = await _batch_regenerate_slides_core(
+            project_id, batch_payload, user, skip_reference=skip_reference
+        )
         if not isinstance(batch_result, dict) or not batch_result.get("success"):
             raise RuntimeError((batch_result or {}).get("error") or "Slide regeneration failed")
 
@@ -181,9 +186,25 @@ async def regenerate_slide_async(
 async def batch_regenerate_slides(
     project_id: str,
     payload: SlideBatchRegenerateRequest,
-    user: User = Depends(get_current_user_required)
+    user: User = Depends(get_current_user_required),
+    skip_reference: bool = Query(False),
 ):
-    """Regenerate multiple slides (or all slides) in one request."""
+    """Regenerate multiple slides (or all slides) in one request.
+
+    Query ``skip_reference=true`` omits uploaded reference documents from the prompt for this
+    request only (non-template generation path). Global master template path does not inject
+    reference today; this flag has no effect there.
+    """
+    return await _batch_regenerate_slides_core(project_id, payload, user, skip_reference=skip_reference)
+
+
+async def _batch_regenerate_slides_core(
+    project_id: str,
+    payload: SlideBatchRegenerateRequest,
+    user: User,
+    skip_reference: bool = False,
+):
+    """Internal batch regeneration (also used by background tasks); ``skip_reference`` is a plain bool."""
     try:
         user_ppt_service = get_ppt_service_for_user(user.id)
         project = await user_ppt_service.project_manager.get_project(project_id, user_id=user.id)
@@ -322,7 +343,8 @@ async def batch_regenerate_slides(
                         total_slides,
                         outline_slides,
                         project.slides_data,
-                        project_id=project_id
+                        project_id=project_id,
+                        include_reference=not skip_reference,
                     )
 
                 existing_slide = project.slides_data[slide_index] if slide_index < len(project.slides_data) else {}
@@ -404,10 +426,13 @@ async def batch_regenerate_slides_async(
     project_id: str,
     payload: SlideBatchRegenerateRequest,
     user: User = Depends(get_current_user_required),
+    skip_reference: bool = Query(False),
 ):
     """Batch regenerate slides in background to avoid reverse-proxy timeouts.
 
     Returns immediately with task_id. Poll /api/wisedeck/tasks/{task_id} for progress/result.
+
+    Query ``skip_reference=true`` matches the synchronous batch endpoint behavior.
     """
     from ...services.background_tasks import get_task_manager, TaskStatus
 
@@ -472,7 +497,9 @@ async def batch_regenerate_slides_async(
         except Exception:
             pass
 
-        result = await batch_regenerate_slides(project_id, payload, user)
+        result = await _batch_regenerate_slides_core(
+            project_id, payload, user, skip_reference=skip_reference
+        )
         if not isinstance(result, dict) or not result.get("success"):
             raise RuntimeError((result or {}).get("error") or "Batch slide regeneration failed")
         return result
@@ -485,6 +512,7 @@ async def batch_regenerate_slides_async(
             "user_id": user.id,
             "regenerate_all": bool(payload.regenerate_all),
             "slide_indices": payload.slide_indices,
+            "skip_reference": bool(skip_reference),
         },
     )
 

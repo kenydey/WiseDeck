@@ -379,6 +379,15 @@ class BackgroundTaskManager:
         if task is None:
             return
         await self._save_task_to_cache(task)
+        if status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+            try:
+                from ..database.database import AsyncSessionLocal
+                from .export_job_service import sync_export_job_from_background_task
+
+                async with AsyncSessionLocal() as sess:
+                    await sync_export_job_from_background_task(sess, task)
+            except Exception as sync_err:
+                logger.debug("export job persistence skipped: %s", sync_err)
 
     async def execute_task(
         self,

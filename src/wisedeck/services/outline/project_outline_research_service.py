@@ -176,7 +176,17 @@ class ProjectOutlineResearchService:
                 researched_outline = await self._generate_outline_from_research_runtime(request, page_count_settings)
                 if researched_outline is not None:
                     return researched_outline
-            prompt = self._create_outline_prompt(request, '', page_count_settings)
+            aug = ''
+            if getattr(request, 'project_id', None):
+                from ..project_context_augmentation import build_project_prompt_augmentation
+
+                qh = "\n".join(
+                    str(x)
+                    for x in (request.topic, getattr(request, "requirements", None) or "")
+                    if str(x).strip()
+                )[:2500]
+                aug = await build_project_prompt_augmentation(request.project_id, query_hint=qh or None)
+            prompt = self._create_outline_prompt(request, aug, page_count_settings)
             response = await self._text_completion_for_role('outline', prompt=prompt, temperature=ai_config.temperature)
             outline = self._parse_ai_outline(response.content, request)
             if page_count_settings:

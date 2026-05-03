@@ -204,7 +204,8 @@ async def generate_outline(
             target_audience=confirmed_requirements.get('target_audience', '普通大众'),
             ppt_style=confirmed_requirements.get('ppt_style', 'general'),
             custom_style_prompt=confirmed_requirements.get('custom_style_prompt'),
-            description=confirmed_requirements.get('description')
+            description=confirmed_requirements.get('description'),
+            project_id=project_id,
         )
 
         # Extract page count settings from confirmed requirements
@@ -309,7 +310,8 @@ async def regenerate_outline(
             target_audience=confirmed_requirements.get('target_audience', '普通大众'),
             ppt_style=confirmed_requirements.get('ppt_style', 'general'),
             custom_style_prompt=confirmed_requirements.get('custom_style_prompt'),
-            description=confirmed_requirements.get('description')
+            description=confirmed_requirements.get('description'),
+            project_id=project_id,
         )
 
 

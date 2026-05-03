@@ -33,6 +33,30 @@ router = APIRouter()
 _TASK_PATH_KEYS = {"pdf_path", "pptx_path", "video_path", "audio_path"}
 
 
+async def _register_export_job_record(
+    task_id: str,
+    project_id: str,
+    user_id: int,
+    kind: str,
+    metadata: dict | None = None,
+) -> None:
+    try:
+        from ...database.database import AsyncSessionLocal
+        from ...services.export_job_service import register_export_job
+
+        async with AsyncSessionLocal() as sess:
+            await register_export_job(
+                sess,
+                task_id=task_id,
+                project_id=project_id,
+                user_id=user_id,
+                kind=kind,
+                metadata=metadata or {},
+            )
+    except Exception as e:
+        logging.warning("Could not persist export_jobs row: %s", e)
+
+
 def _sanitize_task_mapping(payload: object) -> object:
     """Return a shallow-redacted view of task metadata/result for API responses."""
     if not isinstance(payload, dict):
@@ -677,6 +701,13 @@ async def export_project_pdf_async(
                 "export_method": "PDF-Pyppeteer-Async",
             }
         )
+        await _register_export_job_record(
+            task_id,
+            project_id,
+            user.id,
+            "pdf_async",
+            {"slide_count": len(project.slides_data), "export_method": "PDF-Pyppeteer-Async"},
+        )
 
         logging.info(f"PDF generation task started: {task_id}")
 
@@ -909,6 +940,13 @@ async def export_project_pptx(
                 "user_id": user.id,
                 "export_method": "PPTX-Apryse-PDFToPPTX-Async",
             }
+        )
+        await _register_export_job_record(
+            task_id,
+            project_id,
+            user.id,
+            "pptx_apryse",
+            {"slide_count": len(project.slides_data), "export_method": "PPTX-Apryse-PDFToPPTX-Async"},
         )
 
         logging.info(f"PPTX export task started: {task_id}")
@@ -1186,6 +1224,13 @@ async def export_project_pptx_from_images(
                 "progress_message": "图片导出任务已创建，等待后台执行...",
                 "user_id": user.id,
             }
+        )
+        await _register_export_job_record(
+            task_id,
+            project_id,
+            user.id,
+            "pptx_screenshots",
+            {"slide_count": len(slides), "export_method": "PPTX-Images-Playwright"},
         )
 
         # 立即返回任务ID

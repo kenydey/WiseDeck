@@ -49,7 +49,19 @@ class SlideMediaService:
     def __getattr__(self, name: str):
         return getattr(self._service, name)
 
-    async def _generate_single_slide_html_with_prompts(self, slide_data: Dict[str, Any], confirmed_requirements: Dict[str, Any], system_prompt: str, page_number: int, total_pages: int, all_slides: List[Dict[str, Any]]=None, existing_slides_data: List[Dict[str, Any]]=None, project_id: str=None) -> str:
+    async def _generate_single_slide_html_with_prompts(
+        self,
+        slide_data: Dict[str, Any],
+        confirmed_requirements: Dict[str, Any],
+        system_prompt: str,
+        page_number: int,
+        total_pages: int,
+        all_slides: List[Dict[str, Any]] = None,
+        existing_slides_data: List[Dict[str, Any]] = None,
+        project_id: str = None,
+        *,
+        include_reference: bool = True,
+    ) -> str:
         """Generate HTML for a single slide using prompts.md and first step information with template selection"""
         try:
             if not project_id:
@@ -84,6 +96,15 @@ class SlideMediaService:
                 global_constitution=global_constitution,
                 current_page_brief=current_page_brief,
             )
+            if project_id:
+                from ..project_context_augmentation import build_project_prompt_augmentation
+
+                qh = self._query_hint_for_slide(slide_data, confirmed_requirements)
+                aug = await build_project_prompt_augmentation(
+                    project_id, query_hint=qh or None, include_reference=include_reference
+                )
+                if aug:
+                    context = aug + "\n\n---\n\n" + context
             html_content = await self._generate_html_with_retry(context, system_prompt, slide_data, page_number, total_pages, max_retries=5)
             return html_content
         except Exception as e:
@@ -91,6 +112,26 @@ class SlideMediaService:
             fallback_html = self._generate_fallback_slide_html(slide_data, page_number, total_pages)
         repaired_fallback = await self._apply_auto_layout_repair(fallback_html, slide_data, page_number, total_pages)
         return repaired_fallback
+
+    @staticmethod
+    def _query_hint_for_slide(
+        slide_data: Dict[str, Any],
+        confirmed_requirements: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        parts: List[str] = []
+        for key in ("title", "subtitle"):
+            t = (slide_data.get(key) or "").strip()
+            if t:
+                parts.append(t)
+        body = slide_data.get("content") or slide_data.get("html_content") or ""
+        if isinstance(body, str) and body.strip():
+            parts.append(body.strip()[:1200])
+        cr = confirmed_requirements or {}
+        for key in ("key_points", "main_message", "topic"):
+            v = cr.get(key)
+            if isinstance(v, str) and v.strip():
+                parts.append(v.strip()[:600])
+        return "\n".join(parts)[:2500]
 
     async def _process_slide_image(self, slide_data: Dict[str, Any], confirmed_requirements: Dict[str, Any], page_number: int, total_pages: int, template_html: str=''):
         """使用图片处理器处理幻灯片多图片"""

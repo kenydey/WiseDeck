@@ -14,6 +14,7 @@ from .route_modules.share_routes import router as share_router
 from .route_modules.slide_routes import router as slide_router
 from .route_modules.speech_script_routes import router as speech_script_router
 from .route_modules.template_routes import router as template_router
+from .route_modules.project_context_routes import router as project_context_router
 
 router = APIRouter()
 router.include_router(config_router)
@@ -26,3 +27,4 @@ router.include_router(export_router)
 router.include_router(slide_router)
 router.include_router(ai_edit_router)
 router.include_router(speech_script_router)
+router.include_router(project_context_router)

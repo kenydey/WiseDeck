@@ -181,6 +181,7 @@ async def start_project_workflow(
             custom_style_prompt=confirmed_requirements.get("custom_style_prompt"),
             description=confirmed_requirements.get("description"),
             user_id=user.id,
+            project_id=project_id,
         )
 
         user_ppt_service = get_ppt_service_for_user(user.id)

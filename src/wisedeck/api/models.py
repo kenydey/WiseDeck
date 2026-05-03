@@ -99,6 +99,7 @@ class PPTGenerationRequest(BaseModel):
     use_file_content: bool = Field(False, description="Whether to use uploaded file content for generation")
     file_processing_mode: str = Field("markitdown", description="File processing mode: 'markitdown' or 'magic_pdf'")
     content_analysis_depth: str = Field("standard", description="Content analysis depth: 'fast', 'standard', 'deep'")
+    project_id: Optional[str] = Field(None, description="Associated project UUID for reference materials / design spec injection")
 
 
 class PPTOutline(BaseModel):
@@ -154,6 +155,9 @@ class PPTProject(BaseModel):
     versions: List[Dict[str, Any]] = []
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
+    design_spec: Optional[Dict[str, Any]] = None
+    design_spec_version: int = 1
+    design_spec_locked: bool = False
 
 class ProjectListResponse(BaseModel):
     projects: List[PPTProject]

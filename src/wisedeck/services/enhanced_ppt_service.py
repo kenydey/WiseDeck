@@ -382,11 +382,30 @@ class EnhancedPPTService(PPTService):
             yield chunk
 
 
-    async def _generate_single_slide_html_with_prompts(self, slide_data: Dict[str, Any], confirmed_requirements: Dict[str, Any],
-                                                     system_prompt: str, page_number: int, total_pages: int,
-                                                     all_slides: List[Dict[str, Any]] = None, existing_slides_data: List[Dict[str, Any]] = None,
-                                                     project_id: str = None) -> str:
-        return await self.slide_authoring._generate_single_slide_html_with_prompts(slide_data, confirmed_requirements, system_prompt, page_number, total_pages, all_slides, existing_slides_data, project_id)
+    async def _generate_single_slide_html_with_prompts(
+        self,
+        slide_data: Dict[str, Any],
+        confirmed_requirements: Dict[str, Any],
+        system_prompt: str,
+        page_number: int,
+        total_pages: int,
+        all_slides: List[Dict[str, Any]] = None,
+        existing_slides_data: List[Dict[str, Any]] = None,
+        project_id: str = None,
+        *,
+        include_reference: bool = True,
+    ) -> str:
+        return await self.slide_authoring._generate_single_slide_html_with_prompts(
+            slide_data,
+            confirmed_requirements,
+            system_prompt,
+            page_number,
+            total_pages,
+            all_slides,
+            existing_slides_data,
+            project_id,
+            include_reference=include_reference,
+        )
 
 
     async def _process_slide_image(self, slide_data: Dict[str, Any], confirmed_requirements: Dict[str, Any],

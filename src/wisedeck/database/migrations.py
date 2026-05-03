@@ -159,6 +159,24 @@ class DatabaseMigration:
             "down": self._migration_015_down,
         })
 
+        # Migration 016: design_spec, reference files, export job history
+        self.migrations.append({
+            "version": "016",
+            "name": "project_context_and_export_jobs",
+            "description": "Add design_spec to projects, project_reference_files and export_jobs tables",
+            "up": self._migration_016_up,
+            "down": self._migration_016_down,
+        })
+
+        # Migration 017: reference chunks, file ordering, design_spec lock
+        self.migrations.append({
+            "version": "017",
+            "name": "reference_chunks_and_design_spec_lock",
+            "description": "reference_chunks table; project_reference_files sort/include; design_spec_locked",
+            "up": self._migration_017_up,
+            "down": self._migration_017_down,
+        })
+
     async def _migration_015_up(self, session: AsyncSession):
         """Migration 015: Relax NOT NULL constraint on global_master_templates.html_template (sqlite rebuild; postgres drop not null)."""
         logger.info("Applying migration 015: Relax global_master_templates.html_template nullability")
@@ -299,6 +317,259 @@ class DatabaseMigration:
         except Exception as e:
             await session.rollback()
             logger.error(f"Migration 015 rollback failed: {e}")
+            raise
+
+    async def _migration_016_up(self, session: AsyncSession):
+        """Migration 016: design_spec columns, project_reference_files, export_jobs."""
+        logger.info("Applying migration 016: project context and export_jobs")
+        try:
+            dialect = self._dialect_name(session)
+            if await self._table_exists(session, "projects"):
+                if not await self._column_exists(session, "projects", "design_spec"):
+                    if dialect == "sqlite":
+                        await session.execute(text("ALTER TABLE projects ADD COLUMN design_spec TEXT"))
+                    else:
+                        await session.execute(
+                            text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS design_spec JSONB")
+                        )
+                    logger.info("Added projects.design_spec")
+                if not await self._column_exists(session, "projects", "design_spec_version"):
+                    if dialect == "sqlite":
+                        await session.execute(
+                            text("ALTER TABLE projects ADD COLUMN design_spec_version INTEGER DEFAULT 1 NOT NULL")
+                        )
+                    else:
+                        await session.execute(
+                            text(
+                                "ALTER TABLE projects ADD COLUMN IF NOT EXISTS design_spec_version INTEGER DEFAULT 1 NOT NULL"
+                            )
+                        )
+                    logger.info("Added projects.design_spec_version")
+
+            if not await self._table_exists(session, "project_reference_files"):
+                await session.execute(
+                    text(
+                        """
+                        CREATE TABLE project_reference_files (
+                            id SERIAL PRIMARY KEY,
+                            file_id VARCHAR(36) NOT NULL UNIQUE,
+                            project_id VARCHAR(36) NOT NULL REFERENCES projects(project_id),
+                            user_id INTEGER NOT NULL REFERENCES users(id),
+                            original_filename VARCHAR(512) NOT NULL,
+                            storage_path TEXT NOT NULL,
+                            content_hash VARCHAR(64),
+                            file_size INTEGER,
+                            parse_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                            parsed_text TEXT,
+                            error_message TEXT,
+                            created_at DOUBLE PRECISION NOT NULL,
+                            updated_at DOUBLE PRECISION NOT NULL
+                        )
+                        """
+                        if dialect != "sqlite"
+                        else """
+                        CREATE TABLE project_reference_files (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            file_id VARCHAR(36) NOT NULL UNIQUE,
+                            project_id VARCHAR(36) NOT NULL REFERENCES projects(project_id),
+                            user_id INTEGER NOT NULL REFERENCES users(id),
+                            original_filename VARCHAR(512) NOT NULL,
+                            storage_path TEXT NOT NULL,
+                            content_hash VARCHAR(64),
+                            file_size INTEGER,
+                            parse_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                            parsed_text TEXT,
+                            error_message TEXT,
+                            created_at REAL NOT NULL,
+                            updated_at REAL NOT NULL
+                        )
+                        """
+                    )
+                )
+                await session.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_project_reference_files_project_id ON project_reference_files(project_id)")
+                )
+                logger.info("Created project_reference_files")
+
+            if not await self._table_exists(session, "export_jobs"):
+                await session.execute(
+                    text(
+                        """
+                        CREATE TABLE export_jobs (
+                            id SERIAL PRIMARY KEY,
+                            task_id VARCHAR(64) NOT NULL UNIQUE,
+                            project_id VARCHAR(36) NOT NULL REFERENCES projects(project_id),
+                            user_id INTEGER NOT NULL REFERENCES users(id),
+                            kind VARCHAR(50) NOT NULL,
+                            status VARCHAR(32) NOT NULL DEFAULT 'queued',
+                            progress DOUBLE PRECISION NOT NULL DEFAULT 0,
+                            artifact_path TEXT,
+                            error_message TEXT,
+                            job_metadata JSONB,
+                            created_at DOUBLE PRECISION NOT NULL,
+                            completed_at DOUBLE PRECISION
+                        )
+                        """
+                        if dialect != "sqlite"
+                        else """
+                        CREATE TABLE export_jobs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            task_id VARCHAR(64) NOT NULL UNIQUE,
+                            project_id VARCHAR(36) NOT NULL REFERENCES projects(project_id),
+                            user_id INTEGER NOT NULL REFERENCES users(id),
+                            kind VARCHAR(50) NOT NULL,
+                            status VARCHAR(32) NOT NULL DEFAULT 'queued',
+                            progress REAL NOT NULL DEFAULT 0,
+                            artifact_path TEXT,
+                            error_message TEXT,
+                            job_metadata TEXT,
+                            created_at REAL NOT NULL,
+                            completed_at REAL
+                        )
+                        """
+                    )
+                )
+                await session.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_export_jobs_project_id ON export_jobs(project_id)")
+                )
+                await session.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_export_jobs_user_id ON export_jobs(user_id)")
+                )
+                logger.info("Created export_jobs")
+
+            await session.commit()
+            logger.info("Migration 016 completed successfully")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 016 failed: {e}")
+            raise
+
+    async def _migration_016_down(self, session: AsyncSession):
+        """Migration 016 rollback (best-effort)."""
+        logger.info("Rolling back migration 016 (best-effort)")
+        try:
+            dialect = self._dialect_name(session)
+            if await self._table_exists(session, "export_jobs"):
+                await session.execute(text("DROP TABLE IF EXISTS export_jobs"))
+            if await self._table_exists(session, "project_reference_files"):
+                await session.execute(text("DROP TABLE IF EXISTS project_reference_files"))
+            if dialect != "sqlite" and await self._table_exists(session, "projects"):
+                if await self._column_exists(session, "projects", "design_spec_version"):
+                    await session.execute(text("ALTER TABLE projects DROP COLUMN IF EXISTS design_spec_version"))
+                if await self._column_exists(session, "projects", "design_spec"):
+                    await session.execute(text("ALTER TABLE projects DROP COLUMN IF EXISTS design_spec"))
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 016 rollback failed: {e}")
+            raise
+
+    async def _migration_017_up(self, session: AsyncSession):
+        """Migration 017: reference_chunks, reference file ordering, design_spec_locked."""
+        logger.info("Applying migration 017: reference_chunks and design_spec_locked")
+        try:
+            dialect = self._dialect_name(session)
+            if await self._table_exists(session, "projects"):
+                if not await self._column_exists(session, "projects", "design_spec_locked"):
+                    if dialect == "sqlite":
+                        await session.execute(
+                            text("ALTER TABLE projects ADD COLUMN design_spec_locked INTEGER NOT NULL DEFAULT 0")
+                        )
+                    else:
+                        await session.execute(
+                            text(
+                                "ALTER TABLE projects ADD COLUMN IF NOT EXISTS design_spec_locked BOOLEAN NOT NULL DEFAULT FALSE"
+                            )
+                        )
+                    logger.info("Added projects.design_spec_locked")
+
+            if await self._table_exists(session, "project_reference_files"):
+                if not await self._column_exists(session, "project_reference_files", "sort_order"):
+                    await session.execute(
+                        text("ALTER TABLE project_reference_files ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+                    )
+                if not await self._column_exists(session, "project_reference_files", "include_in_prompt"):
+                    if dialect == "sqlite":
+                        await session.execute(
+                            text(
+                                "ALTER TABLE project_reference_files ADD COLUMN include_in_prompt INTEGER NOT NULL DEFAULT 1"
+                            )
+                        )
+                    else:
+                        await session.execute(
+                            text(
+                                "ALTER TABLE project_reference_files ADD COLUMN IF NOT EXISTS include_in_prompt BOOLEAN NOT NULL DEFAULT TRUE"
+                            )
+                        )
+                if not await self._column_exists(session, "project_reference_files", "parse_mode_used"):
+                    await session.execute(
+                        text(
+                            "ALTER TABLE project_reference_files ADD COLUMN parse_mode_used VARCHAR(16)"
+                        )
+                    )
+
+            if not await self._table_exists(session, "reference_chunks"):
+                await session.execute(
+                    text(
+                        """
+                        CREATE TABLE reference_chunks (
+                            id SERIAL PRIMARY KEY,
+                            file_id VARCHAR(36) NOT NULL,
+                            project_id VARCHAR(36) NOT NULL REFERENCES projects(project_id),
+                            chunk_index INTEGER NOT NULL,
+                            body TEXT NOT NULL,
+                            created_at DOUBLE PRECISION NOT NULL,
+                            UNIQUE(file_id, chunk_index)
+                        )
+                        """
+                        if dialect != "sqlite"
+                        else """
+                        CREATE TABLE reference_chunks (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            file_id VARCHAR(36) NOT NULL,
+                            project_id VARCHAR(36) NOT NULL REFERENCES projects(project_id),
+                            chunk_index INTEGER NOT NULL,
+                            body TEXT NOT NULL,
+                            created_at REAL NOT NULL,
+                            UNIQUE(file_id, chunk_index)
+                        )
+                        """
+                    )
+                )
+                await session.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_reference_chunks_project_id ON reference_chunks(project_id)")
+                )
+                await session.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_reference_chunks_file_id ON reference_chunks(file_id)")
+                )
+                logger.info("Created reference_chunks")
+
+            await session.commit()
+            logger.info("Migration 017 completed successfully")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 017 failed: {e}")
+            raise
+
+    async def _migration_017_down(self, session: AsyncSession):
+        logger.info("Rolling back migration 017 (best-effort)")
+        try:
+            dialect = self._dialect_name(session)
+            if await self._table_exists(session, "reference_chunks"):
+                await session.execute(text("DROP TABLE IF EXISTS reference_chunks"))
+            if dialect != "sqlite" and await self._table_exists(session, "project_reference_files"):
+                for col in ("parse_mode_used", "include_in_prompt", "sort_order"):
+                    if await self._column_exists(session, "project_reference_files", col):
+                        await session.execute(
+                            text(f"ALTER TABLE project_reference_files DROP COLUMN IF EXISTS {col}")
+                        )
+            if dialect != "sqlite" and await self._table_exists(session, "projects"):
+                if await self._column_exists(session, "projects", "design_spec_locked"):
+                    await session.execute(text("ALTER TABLE projects DROP COLUMN IF EXISTS design_spec_locked"))
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Migration 017 rollback failed: {e}")
             raise
 
     @staticmethod

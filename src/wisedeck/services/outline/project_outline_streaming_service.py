@@ -400,7 +400,17 @@ class ProjectOutlineStreamingService:
             topic = confirmed_requirements.get('topic', project.topic)
             target_audience = confirmed_requirements.get('target_audience', '普通大众')
             ppt_style = confirmed_requirements.get('ppt_style', 'general')
-            prompt = prompts_manager.get_streaming_outline_prompt(topic=topic, target_audience=target_audience, ppt_style=ppt_style, page_count_instruction=page_count_instruction, research_section='')
+            from ..project_context_augmentation import build_project_prompt_augmentation
+
+            qh_parts = [
+                topic,
+                getattr(project, "topic", "") or "",
+                confirmed_requirements.get("scenario", "") or "",
+                (confirmed_requirements.get("requirements") or "")[:1200],
+            ]
+            qh = "\n".join(str(x) for x in qh_parts if str(x).strip())[:2500]
+            aug = await build_project_prompt_augmentation(project_id, query_hint=qh or None)
+            prompt = prompts_manager.get_streaming_outline_prompt(topic=topic, target_audience=target_audience, ppt_style=ppt_style, page_count_instruction=page_count_instruction, research_section=aug)
             yield f"data: {json.dumps({'status': {'step': 'generating', 'message': 'AI 正在构建大纲...', 'progress': 0.0}})}\n\n"
             try:
                 content = ''
