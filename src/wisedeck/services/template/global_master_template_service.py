@@ -163,10 +163,13 @@ class GlobalMasterTemplateService:
 
             # Generate preview image if not provided
             if not template_data.get('preview_image'):
-                # Preview is best-effort; current implementation is placeholder SVG regardless of HTML/SVG input.
-                template_data['preview_image'] = await self._generate_preview_image(
-                    template_data.get("html_template") or template_data.get("svg_template") or ""
-                )
+                preview_override = self._preview_data_url_from_import_summary(template_data.get("import_summary"))
+                if preview_override:
+                    template_data['preview_image'] = preview_override
+                else:
+                    template_data['preview_image'] = await self._generate_preview_image(
+                        template_data.get("html_template") or template_data.get("svg_template") or ""
+                    )
 
             # Extract style config if not provided
             if not template_data.get('style_config'):
@@ -363,11 +366,17 @@ class GlobalMasterTemplateService:
                     if existing and existing.id != template_id:
                         raise ValueError(f"Template name '{update_data['template_name']}' already exists")
 
-            # Update preview image if HTML template is updated
-            if ('html_template' in update_data and update_data.get('html_template') and 'preview_image' not in update_data):
-                update_data['preview_image'] = await self._generate_preview_image(update_data['html_template'])
-            elif ('svg_template' in update_data and update_data.get('svg_template') and 'preview_image' not in update_data):
-                update_data['preview_image'] = await self._generate_preview_image(update_data.get('svg_template') or "")
+            # Update preview image when content changes (prefer first persisted slide SVG)
+            if 'preview_image' not in update_data:
+                preview_override = self._preview_data_url_from_import_summary(update_data.get("import_summary"))
+                if preview_override:
+                    update_data['preview_image'] = preview_override
+                elif ('html_template' in update_data and update_data.get('html_template')):
+                    update_data['preview_image'] = await self._generate_preview_image(update_data['html_template'])
+                elif ('svg_template' in update_data and update_data.get('svg_template')):
+                    update_data['preview_image'] = await self._generate_preview_image(
+                        update_data.get('svg_template') or ""
+                    )
 
             # Update style config if HTML template is updated
             if ('html_template' in update_data and update_data.get('html_template') and 'style_config' not in update_data):
@@ -524,6 +533,102 @@ class GlobalMasterTemplateService:
         if not manifest.is_file():
             raise ValueError(f"未找到模板工作区 manifest：{manifest}")
         return manifest
+
+    def build_workspace_persist_metadata(self, workspace_id: str) -> Dict[str, Any]:
+        """
+        Build import_summary (with embedded template_contract) and optional svg_template from
+        template-import workspace (pptx_extract / import_from_upload).
+        """
+        warnings: List[str] = []
+        manifest_path = self._template_workspace_manifest_path(workspace_id)
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            raise ValueError(f"无法读取模板工作区 manifest: {e}") from e
+
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest.json 格式无效")
+
+        slide_count = 0
+        try:
+            slide_count = int((manifest.get("slide_assets") or {}).get("page_count") or 0)
+        except (TypeError, ValueError):
+            slide_count = 0
+
+        source_filename = str(manifest.get("source_filename") or "workspace")
+        paths = manifest.get("paths") or {}
+        svg_dir_raw = paths.get("svg_dir")
+        layout_hints = manifest.get("pptx_layout")
+        if not isinstance(layout_hints, dict):
+            layout_hints = {}
+
+        from wisedeck.services.template.slide_svg_bundler import bundle_workspace_svgs
+        from wisedeck.services.template.svg_template_import_meta import (
+            build_import_summary,
+            trim_svg_slide_xmls_for_persistence,
+        )
+        from wisedeck.services.template.template_contract_build import build_template_contract_from_manifest
+
+        template_contract = build_template_contract_from_manifest(
+            manifest,
+            slide_count=slide_count,
+            source_filename=source_filename,
+        )
+
+        svg_template_out: Optional[str] = None
+        import_summary: Dict[str, Any] = {}
+        svg_dir = Path(str(svg_dir_raw)) if svg_dir_raw else Path()
+
+        if svg_dir.is_dir() and list(svg_dir.glob("slide_*.svg")):
+            try:
+                svg_t, _html_t, w_bundle, slide_xmls = bundle_workspace_svgs(svg_dir, "vertical_stack")
+                warnings.extend(w_bundle)
+                trimmed, trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
+                warnings.extend(trim_warn)
+                imp = build_import_summary(
+                    svg_template=svg_t,
+                    svg_slide_xmls=trimmed,
+                    slide_count=slide_count,
+                    bundle_mode="vertical_stack",
+                    source_filename=source_filename,
+                    pptx_layout=layout_hints if layout_hints else None,
+                    template_provenance="ai_pptx_extract_workspace",
+                )
+                imp["structured_contract"] = True
+                imp["template_contract"] = template_contract
+                svg_template_out = svg_t
+                import_summary = imp
+            except Exception as e:
+                warnings.append(f"工作区 SVG 打包失败，仅写入契约摘要：{e}")
+                imp = build_import_summary(
+                    svg_template=None,
+                    slide_count=slide_count,
+                    bundle_mode=None,
+                    source_filename=source_filename,
+                    pptx_layout=layout_hints if layout_hints else None,
+                    template_provenance="ai_pptx_extract_workspace_manifest_only",
+                )
+                imp["structured_contract"] = True
+                imp["template_contract"] = template_contract
+                import_summary = imp
+        else:
+            imp = build_import_summary(
+                svg_template=None,
+                slide_count=slide_count,
+                bundle_mode=None,
+                source_filename=source_filename,
+                pptx_layout=layout_hints if layout_hints else None,
+                template_provenance="ai_pptx_extract_workspace_manifest_only",
+            )
+            imp["structured_contract"] = True
+            imp["template_contract"] = template_contract
+            import_summary = imp
+
+        return {
+            "import_summary": import_summary,
+            "svg_template": svg_template_out,
+            "warnings": warnings,
+        }
 
     def _load_workspace_slide_png_paths(self, workspace_id: str, *, limit: int = 6) -> List[str]:
         manifest_path = self._template_workspace_manifest_path(workspace_id)
@@ -840,7 +945,7 @@ class GlobalMasterTemplateService:
                 logger.info(f"Generated HTML template length: {len(html_template)}")
 
             # 返回结果（不保存到数据库）
-            return {
+            out = {
                 'html_template': html_template,
                 'svg_template': svg_template,
                 'template_name': template_name,
@@ -848,6 +953,9 @@ class GlobalMasterTemplateService:
                 'tags': tags or ['AI生成'],
                 'llm_response': full_response  # 包含完整的LLM响应
             }
+            if template_workspace_id:
+                out["template_workspace_id"] = str(template_workspace_id).strip()
+            return out
 
         except Exception as e:
             logger.error(f"Failed to generate template with AI: {e}", exc_info=True)
@@ -1852,6 +1960,22 @@ class GlobalMasterTemplateService:
         except Exception as e:
             logger.error(f"HTML validation failed with exception: {e}")
             return False
+
+    @staticmethod
+    def _preview_data_url_from_import_summary(import_summary: Any) -> Optional[str]:
+        """Use first persisted slide SVG as list thumbnail when small enough."""
+        if not isinstance(import_summary, dict):
+            return None
+        xs = import_summary.get("svg_slide_xmls")
+        if not isinstance(xs, list) or not xs:
+            return None
+        svg = xs[0]
+        if not isinstance(svg, str) or not svg.strip():
+            return None
+        raw = svg.strip().encode("utf-8")
+        if len(raw) > 512_000:
+            return None
+        return f"data:image/svg+xml;base64,{base64.b64encode(raw).decode('ascii')}"
 
     async def _generate_preview_image(self, html_template: str) -> str:
         """Generate preview image for template (placeholder implementation)"""

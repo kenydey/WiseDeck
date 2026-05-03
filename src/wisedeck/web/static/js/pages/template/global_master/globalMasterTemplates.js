@@ -658,6 +658,9 @@ async function handleAIGeneration(event) {
 
         const result = await apiClient.post('/api/global-master-templates/generate', payload);
         const templateData = normalizeTemplateData(result);
+        if (state.templateWorkspaceId) {
+            templateData.template_workspace_id = state.templateWorkspaceId;
+        }
         await handleGenerationComplete(templateData);
         updateStatusText('模板生成完成');
         showAIGenerationComplete();
@@ -769,7 +772,15 @@ async function saveGeneratedTemplate() {
         return;
     }
     try {
-        await apiClient.post('/api/global-master-templates/save-generated', state.generatedTemplate);
+        const payload = { ...state.generatedTemplate };
+        const ws =
+            state.templateWorkspaceId ||
+            (typeof payload.template_workspace_id === 'string' && payload.template_workspace_id.trim()) ||
+            '';
+        if (ws) {
+            payload.template_workspace_id = ws.trim();
+        }
+        await apiClient.post('/api/global-master-templates/save-generated', payload);
         alert('模板已保存');
         closeAIGenerationModal();
         loadTemplates(1);

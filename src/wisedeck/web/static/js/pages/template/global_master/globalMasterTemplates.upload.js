@@ -153,7 +153,7 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
         if (size) size.textContent = formatBytes(state.uploadedPptx.size);
         if (hint) {
             hint.textContent =
-                '生成时将先用 LibreOffice 渲染多页 PNG/SVG，再结合 python-pptx 抽取版式、字体与配色特征';
+                '此模式会先创建导入工作区（LibreOffice→PDF→PNG/SVG），推理时附带版式摘要与渲染图；保存模板时可合并工作区契约与矢量页。直接「导入模板」文件则默认先试 LibreOffice HTML，失败再 svg_stack。';
         }
     }
 
@@ -240,6 +240,8 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
             let importWarnings = [];
             /** @type {'office'|'pdf'|null} */
             let importKind = null;
+            /** @type {any} */
+            let importConvertResult = null;
             if (isOffice) {
                 importKind = 'office';
                 if (file.size > 50 * 1024 * 1024) {
@@ -251,13 +253,16 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
 
                 setImportButtonBusy(true, '结构化导入…');
                 const dataUrl = await readFileAsDataURL(file);
+                const bundleMode =
+                    document.getElementById('officeImportBundleMode')?.value || 'vertical_stack';
                 const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
                     filename: file.name,
                     data: dataUrl,
                     prefer_libreoffice_html: true,
                     fallback_to_svg_stack: true,
-                    bundle_mode: 'vertical_stack',
+                    bundle_mode: bundleMode,
                 });
+                importConvertResult = conv;
                 const stem =
                     conv.suggested_template_name ||
                     file.name.replace(/\.(pptx|ppt)$/i, '');
@@ -301,6 +306,7 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                     png_zoom: 2.0,
                     bundle_mode: 'vertical_stack',
                 });
+                importConvertResult = conv;
                 const stem =
                     conv.suggested_template_name ||
                     file.name.replace(/\.pdf$/i, '');
@@ -357,12 +363,21 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
             await apiClient.post('/api/global-master-templates/', templateData);
             event.target.value = '';
             loadTemplates(1);
-            const provenanceNote =
-                importKind === 'office'
-                    ? '已保存 import_summary（含 pptx_layout 等）。svg_stack 路径会在服务端尝试按 PPTX 占位符位置注入 {{PAGE_TITLE}} 等标记。'
-                    : importKind === 'pdf'
-                      ? 'PDF 导入已写入 import_summary（template_provenance=pdf_raster_svg_stack）；不含 PPTX 占位符映射。'
-                      : '';
+            /** @type {string} */
+            let provenanceNote = '';
+            if (importKind === 'office') {
+                const engine =
+                    typeof importConvertResult?.export_engine_used === 'string'
+                        ? importConvertResult.export_engine_used
+                        : '';
+                provenanceNote =
+                    '引擎：' +
+                    (engine || '未知') +
+                    '。已保存 import_summary（含契约 / pptx_layout 等）。libreoffice_html 无 svg_template；svg_stack 会注入 {{…}} 占位并可有 svg_slide_xmls。';
+            } else if (importKind === 'pdf') {
+                provenanceNote =
+                    'PDF 导入已写入 import_summary（template_provenance=pdf_raster_svg_stack）；不含 PPTX 占位符映射。';
+            }
             if (importWarnings.length) {
                 alert(
                     '模板导入成功（包含警告）：\n- ' +

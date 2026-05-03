@@ -25,7 +25,10 @@ from .models import (
     TemplateSelectionRequest, TemplateSelectionResponse
 )
 from ..services.template.global_master_template_service import GlobalMasterTemplateService
-from ..services.template.libreoffice_html_exporter import export_presentation_html_bundle
+from ..services.template.libreoffice_html_exporter import (
+    export_presentation_html_bundle,
+    split_lo_merged_html_slide_fragments,
+)
 from ..services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
 from ..services.template.slide_svg_bundler import BundleMode, bundle_workspace_svgs
 from ..services.template.svg_template_import_meta import (
@@ -176,6 +179,10 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
             )
             imp_lo["structured_contract"] = True
             imp_lo["html_engine"] = "libreoffice_html"
+            lo_fragments = split_lo_merged_html_slide_fragments(html_t)
+            if lo_fragments:
+                imp_lo["html_slide_fragments"] = lo_fragments
+                imp_lo["visual_persistence_version"] = max(int(imp_lo.get("visual_persistence_version") or 0), 1)
             return TemplateOfficeConvertResponse(
                 html_template=html_t,
                 svg_template=None,
@@ -545,15 +552,48 @@ async def save_generated_template(
     """Save a generated template after user confirmation"""
     try:
         template_service = _template_service_for_user(user)
+        ws_id = str(request.get("template_workspace_id") or "").strip()
+        client_summary = request.get("import_summary")
+        workspace_warnings: List[str] = []
+
+        merged_summary: Optional[dict] = None
+        workspace_svg: Optional[str] = None
+        if ws_id:
+            try:
+
+                def _load_ws():
+                    return template_service.build_workspace_persist_metadata(ws_id)
+
+                meta = await asyncio.to_thread(_load_ws)
+                workspace_warnings = list(meta.get("warnings") or [])
+                merged_summary = meta.get("import_summary") if isinstance(meta.get("import_summary"), dict) else None
+                ws_svg = meta.get("svg_template")
+                workspace_svg = ws_svg if isinstance(ws_svg, str) and ws_svg.strip() else None
+            except ValueError as ve:
+                workspace_warnings.append(str(ve))
+
+        if isinstance(client_summary, dict) and client_summary:
+            if merged_summary is None:
+                merged_summary = dict(client_summary)
+            else:
+                merged_summary = {**merged_summary, **client_summary}
+
+        svg_from_client = request.get("svg_template")
+        svg_pick = workspace_svg if workspace_svg else (
+            svg_from_client if isinstance(svg_from_client, str) and svg_from_client.strip() else None
+        )
+
         # Extract template data from request
         template_data = {
             'template_name': request.get('template_name'),
             'description': request.get('description', ''),
             'html_template': request.get('html_template'),
-            'svg_template': request.get('svg_template'),
+            'svg_template': svg_pick,
             'tags': request.get('tags', []),
             'created_by': 'AI'
         }
+        if merged_summary:
+            template_data["import_summary"] = merged_summary
 
         # Add timestamp to avoid name conflicts
         import time
@@ -561,7 +601,12 @@ async def save_generated_template(
         template_data['template_name'] = f"{template_data['template_name']}_{timestamp}"
 
         result = await template_service.create_template(template_data)
-        return GlobalMasterTemplateResponse(**result)
+        resp = GlobalMasterTemplateResponse(**result)
+        if workspace_warnings:
+            # surfaced via detail extension — FastAPI response_model strips extras;
+            # log for ops; optional: return custom JSONResponse with warnings
+            logger.info("save-generated workspace warnings: %s", workspace_warnings)
+        return resp
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

@@ -132,6 +132,39 @@ def _inline_assets_fragment(html_text: str, base_dir: Path, warnings: List[str])
     return str(soup)
 
 
+def split_lo_merged_html_slide_fragments(html_doc: str) -> List[str]:
+    """Parse merged LO export HTML (sections with class wd-lo-slide) into inner HTML fragments."""
+    if not isinstance(html_doc, str) or not html_doc.strip():
+        return []
+    soup = BeautifulSoup(html_doc, "html.parser")
+    out: List[str] = []
+    for sec in soup.find_all("section"):
+        classes = sec.get("class") or []
+        if isinstance(classes, str):
+            classes = [classes]
+        if "wd-lo-slide" in classes:
+            out.append(sec.decode_contents())
+    return out
+
+
+def wrap_lo_slide_fragment_html(fragment_inner: str, title: str = "Slide") -> str:
+    """Single-slide HTML wrapper for LO body fragment (creative design style reference)."""
+    safe = escape((title or "Slide").replace("<", "").replace(">", ""))
+    inner = fragment_inner if isinstance(fragment_inner, str) else ""
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{safe}</title>
+</head>
+<body style="margin:0;padding:16px;background:#f5f5f5;">
+<div style="background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.12);padding:8px;">
+{inner}
+</div>
+</body>
+</html>"""
+
+
 def merge_and_wrap_impress_html(slides_html: List[str], title: str) -> str:
     safe = escape(title.replace("<", "").replace(">", ""))
     blocks = "".join(f'<section class="wd-lo-slide">{h}</section>' for h in slides_html)
@@ -190,4 +223,6 @@ __all__ = [
     "export_presentation_html_bundle",
     "run_soffice_convert_impress_html",
     "merge_and_wrap_impress_html",
+    "split_lo_merged_html_slide_fragments",
+    "wrap_lo_slide_fragment_html",
 ]
