@@ -79,14 +79,15 @@ class LayoutRepairService:
             # No recognizable severity info -> fall back to repairing
             return False
 
-    def _inject_anti_overflow_css(self, html_content: str) -> str:
-            """注入防内容溢出的 CSS 样式，确保所有文字完整显示
+    @staticmethod
+    def _inject_anti_overflow_css(html_content: str) -> str:
+        """注入防内容溢出的 CSS 样式，确保所有文字完整显示
 
-            在 </head> 前注入强制样式，覆盖 LLM 生成的 overflow:hidden 等截断规则。
-            """
-            import re
+        在 </head> 前注入强制样式，覆盖 LLM 生成的 overflow:hidden 等截断规则。
+        """
+        import re
 
-            anti_overflow_css = """
+        anti_overflow_css = """
     <style id="anti-overflow-fix">
       /*
        * 目标：防止 LLM 生成的 overflow:hidden / text-overflow:ellipsis
@@ -125,26 +126,26 @@ class LayoutRepairService:
     </style>
     """
 
-            if '</head>' in html_content.lower():
-                # 在 </head> 前注入
-                html_content = re.sub(
-                    r'(</head>)',
-                    anti_overflow_css + r'\1',
-                    html_content,
-                    count=1,
-                    flags=re.IGNORECASE
-                )
-            elif '<body' in html_content.lower():
-                # 没有 </head>，在 <body 前注入
-                html_content = re.sub(
-                    r'(<body)',
-                    anti_overflow_css + r'\1',
-                    html_content,
-                    count=1,
-                    flags=re.IGNORECASE
-                )
+        if '</head>' in html_content.lower():
+            # 在 </head> 前注入
+            html_content = re.sub(
+                r'(</head>)',
+                anti_overflow_css + r'\1',
+                html_content,
+                count=1,
+                flags=re.IGNORECASE
+            )
+        elif '<body' in html_content.lower():
+            # 没有 </head>，在 <body 前注入
+            html_content = re.sub(
+                r'(<body)',
+                anti_overflow_css + r'\1',
+                html_content,
+                count=1,
+                flags=re.IGNORECASE
+            )
 
-            return html_content
+        return html_content
 
     async def _apply_auto_layout_repair(
             self,

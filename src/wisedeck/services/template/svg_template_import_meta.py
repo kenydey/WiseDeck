@@ -56,6 +56,8 @@ def build_import_summary(
     slide_count: int,
     bundle_mode: str | None,
     source_filename: str | None,
+    pptx_layout: dict[str, Any] | None = None,
+    template_provenance: str | None = None,
 ) -> dict[str, Any]:
     from wisedeck.svg_export.placeholder_adapter import scan_svg_placeholder_inner_names
 
@@ -64,7 +66,7 @@ def build_import_summary(
         markers = scan_svg_placeholder_inner_names(svg_template)
     joined = "|".join(markers)
     digest = hashlib.sha256(joined.encode("utf-8")).hexdigest() if joined else ""
-    return {
+    out: dict[str, Any] = {
         "slide_count": int(slide_count or 0),
         "bundle_mode": bundle_mode,
         "source_filename": source_filename,
@@ -72,3 +74,10 @@ def build_import_summary(
         "placeholder_hash": digest,
         "canvas_format_guess": guess_canvas_format_from_svg(svg_template or ""),
     }
+    if isinstance(pptx_layout, dict) and pptx_layout:
+        # Strip oversized / error-only payloads for DB friendliness
+        if not pptx_layout.get("error"):
+            out["pptx_layout"] = pptx_layout
+    if isinstance(template_provenance, str) and template_provenance.strip():
+        out["template_provenance"] = template_provenance.strip()
+    return out

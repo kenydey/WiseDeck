@@ -240,3 +240,43 @@ Phase 2（增强兼容）：
 
 **边界**：`PPTXBuilder` 假设 **像素 bbox + 固定 DPI**；WiseDeck DOM 轨需统一坐标系后再调用同类数学，不宜混用未标定的 px 与 EMU。
 
+---
+
+## 11) 图表：SVG 母版占位 vs 结构化导出合并（职责边界）
+
+| 能力 | 责任方 | 说明 |
+|------|--------|------|
+| **可编辑 Chart 图形** | **结构化导出**（如 `merge_native_charts_into_pptx_bytes`） | 数据来自 deck / outline 的 `chart_config`，按 slide index 叠加到已生成的 PPTX 上；**不依赖** SVG 内是否存在「图表形状」。 |
+| **SVG / DrawingML 整页** | **svg_native 轨** | 母版 SVG 经 ppt-master 转为原生绘图；其中的矢量/图片是**静态视觉**，一般**不应**冒充可编辑 chart。 |
+| **Office 导入后的 `{{…}}` 文本** | **模板侧**（可选注入） | 仅用于 **TITLE / BODY 类文本** 与 `build_slide_placeholders_from_wisedeck_contract` 对齐；**不在此轨注入伪 chart XML**。 |
+| **若需标注「此处曾有图」** | 元数据优先 | 使用 `import_summary.pptx_layout` 中 `shape_kind: chart` 记录；或轻量 SVG 文本 `{{CHART_AREA}}`（若产品明确需要且与 merge 不冲突）。 |
+
+**原则**：**数据图表**以结构化合并为准；**母版 SVG**负责版式与标题/正文类占位符，避免双轨写入同一 bbox 导致重叠。
+
+---
+
+## 12) Office 导入模板：`import_summary` 与 `template_provenance`
+
+从 PPT/PPTX 导入时，`convert-office-template` / `TemplateImportService` 会填充 **`import_summary`**（含 `placeholder_markers`、`placeholder_hash`、`pptx_layout` 等），并在 DB 列 **`import_summary`** 中持久化（前端保存时需一并提交）。
+
+建议的 **`template_provenance`**（字符串，可扩展）：
+
+| 值 | 含义 |
+|----|------|
+| `office_libreoffice_html` | 仅 LibreOffice HTML 导出路径；无 svg_stack 注入。 |
+| `office_svg_stack_injected` | PDF→SVG 合并路径，且在合并前已按 `pptx_layout` 尝试向各页 SVG 注入 `{{PAGE_TITLE}}` / `{{SUBTITLE}}` / `{{CONTENT_AREA}}`。 |
+| `curated` | 人工或 AI 审定后的语义母版（未来工作流写入）。 |
+
+---
+
+## 13) 与 ppt-master 对齐的「审定母版」工作流（方案 D）
+
+当 **一键注入**（导入管线内）不足以满足品牌或复杂版式时：
+
+1. **上传 PPTX** → 系统保留 `pptx_layout` + `python_pptx` 分析摘要。  
+2. **编写或合并 `design_spec`**（项目或模板侧规格）。  
+3. **生成或手改 `svg_template`**，保证 `{{…}}` 与 WiseDeck / ppt-master 合约一致，并通过质量门。  
+4. **审定入库**，将 `template_provenance` 设为 `curated`（或等价标记）。
+
+**与第 12 节关系**：`office_svg_stack_injected` 适合批量；`curated` 适合高要求；二者可并存于模板库，由运营/产品区分展示。
+

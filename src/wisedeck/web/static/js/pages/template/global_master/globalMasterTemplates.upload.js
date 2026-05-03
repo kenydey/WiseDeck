@@ -269,13 +269,18 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                     file.name.replace(/\.(pptx|ppt)$/i, '');
                 templateData = {
                     template_name: stem,
-                    description: `从文件 ${file.name} 导入（${conv.export_engine_used}）`,
+                    description:
+                        `从文件 ${file.name} 导入（${conv.export_engine_used}）。` +
+                        '此类为「视觉母版」：保留版式外观；svg_native 可替换区来自导入后自动注入的占位符（若有 PPTX 占位符）或后续 AI/手改。',
                     html_template: conv.html_template,
-                    tags: ['导入'],
+                    tags: ['导入', '视觉母版'],
                     is_default: false,
                 };
                 if (conv.svg_template) {
                     templateData.svg_template = conv.svg_template;
+                }
+                if (conv.import_summary && typeof conv.import_summary === 'object') {
+                    templateData.import_summary = conv.import_summary;
                 }
                 if (Array.isArray(conv.warnings) && conv.warnings.length) {
                     importWarnings = conv.warnings.slice();
@@ -315,10 +320,17 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
             await apiClient.post('/api/global-master-templates/', templateData);
             event.target.value = '';
             loadTemplates(1);
+            const provenanceNote =
+                isOffice &&
+                '已保存 import_summary（含 pptx_layout 等）。svg_stack 路径会在服务端尝试按 PPTX 占位符位置注入 {{PAGE_TITLE}} 等标记。';
             if (importWarnings.length) {
-                alert('模板导入成功（包含警告）：\n- ' + importWarnings.join('\n- '));
+                alert(
+                    '模板导入成功（包含警告）：\n- ' +
+                        importWarnings.join('\n- ') +
+                        (provenanceNote ? '\n\n' + provenanceNote : '')
+                );
             } else {
-                alert('模板导入成功');
+                alert('模板导入成功' + (provenanceNote ? '。\n\n' + provenanceNote : ''));
             }
         } catch (error) {
             console.error('导入失败', error);

@@ -139,11 +139,11 @@ class CreativeDesignService:
                 return html_content
 
             logger.warning("模板风格生成失败，回退到默认生成方式")
-            fallback_html = await self._generate_fallback_slide_html(slide_data, page_number, total_pages)
+            fallback_html = self._generate_fallback_slide_html(slide_data, page_number, total_pages)
             return fallback_html
         except Exception as exc:
             logger.error("使用模板风格生成幻灯片失败: %s", exc)
-            fallback_html = await self._generate_fallback_slide_html(slide_data, page_number, total_pages)
+            fallback_html = self._generate_fallback_slide_html(slide_data, page_number, total_pages)
             return fallback_html
 
     async def _build_creative_template_context(

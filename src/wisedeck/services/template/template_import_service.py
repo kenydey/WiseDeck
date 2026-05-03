@@ -298,10 +298,23 @@ class TemplateImportService:
                 logger.warning("python-pptx manifest extraction failed: %s", e)
                 pptx_meta = {"error": str(e)}
 
+        from wisedeck.services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
         from wisedeck.services.template.svg_template_import_meta import (
             guess_canvas_format_from_svg,
             scan_svg_dir_placeholder_markers,
         )
+        from wisedeck.services.template.template_office_svg_placeholder_inject import (
+            inject_placeholders_into_workspace_svgs,
+        )
+
+        pptx_layout_hints: Dict[str, Any] = {}
+        try:
+            pptx_layout_hints = extract_pptx_layout_hints(pptx_path.read_bytes())
+        except Exception as e:
+            logger.warning("extract_pptx_layout_hints failed: %s", e)
+            pptx_layout_hints = {"schema_version": 1, "error": str(e)[:200], "slides": []}
+
+        inject_placeholders_into_workspace_svgs(svg_dir, pptx_layout_hints)
 
         per_slide_markers = scan_svg_dir_placeholder_markers(svg_dir)
         first_svg = ""
@@ -326,6 +339,7 @@ class TemplateImportService:
             },
             "slide_assets": slide_assets,
             "python_pptx": pptx_meta,
+            "pptx_layout": pptx_layout_hints,
             "svg_native_meta": {
                 "placeholder_markers": per_slide_markers,
                 "canvas_format_guess": guess_canvas_format_from_svg(first_svg),

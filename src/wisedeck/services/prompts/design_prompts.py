@@ -4,12 +4,82 @@ PPT设计基因和视觉指导相关提示词
 
 """
 
-from typing import Dict, Any
+from __future__ import annotations
+
+import hashlib
+import json
 import logging
+from typing import Any, Dict
 
 from .system_prompts import SystemPrompts
 
 logger = logging.getLogger(__name__)
+
+# Upper bounds for LLM prompt payloads (characters, not tokens).
+_MAX_TEMPLATE_HTML_CONTEXT_CHARS = 400_000
+_MAX_SLIDE_DATA_JSON_CHARS = 80_000
+_MAX_HTML_CONTENT_IN_SLIDE_PROMPT = 12_000
+_DATA_URL_PREFIX_MAX = 120
+
+
+def _sanitize_images_info_for_prompt(images_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop or shorten data: URLs in images_info so prompts stay small."""
+    out: Dict[str, Any] = dict(images_info)
+    images = out.get("images")
+    if not isinstance(images, list):
+        return out
+    new_images: list[Dict[str, Any]] = []
+    for item in images:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        url = row.get("absolute_url")
+        if isinstance(url, str) and url.startswith("data:") and len(url) > _DATA_URL_PREFIX_MAX:
+            row["absolute_url"] = (
+                f"{url[:_DATA_URL_PREFIX_MAX]}...[data URL 已截断，原长 {len(url)} 字符]"
+            )
+        new_images.append(row)
+    out["images"] = new_images
+    return out
+
+
+def _format_slide_data_for_prompt(slide_data: Dict[str, Any] | None) -> str:
+    """Serialize slide_data for prompts: exclude huge objects, truncate html/data URLs."""
+    if not slide_data or not isinstance(slide_data, dict):
+        return "{}"
+
+    safe: Dict[str, Any] = {}
+    for key, value in slide_data.items():
+        if key == "images_collection":
+            continue
+        if key == "html_content" and isinstance(value, str):
+            if len(value) > _MAX_HTML_CONTENT_IN_SLIDE_PROMPT:
+                safe[key] = (
+                    value[:_MAX_HTML_CONTENT_IN_SLIDE_PROMPT]
+                    + f"\n\n[html_content 已截断，原长 {len(value)} 字符]"
+                )
+            else:
+                safe[key] = value
+        elif key == "images_info" and isinstance(value, dict):
+            safe[key] = _sanitize_images_info_for_prompt(value)
+        else:
+            safe[key] = value
+
+    try:
+        text = json.dumps(safe, ensure_ascii=False, default=str)
+    except TypeError:
+        text = json.dumps(
+            {k: str(v) for k, v in safe.items()},
+            ensure_ascii=False,
+        )
+
+    if len(text) > _MAX_SLIDE_DATA_JSON_CHARS:
+        orig_len = len(text)
+        text = (
+            text[:_MAX_SLIDE_DATA_JSON_CHARS]
+            + f"\n\n[slide_data JSON 已截断，原长 {orig_len} 字符]"
+        )
+    return text
 
 
 def _is_image_service_enabled() -> bool:
@@ -276,9 +346,22 @@ class DesignPrompts:
             return ""
         return f"\n\n{DesignPrompts._build_image_usage_context()}"
 
+    @staticmethod
     def _build_template_html_context(template_html: str) -> str:
-        """模板 HTML 原样透传，不做截断、提取或兜底。"""
-        return template_html or ""
+        """模板 HTML 写入提示词；超长时截断头部并标注，避免撑爆上下文。"""
+        raw = template_html or ""
+        if len(raw) <= _MAX_TEMPLATE_HTML_CONTEXT_CHARS:
+            return raw
+        digest = hashlib.md5(raw[:10000].encode("utf-8", errors="ignore")).hexdigest()[:12]
+        logger.debug(
+            "template_html truncated for prompt: len=%s md5_prefix12=%s",
+            len(raw),
+            digest,
+        )
+        return (
+            raw[:_MAX_TEMPLATE_HTML_CONTEXT_CHARS]
+            + f"\n\n<!-- [模板 HTML 已截断，原长 {len(raw)} 字符] -->\n"
+        )
 
     @staticmethod
     def _build_locked_zones_context(template_html: str, page_number: int,
@@ -571,7 +654,7 @@ class DesignPrompts:
 {slides_summary}
 
 **当前页数据**
-{slide_data}
+{_format_slide_data_for_prompt(slide_data)}
 
 **页面位置**：第 {page_number} 页 / 共 {total_pages} 页
 
@@ -645,7 +728,7 @@ class DesignPrompts:
 - 第 {page_number} 页 / 共 {total_pages} 页
 
 **页面数据**
-{slide_data}
+{_format_slide_data_for_prompt(slide_data)}
 {images_info}
 
 **模板 HTML 原文**
@@ -723,7 +806,7 @@ class DesignPrompts:
 - 补充：{confirmed_requirements.get('description', '无')}
 
 **当前页面**
-{slide_data}
+{_format_slide_data_for_prompt(slide_data)}
 {images_info}
 
 **模板 HTML 原文**
@@ -798,7 +881,7 @@ class DesignPrompts:
         return f"""请为当前页提供创意变化建议。
 
 **页面数据**
-{slide_data}
+{_format_slide_data_for_prompt(slide_data)}
 
 **页面位置**：第{page_number}页 / 共{total_pages}页
 
@@ -816,7 +899,7 @@ class DesignPrompts:
         return f"""请根据当前页内容给出版式建议。
 
 **页面数据**
-{slide_data}
+{_format_slide_data_for_prompt(slide_data)}
 
 **页面位置**：第{page_number}页 / 共{total_pages}页
 
@@ -889,7 +972,7 @@ class DesignPrompts:
         return f"""请一次完成两件事，严格按标记输出。
 
 **输入**
-- 首页数据：{slide_data}
+- 首页数据：{_format_slide_data_for_prompt(slide_data)}
 - 总页数：{total_pages}页
 {images_context}
 

@@ -21,6 +21,7 @@ from .models import (
 )
 from ..services.template.global_master_template_service import GlobalMasterTemplateService
 from ..services.template.libreoffice_html_exporter import export_presentation_html_bundle
+from ..services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
 from ..services.template.slide_svg_bundler import bundle_workspace_svgs
 from ..services.template.svg_template_import_meta import build_import_summary
 from ..services.template.template_import_service import (
@@ -65,6 +66,14 @@ def _template_import_service() -> TemplateImportService:
     return TemplateImportService(extract_fn=_extract)
 
 
+def _layout_hints_from_pptx_path(pptx_path: Path) -> dict:
+    try:
+        return extract_pptx_layout_hints(pptx_path.read_bytes())
+    except Exception as e:
+        logger.warning("extract_pptx_layout_hints failed: %s", e)
+        return {"schema_version": 1, "error": str(e)[:200], "slides": []}
+
+
 def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> TemplateOfficeConvertResponse:
     suggested = (
         Path(body.filename or "upload").stem.replace("\x00", "") or "imported_template"
@@ -84,6 +93,7 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                 soffice=soffice,
             )
             stem = Path(safe_name).stem or suggested
+            hints = _layout_hints_from_pptx_path(pptx_path)
             return TemplateOfficeConvertResponse(
                 html_template=html_t,
                 svg_template=None,
@@ -96,6 +106,8 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                     slide_count=slide_count,
                     bundle_mode=None,
                     source_filename=stem,
+                    pptx_layout=hints,
+                    template_provenance="office_libreoffice_html",
                 ),
             )
         except Exception as e:
@@ -109,6 +121,9 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
         data=body.data,
         png_zoom=float(body.png_zoom or 2.0),
     )
+    layout_hints = ws.manifest.get("pptx_layout")
+    if not isinstance(layout_hints, dict):
+        layout_hints = _layout_hints_from_pptx_path(ws.pptx_path)
     svg_t, html_t, w_bundle = bundle_workspace_svgs(ws.svg_dir, body.bundle_mode)
     warnings_acc.extend(w_bundle)
     slide_assets = ws.manifest.get("slide_assets") or {}
@@ -126,6 +141,8 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
             slide_count=slide_count,
             bundle_mode=body.bundle_mode,
             source_filename=suggested,
+            pptx_layout=layout_hints if isinstance(layout_hints, dict) else None,
+            template_provenance="office_svg_stack_injected",
         ),
     )
 
