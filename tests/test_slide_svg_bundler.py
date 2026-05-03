@@ -7,6 +7,7 @@ import pytest
 from wisedeck.services.template.slide_svg_bundler import (
     bundle_slide_svgs,
     bundle_workspace_svgs,
+    read_workspace_slide_svgs,
 )
 
 
@@ -28,7 +29,9 @@ def test_bundle_vertical_stack(tmp_path: Path):
     (d / "slide_01.svg").write_text(SVG_A, encoding="utf-8")
     (d / "slide_02.svg").write_text(SVG_B, encoding="utf-8")
     paths = sorted(d.glob("slide_*.svg"))
-    svg_t, html_t = bundle_slide_svgs(paths, "vertical_stack")
+    svg_t, html_t, slide_xmls = bundle_slide_svgs(paths, "vertical_stack")
+    assert len(slide_xmls) == 2
+    assert "#ff0000" in slide_xmls[0]
     assert "#ff0000" in svg_t and "#0000ff" in svg_t
     assert 'xmlns="http://www.w3.org/2000/svg"' in svg_t
     assert "<!doctype html>" in html_t.lower()
@@ -41,7 +44,8 @@ def test_bundle_first_slide_only(tmp_path: Path):
     (d / "slide_01.svg").write_text(SVG_A, encoding="utf-8")
     (d / "slide_02.svg").write_text(SVG_B, encoding="utf-8")
     paths = sorted(d.glob("slide_*.svg"))
-    svg_t, _html = bundle_slide_svgs(paths, "first_slide_only")
+    svg_t, _html, slide_xmls = bundle_slide_svgs(paths, "first_slide_only")
+    assert len(slide_xmls) == 1
     assert "#ff0000" in svg_t
     assert "#0000ff" not in svg_t
 
@@ -54,10 +58,22 @@ def test_bundle_workspace_warns_many_slides(tmp_path: Path, monkeypatch):
     d = tmp_path
     (d / "slide_01.svg").write_text(SVG_A, encoding="utf-8")
     (d / "slide_02.svg").write_text(SVG_B, encoding="utf-8")
-    _svg, _html, warnings = ssb.bundle_workspace_svgs(d, "vertical_stack")
+    _svg, _html, warnings, slide_xmls = ssb.bundle_workspace_svgs(d, "vertical_stack")
+    assert len(slide_xmls) == 2
     assert any("幻灯片数量较多" in w for w in warnings)
 
 
 def test_bundle_workspace_empty_raises(tmp_path: Path):
     with pytest.raises(ValueError, match="slide"):
         bundle_workspace_svgs(tmp_path, "vertical_stack")
+
+
+def test_read_workspace_slide_svgs_matches_bundle_slice(tmp_path: Path):
+    d = tmp_path
+    (d / "slide_01.svg").write_text(SVG_A, encoding="utf-8")
+    (d / "slide_02.svg").write_text(SVG_B, encoding="utf-8")
+    full = read_workspace_slide_svgs(d, "vertical_stack")
+    assert len(full) == 2
+    first_only = read_workspace_slide_svgs(d, "first_slide_only")
+    assert len(first_only) == 1
+    assert "#ff0000" in first_only[0]

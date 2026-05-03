@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from ..prompts import prompts_manager
 from wisedeck.services.slide.slide_html_placeholder_enforce import enforce_slide_placeholder_slots
 from wisedeck.services.slide.slide_html_placeholder_policy import required_markers_for_slide
+from wisedeck.services.template.slide_svg_bundler import wrap_single_slide_html
 
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,17 @@ class CreativeDesignService:
         """Generate slide HTML from the selected template style."""
         try:
             template_html = template["html_template"]
+            imp = template.get("import_summary") if isinstance(template, dict) else None
+            if isinstance(imp, dict):
+                xs = imp.get("svg_slide_xmls")
+                if isinstance(xs, list):
+                    slides_xml = [x for x in xs if isinstance(x, str) and x.strip()]
+                    pi = page_number - 1
+                    if slides_xml and 0 <= pi < len(slides_xml):
+                        template_html = wrap_single_slide_html(
+                            slides_xml[pi],
+                            template_name=f"{template.get('template_name', 'Slide')} {page_number}",
+                        )
             template_name = template.get("template_name", "未知模板")
             logger.info("使用模板 %s 作为风格参考生成第%s页", template_name, page_number)
 

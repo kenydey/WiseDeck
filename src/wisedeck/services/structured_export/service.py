@@ -488,6 +488,28 @@ async def export_structured_pptx_via_homomorphic_dom_to_pptx(
     )
 
 
+def _coerce_stored_svg_slide_xmls(import_summary: dict | None) -> list[str] | None:
+    if not isinstance(import_summary, dict):
+        return None
+    raw = import_summary.get("svg_slide_xmls")
+    if not isinstance(raw, list) or not raw:
+        return None
+    out = [x.strip() for x in raw if isinstance(x, str) and x.strip()]
+    return out or None
+
+
+def _svg_native_xml_for_each_slide(
+    *,
+    svg_template: str,
+    import_summary: dict | None,
+    deck_slide_count: int,
+) -> list[str]:
+    pool = _coerce_stored_svg_slide_xmls(import_summary)
+    if pool:
+        return [pool[i % len(pool)] for i in range(deck_slide_count)]
+    return [svg_template] * deck_slide_count
+
+
 async def export_structured_pptx_via_svg_native(
     deck: StructuredSlideDeckModel,
     *,
@@ -514,8 +536,10 @@ async def export_structured_pptx_via_svg_native(
         if isinstance(stored, str) and stored.strip():
             from wisedeck.services.template.svg_template_import_meta import build_import_summary
 
+            slide_pool = _coerce_stored_svg_slide_xmls(import_summary)
             current = build_import_summary(
                 svg_template=svg_template,
+                svg_slide_xmls=slide_pool,
                 slide_count=len(deck.slides),
                 bundle_mode=import_summary.get("bundle_mode"),
                 source_filename=import_summary.get("source_filename"),
@@ -527,13 +551,19 @@ async def export_structured_pptx_via_svg_native(
                     (current or "")[:16],
                 )
 
+    svg_sequence = _svg_native_xml_for_each_slide(
+        svg_template=svg_template,
+        import_summary=import_summary,
+        deck_slide_count=len(deck.slides),
+    )
+
     svg_xmls: list[str] = []
     placeholders: list[dict[str, str]] = []
     total = max(1, len(deck.slides))
     deck_title = str(deck.title or "")
 
     for idx, slide in enumerate(deck.slides, start=1):
-        svg_xmls.append(svg_template)
+        svg_xmls.append(svg_sequence[idx - 1])
         # Best-effort: map structured slide into text placeholders.
         page_title = str(slide.title or "")
         # Join content points into a single text blob; template can decide how to wrap.

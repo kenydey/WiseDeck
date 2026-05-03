@@ -28,7 +28,10 @@ from ..services.template.global_master_template_service import GlobalMasterTempl
 from ..services.template.libreoffice_html_exporter import export_presentation_html_bundle
 from ..services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
 from ..services.template.slide_svg_bundler import BundleMode, bundle_workspace_svgs
-from ..services.template.svg_template_import_meta import build_import_summary
+from ..services.template.svg_template_import_meta import (
+    build_import_summary,
+    trim_svg_slide_xmls_for_persistence,
+)
 from ..services.template.template_contract_build import build_template_contract_from_manifest
 from ..services.template.template_import_service import (
     TemplateImportService,
@@ -94,12 +97,24 @@ def _convert_pdf_template_sync(body: TemplatePdfConvertRequest) -> TemplateOffic
         png_zoom=float(body.png_zoom or 2.0),
     )
     bm: BundleMode = "first_slide_only" if body.bundle_mode == "first_slide_only" else "vertical_stack"
-    svg_t, html_t, w_bundle = bundle_workspace_svgs(ws.svg_dir, bm)
+    svg_t, html_t, w_bundle, slide_xmls = bundle_workspace_svgs(ws.svg_dir, bm)
     slide_assets = ws.manifest.get("slide_assets") or {}
     try:
         slide_count = int(slide_assets.get("page_count") or 0)
     except (TypeError, ValueError):
         slide_count = 0
+
+    trimmed_slides, trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
+    w_bundle.extend(trim_warn)
+    imp_pdf = build_import_summary(
+        svg_template=svg_t,
+        svg_slide_xmls=trimmed_slides,
+        slide_count=slide_count,
+        bundle_mode=bm,
+        source_filename=suggested,
+        pptx_layout=None,
+        template_provenance="pdf_raster_svg_stack",
+    )
 
     return TemplateOfficeConvertResponse(
         html_template=html_t,
@@ -108,14 +123,7 @@ def _convert_pdf_template_sync(body: TemplatePdfConvertRequest) -> TemplateOffic
         slide_count=slide_count,
         export_engine_used="pdf_svg_stack",
         warnings=w_bundle,
-        import_summary=build_import_summary(
-            svg_template=svg_t,
-            slide_count=slide_count,
-            bundle_mode=bm,
-            source_filename=suggested,
-            pptx_layout=None,
-            template_provenance="pdf_raster_svg_stack",
-        ),
+        import_summary=imp_pdf,
     )
 
 
@@ -192,8 +200,11 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
     layout_hints = ws.manifest.get("pptx_layout")
     if not isinstance(layout_hints, dict):
         layout_hints = _layout_hints_from_pptx_path(ws.pptx_path)
-    svg_t, html_t, w_bundle = bundle_workspace_svgs(ws.svg_dir, body.bundle_mode)
+    svg_t, html_t, w_bundle, slide_xmls = bundle_workspace_svgs(ws.svg_dir, body.bundle_mode)
     warnings_acc.extend(w_bundle)
+
+    trimmed_slides, trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
+    warnings_acc.extend(trim_warn)
     slide_assets = ws.manifest.get("slide_assets") or {}
     slide_count = int(slide_assets.get("page_count") or 0)
 
@@ -204,6 +215,7 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
     )
     imp = build_import_summary(
         svg_template=svg_t,
+        svg_slide_xmls=trimmed_slides,
         slide_count=slide_count,
         bundle_mode=body.bundle_mode,
         source_filename=suggested,
