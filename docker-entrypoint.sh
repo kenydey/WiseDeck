@@ -128,6 +128,32 @@ import_templates() {
     fi
 }
 
+# Verify runtime dependencies required by cloud agents / tests
+verify_runtime_dependencies() {
+    log "Running runtime dependency self-check..."
+
+    local failures=0
+
+    if python3 -m pytest --version >/dev/null 2>&1; then
+        info "✅ python3 -m pytest --version"
+    else
+        error "❌ python3 -m pytest --version failed (pytest unavailable)"
+        failures=$((failures + 1))
+    fi
+
+    if soffice --version >/dev/null 2>&1; then
+        info "✅ soffice --version"
+    else
+        error "❌ soffice --version failed (LibreOffice unavailable)"
+        failures=$((failures + 1))
+    fi
+
+    if [ "$failures" -gt 0 ]; then
+        error "Runtime dependency self-check failed with ${failures} error(s)."
+        exit 1
+    fi
+}
+
 # Wait for dependencies
 wait_for_dependencies() {
     if [ -n "$OLLAMA_BASE_URL" ] && [ "$ENABLE_LOCAL_MODELS" = "true" ]; then
@@ -202,6 +228,7 @@ main() {
     log "Starting LandPPT initialization..."
 
     check_environment
+    verify_runtime_dependencies
     fix_env_permissions
     create_directories
     wait_for_dependencies
