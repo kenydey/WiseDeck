@@ -27,12 +27,16 @@ from .models import (
 from ..services.template.global_master_template_service import GlobalMasterTemplateService
 from ..services.template.libreoffice_html_exporter import (
     export_presentation_html_bundle,
+    inject_hidden_placeholder_slots,
     split_lo_merged_html_slide_fragments,
 )
 from ..services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
 from ..services.template.slide_svg_bundler import BundleMode, bundle_workspace_svgs
 from ..services.template.svg_template_import_meta import (
     build_import_summary,
+    merge_import_summary_with_template_contract,
+    placeholder_markers_from_html,
+    placeholder_markers_from_template_contract,
     trim_svg_slide_xmls_for_persistence,
 )
 from ..services.template.template_contract_build import build_template_contract_from_manifest
@@ -169,6 +173,8 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                 slide_count=slide_count,
                 source_filename=suggested,
             )
+            contract_markers = placeholder_markers_from_template_contract(template_contract)
+            html_t = inject_hidden_placeholder_slots(html_t, markers=contract_markers)
             imp_lo = build_import_summary(
                 svg_template=None,
                 slide_count=slide_count,
@@ -177,6 +183,9 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                 pptx_layout=hints,
                 template_provenance="office_libreoffice_html",
             )
+            imp_lo = merge_import_summary_with_template_contract(imp_lo, template_contract)
+            if not (imp_lo.get("placeholder_markers") or []):
+                imp_lo["placeholder_markers"] = placeholder_markers_from_html(html_t)
             imp_lo["structured_contract"] = True
             imp_lo["html_engine"] = "libreoffice_html"
             lo_fragments = split_lo_merged_html_slide_fragments(html_t)
@@ -229,6 +238,7 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
         pptx_layout=layout_hints if isinstance(layout_hints, dict) else None,
         template_provenance="office_svg_stack_injected",
     )
+    imp = merge_import_summary_with_template_contract(imp, template_contract)
     imp["structured_contract"] = True
 
     return TemplateOfficeConvertResponse(

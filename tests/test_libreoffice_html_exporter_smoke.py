@@ -5,6 +5,8 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from wisedeck.services.template.libreoffice_html_exporter import (
+    default_structured_markers_fallback,
+    inject_hidden_placeholder_slots,
     merge_and_wrap_impress_html,
 )
 
@@ -34,3 +36,32 @@ def test_inline_small_png(tmp_path: Path):
     warnings: list[str] = []
     out = _inline_assets_fragment(fragment, tmp_path, warnings)
     assert "data:image/png;base64," in out
+
+
+def test_inject_hidden_placeholder_slots_adds_structured_and_legacy_tokens():
+    src = "<!doctype html><html><head><meta charset='utf-8'></head><body><section>x</section></body></html>"
+    out = inject_hidden_placeholder_slots(
+        src,
+        markers=["PAGE_TITLE", "CONTENT_AREA", "PAGE_NUM"],
+    )
+    assert "{{PAGE_TITLE}}" in out
+    assert "{{CONTENT_AREA}}" in out
+    assert "{{PAGE_NUM}}" in out
+    assert "{{ page_title }}" in out
+    assert "{{ page_content }}" in out
+    assert "{{ current_page_number }}" in out
+    assert "{{ total_page_count }}" in out
+    assert "data-wd-placeholder-slots" in out
+
+
+def test_inject_hidden_placeholder_slots_is_idempotent_when_tokens_exist():
+    src = "<html><body>{{PAGE_TITLE}}<div>{{ page_title }}</div></body></html>"
+    out = inject_hidden_placeholder_slots(src, markers=["PAGE_TITLE"])
+    assert out.count("{{PAGE_TITLE}}") == 1
+
+
+def test_inject_hidden_placeholder_slots_uses_structured_fallback_when_no_markers():
+    src = "<html><body><section>x</section></body></html>"
+    out = inject_hidden_placeholder_slots(src, markers=[])
+    for marker in default_structured_markers_fallback():
+        assert "{{" + marker + "}}" in out

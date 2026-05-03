@@ -8,6 +8,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+_LEGACY_HTML_TOKEN_TO_MARKER = {
+    "page_title": "PAGE_TITLE",
+    "main_heading": "PAGE_TITLE",
+    "page_content": "CONTENT_AREA",
+    "current_page_number": "PAGE_NUM",
+}
+
 
 def trim_svg_slide_xmls_for_persistence(slides: list[str]) -> tuple[list[str] | None, list[str]]:
     """Drop per-slide persistence when deck exceeds configured limits (JSON / DB size)."""
@@ -121,4 +128,117 @@ def build_import_summary(
     elif isinstance(svg_template, str) and svg_template.strip():
         out["native_export_mode"] = "legacy_single"
 
+    return out
+
+
+def placeholder_markers_from_template_contract(template_contract: Any) -> list[str]:
+    """Extract normalized marker union from template_contract.pptx_readable_summary."""
+    if not isinstance(template_contract, dict):
+        return []
+    summary = template_contract.get("pptx_readable_summary")
+    raw = summary.get("placeholder_markers_union") if isinstance(summary, dict) else []
+    out: set[str] = set()
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                out.add(item.strip().upper())
+    return sorted(out)
+
+
+def placeholder_markers_from_html(html_doc: Any) -> list[str]:
+    """Best-effort marker extraction from both structured and legacy HTML placeholder tokens."""
+    if not isinstance(html_doc, str) or not html_doc.strip():
+        return []
+    out: set[str] = set()
+
+    # Structured marker tokens: {{PAGE_TITLE}}, {{CONTENT_AREA}}, ...
+    for inner in re.findall(r"\{\{\s*([A-Z0-9_]+)\s*\}\}", html_doc):
+        token = str(inner or "").strip().upper()
+        if token:
+            out.add(token)
+
+    # Legacy placeholders: {{ page_title }} etc. -> map to structured markers.
+    for inner in re.findall(r"\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}", html_doc):
+        mapped = _LEGACY_HTML_TOKEN_TO_MARKER.get(str(inner or "").strip().lower())
+        if mapped:
+            out.add(mapped)
+
+    # page number usually appears as current/total pair; ensure PAGE_NUM once seen.
+    if re.search(r"\{\{\s*total_page_count\s*\}\}", html_doc, re.IGNORECASE):
+        out.add("PAGE_NUM")
+
+    return sorted(out)
+
+
+def infer_markers_from_html_placeholders(html_doc: Any) -> list[str]:
+    """Backward-compatible alias for HTML marker inference."""
+    return placeholder_markers_from_html(html_doc)
+
+
+def infer_markers_from_html_placeholders(html_doc: Any) -> list[str]:
+    """Backward-compatible alias for marker inference from HTML tokens."""
+    return placeholder_markers_from_html(html_doc)
+
+
+def merge_import_summary_with_template_contract(
+    import_summary: Any,
+    template_contract: Any,
+) -> dict[str, Any]:
+    """
+    Merge structured template_contract into import_summary and unify placeholder_markers.
+
+    - keeps existing import_summary fields
+    - sets import_summary["template_contract"]
+    - union(import_summary.placeholder_markers, contract placeholders)
+    - refreshes placeholder_hash after union
+    """
+    out: dict[str, Any] = dict(import_summary) if isinstance(import_summary, dict) else {}
+    if not isinstance(template_contract, dict) or not template_contract:
+        return out
+
+    out["template_contract"] = template_contract
+    merged_markers: set[str] = set()
+
+    raw_existing = out.get("placeholder_markers")
+    if isinstance(raw_existing, list):
+        for item in raw_existing:
+            if isinstance(item, str) and item.strip():
+                merged_markers.add(item.strip().upper())
+
+    for marker in placeholder_markers_from_template_contract(template_contract):
+        merged_markers.add(marker)
+
+    if merged_markers:
+        ordered = sorted(merged_markers)
+        out["placeholder_markers"] = ordered
+        joined = "|".join(ordered)
+        out["placeholder_hash"] = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+    return out
+
+
+def ensure_import_summary_markers_from_html(
+    import_summary: Any,
+    html_doc: Any,
+) -> dict[str, Any]:
+    """
+    Backfill import_summary.placeholder_markers from HTML placeholder tokens when contract markers are absent.
+    """
+    out: dict[str, Any] = dict(import_summary) if isinstance(import_summary, dict) else {}
+    html_markers = set(placeholder_markers_from_html(html_doc))
+    if not html_markers:
+        return out
+
+    merged: set[str] = set()
+    raw_existing = out.get("placeholder_markers")
+    if isinstance(raw_existing, list):
+        for item in raw_existing:
+            if isinstance(item, str) and item.strip():
+                merged.add(item.strip().upper())
+    merged.update(html_markers)
+    if merged:
+        ordered = sorted(merged)
+        out["placeholder_markers"] = ordered
+        joined = "|".join(ordered)
+        out["placeholder_hash"] = hashlib.sha256(joined.encode("utf-8")).hexdigest()
     return out

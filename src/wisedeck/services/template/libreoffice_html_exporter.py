@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 _JS_SCHEME = re.compile(r"^\s*javascript\s*:", re.I)
 
 
+def default_structured_markers_fallback() -> List[str]:
+    """Minimum structured placeholders required for imported office HTML templates."""
+    return ["PAGE_TITLE", "CONTENT_AREA", "PAGE_NUM"]
+
+
 def _dedupe_warnings(ws: List[str]) -> List[str]:
     seen: set[str] = set()
     out: List[str] = []
@@ -147,6 +152,92 @@ def split_lo_merged_html_slide_fragments(html_doc: str) -> List[str]:
     return out
 
 
+def inject_hidden_placeholder_slots(
+    html_doc: str,
+    *,
+    markers: List[str] | None = None,
+) -> str:
+    """
+    Inject hidden placeholder slots into LO HTML output.
+
+    We add both:
+    - Structured markers (e.g. {{PAGE_TITLE}}, {{CONTENT_AREA}})
+    - Legacy HTML placeholders used by default templates
+      (e.g. {{ page_title }}, {{ page_content }}, {{ current_page_number }}, {{ total_page_count }})
+    """
+    if not isinstance(html_doc, str) or not html_doc.strip():
+        return html_doc
+
+    soup = BeautifulSoup(html_doc, "html.parser")
+    body = soup.body
+    if body is None:
+        body = soup.new_tag("body")
+        for child in list(soup.children):
+            body.append(child.extract())
+        soup.append(body)
+
+    tokens: List[str] = []
+    marker_set: set[str] = set()
+    if isinstance(markers, list):
+        for item in markers:
+            if isinstance(item, str) and item.strip():
+                marker_set.add(item.strip().upper())
+
+    # Structured-export fallback markers:
+    # even when pptx_readable marker union extraction is empty,
+    # imported Office templates should still expose a minimum structured contract.
+    marker_set.update(default_structured_markers_fallback())
+
+    # Always keep compatibility with built-in HTML placeholders.
+    legacy_tokens = {
+        "{{ page_title }}",
+        "{{ page_content }}",
+        "{{ current_page_number }}",
+        "{{ total_page_count }}",
+        "{{ main_heading }}",
+    }
+    tokens.extend(sorted(legacy_tokens))
+
+    for marker in sorted(marker_set):
+        tokens.append("{{" + marker + "}}")
+        if marker == "PAGE_TITLE":
+            tokens.append("{{ page_title }}")
+            tokens.append("{{ main_heading }}")
+        elif marker == "CONTENT_AREA":
+            tokens.append("{{ page_content }}")
+        elif marker == "PAGE_NUM":
+            tokens.append("{{ current_page_number }}")
+            tokens.append("{{ total_page_count }}")
+
+    existing = html_doc
+    final_tokens: List[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        if token in seen:
+            continue
+        seen.add(token)
+        if token in existing:
+            continue
+        final_tokens.append(token)
+
+    if not final_tokens:
+        return html_doc
+
+    box = soup.new_tag("div")
+    box["data-wd-placeholder-slots"] = "1"
+    box["style"] = (
+        "display:none!important;visibility:hidden!important;"
+        "width:0;height:0;overflow:hidden;line-height:0;font-size:0;"
+    )
+    for token in final_tokens:
+        span = soup.new_tag("span")
+        span["data-wd-slot"] = token.strip("{} ").strip()
+        span.string = token
+        box.append(span)
+    body.append(box)
+    return str(soup)
+
+
 def wrap_lo_slide_fragment_html(fragment_inner: str, title: str = "Slide") -> str:
     """Single-slide HTML wrapper for LO body fragment (creative design style reference)."""
     safe = escape((title or "Slide").replace("<", "").replace(">", ""))
@@ -220,9 +311,11 @@ def export_presentation_html_bundle(
 
 
 __all__ = [
+    "default_structured_markers_fallback",
     "export_presentation_html_bundle",
     "run_soffice_convert_impress_html",
     "merge_and_wrap_impress_html",
     "split_lo_merged_html_slide_fragments",
+    "inject_hidden_placeholder_slots",
     "wrap_lo_slide_fragment_html",
 ]

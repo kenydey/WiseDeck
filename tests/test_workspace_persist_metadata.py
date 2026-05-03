@@ -41,3 +41,5 @@ def test_build_workspace_persist_metadata_with_svgs(tmp_path: Path, monkeypatch)
     assert imp.get("native_export_mode") == "per_slide"
     xs = imp.get("svg_slide_xmls")
     assert isinstance(xs, list) and len(xs) == 1
+    markers = set(imp.get("placeholder_markers") or [])
+    assert "PAGE_TITLE" in markers
