@@ -551,6 +551,11 @@ async def save_generated_template(
 ):
     """Save a generated template after user confirmation"""
     try:
+        raw_name = request.get("template_name")
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            raise ValueError("template_name is required and must be a non-empty string")
+        template_name_base = raw_name.strip()
+
         template_service = _template_service_for_user(user)
         ws_id = str(request.get("template_workspace_id") or "").strip()
         client_summary = request.get("import_summary")
@@ -585,7 +590,7 @@ async def save_generated_template(
 
         # Extract template data from request
         template_data = {
-            'template_name': request.get('template_name'),
+            'template_name': template_name_base,
             'description': request.get('description', ''),
             'html_template': request.get('html_template'),
             'svg_template': svg_pick,
@@ -598,7 +603,7 @@ async def save_generated_template(
         # Add timestamp to avoid name conflicts
         import time
         timestamp = int(time.time())
-        template_data['template_name'] = f"{template_data['template_name']}_{timestamp}"
+        template_data['template_name'] = f"{template_name_base}_{timestamp}"
 
         result = await template_service.create_template(template_data)
         resp = GlobalMasterTemplateResponse(**result)
