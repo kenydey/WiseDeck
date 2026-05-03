@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 _JS_SCHEME = re.compile(r"^\s*javascript\s*:", re.I)
 
 
+def default_structured_markers_fallback() -> List[str]:
+    """Minimum structured placeholders required for imported office HTML templates."""
+    return ["PAGE_TITLE", "CONTENT_AREA", "PAGE_NUM"]
+
+
 def _dedupe_warnings(ws: List[str]) -> List[str]:
     seen: set[str] = set()
     out: List[str] = []
@@ -178,6 +183,11 @@ def inject_hidden_placeholder_slots(
             if isinstance(item, str) and item.strip():
                 marker_set.add(item.strip().upper())
 
+    # Structured-export fallback markers:
+    # even when pptx_readable marker union extraction is empty,
+    # imported Office templates should still expose a minimum structured contract.
+    marker_set.update(default_structured_markers_fallback())
+
     # Always keep compatibility with built-in HTML placeholders.
     legacy_tokens = {
         "{{ page_title }}",
@@ -301,6 +311,7 @@ def export_presentation_html_bundle(
 
 
 __all__ = [
+    "default_structured_markers_fallback",
     "export_presentation_html_bundle",
     "run_soffice_convert_impress_html",
     "merge_and_wrap_impress_html",

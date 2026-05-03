@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from wisedeck.services.template.svg_template_import_meta import (
     build_import_summary,
+    infer_markers_from_html_placeholders,
     merge_import_summary_with_template_contract,
     placeholder_markers_from_template_contract,
     trim_svg_slide_xmls_for_persistence,
@@ -60,3 +61,12 @@ def test_merge_import_summary_with_template_contract_unifies_markers():
     assert out.get("template_contract") == tc
     assert out.get("placeholder_markers") == ["CONTENT_AREA", "PAGE_TITLE"]
     assert isinstance(out.get("placeholder_hash"), str) and len(out["placeholder_hash"]) == 64
+
+
+def test_infer_markers_from_html_placeholders_maps_legacy_tokens():
+    html = (
+        "<html><body>{{ page_title }} {{ page_content }} "
+        "{{ current_page_number }} {{ total_page_count }}</body></html>"
+    )
+    out = infer_markers_from_html_placeholders(html)
+    assert out == ["CONTENT_AREA", "PAGE_NUM", "PAGE_TITLE"]

@@ -5,6 +5,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from wisedeck.services.template.libreoffice_html_exporter import (
+    default_structured_markers_fallback,
     inject_hidden_placeholder_slots,
     merge_and_wrap_impress_html,
 )
@@ -57,3 +58,10 @@ def test_inject_hidden_placeholder_slots_is_idempotent_when_tokens_exist():
     src = "<html><body>{{PAGE_TITLE}}<div>{{ page_title }}</div></body></html>"
     out = inject_hidden_placeholder_slots(src, markers=["PAGE_TITLE"])
     assert out.count("{{PAGE_TITLE}}") == 1
+
+
+def test_inject_hidden_placeholder_slots_uses_structured_fallback_when_no_markers():
+    src = "<html><body><section>x</section></body></html>"
+    out = inject_hidden_placeholder_slots(src, markers=[])
+    for marker in default_structured_markers_fallback():
+        assert "{{" + marker + "}}" in out

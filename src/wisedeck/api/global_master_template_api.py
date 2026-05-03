@@ -35,6 +35,7 @@ from ..services.template.slide_svg_bundler import BundleMode, bundle_workspace_s
 from ..services.template.svg_template_import_meta import (
     build_import_summary,
     merge_import_summary_with_template_contract,
+    placeholder_markers_from_html,
     placeholder_markers_from_template_contract,
     trim_svg_slide_xmls_for_persistence,
 )
@@ -183,6 +184,8 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                 template_provenance="office_libreoffice_html",
             )
             imp_lo = merge_import_summary_with_template_contract(imp_lo, template_contract)
+            if not (imp_lo.get("placeholder_markers") or []):
+                imp_lo["placeholder_markers"] = placeholder_markers_from_html(html_t)
             imp_lo["structured_contract"] = True
             imp_lo["html_engine"] = "libreoffice_html"
             lo_fragments = split_lo_merged_html_slide_fragments(html_t)
