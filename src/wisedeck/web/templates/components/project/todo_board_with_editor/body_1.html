@@ -23,6 +23,9 @@
             </div>
         </div>
 
+        {% set workflow_active_step = 'todo' %}
+        {% include "components/project/workflow_progress_strip.html" %}
+
         <div class="content-area">
             <!-- Editor Section -->
             <div class="editor-section">

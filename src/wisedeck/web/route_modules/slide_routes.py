@@ -807,3 +807,33 @@ async def batch_save_slides(
     except Exception as e:
         logger.error(f"❌ 批量保存幻灯片失败: {e}")
         return {"success": False, "error": str(e)}
+
+
+class SlideInpaintRegionRequest(BaseModel):
+    """幻灯片局部重绘 POC：bbox 为相对坐标 (x,y,w,h) ∈ [0,1]。"""
+
+    bbox: Dict[str, Any]
+    prompt: str = ""
+
+
+@router.post("/api/projects/{project_id}/slides/{slide_index}/inpaint-region")
+async def slide_inpaint_region_poc(
+    project_id: str,
+    slide_index: int,
+    body: SlideInpaintRegionRequest,
+    user: User = Depends(get_current_user_required),
+):
+    """局部 inpainting POC（对标 Banana）；默认 deferred，详见响应 JSON。"""
+    project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    from ...services.slide.slide_region_inpaint_service import build_inpaint_poc_response
+
+    payload = build_inpaint_poc_response(
+        project_id=project_id,
+        slide_index=slide_index,
+        prompt=(body.prompt or "").strip(),
+        bbox=body.bbox if isinstance(body.bbox, dict) else {},
+    )
+    return JSONResponse(payload)

@@ -346,6 +346,20 @@ class TemplateImportService:
             },
         }
 
+        from wisedeck.services.layout_package.manifest import enrich_template_manifest_with_layout_package
+
+        page_ct = 0
+        try:
+            page_ct = int((slide_assets or {}).get("page_count") or 0)
+        except (TypeError, ValueError):
+            page_ct = 0
+        manifest = enrich_template_manifest_with_layout_package(
+            manifest,
+            workspace_id=workspace_id,
+            slide_count=page_ct,
+            source="template_import",
+        )
+
         manifest_path.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2),
             encoding="utf-8",

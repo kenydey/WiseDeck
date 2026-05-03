@@ -1,0 +1,57 @@
+{# 项目主流程导航：工作台 → 幻灯片编辑 → 导出（说明） #}
+{% set ns_wf = namespace(pid='') %}
+{% if workflow_project_id is defined and workflow_project_id %}
+{% set ns_wf.pid = workflow_project_id %}
+{% elif todo_board is defined and todo_board.task_id %}
+{% set ns_wf.pid = todo_board.task_id %}
+{% elif project is defined and project.project_id %}
+{% set ns_wf.pid = project.project_id %}
+{% endif %}
+{% set wf_pid = ns_wf.pid %}
+{% set wf_step = workflow_active_step | default('todo') %}
+{% if wf_pid %}
+<style>
+.wd-workflow-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    background: rgba(44, 62, 80, 0.06);
+    border: 1px solid rgba(44, 62, 80, 0.12);
+    border-radius: 10px;
+    font-size: 13px;
+}
+.wd-workflow-strip a {
+    text-decoration: none;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    color: #2c3e50;
+    background: #fff;
+}
+.wd-workflow-strip a:hover {
+    border-color: rgba(44, 62, 80, 0.25);
+}
+.wd-workflow-strip a.wd-wf-active {
+    background: #2c3e50;
+    color: #fff;
+    border-color: #2c3e50;
+}
+.wd-workflow-strip .wd-wf-muted {
+    color: #7f8c8d;
+    padding-left: 4px;
+}
+</style>
+<div class="wd-workflow-strip" role="navigation" aria-label="项目流程">
+    <span class="wd-wf-muted">流程</span>
+    <a href="/projects/{{ wf_pid }}/todo"
+        class="{% if wf_step == 'todo' %}wd-wf-active{% endif %}">① 工作台</a>
+    <span class="wd-wf-muted">›</span>
+    <a href="/projects/{{ wf_pid }}/edit"
+        class="{% if wf_step == 'editor' %}wd-wf-active{% endif %}">② 幻灯片编辑</a>
+    <span class="wd-wf-muted">›</span>
+    <span class="wd-wf-muted">③ 导出：使用编辑器顶部 <strong>PPT</strong> 菜单（详见各导出项说明）</span>
+</div>
+{% endif %}

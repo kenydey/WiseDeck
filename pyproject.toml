@@ -79,6 +79,9 @@ dependencies = [
 
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=1.6.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
@@ -99,6 +102,7 @@ test = [
 [project.scripts]
 wisedeck = "wisedeck.main:main"
 landppt = "wisedeck.main:main"
+wisedeck-mcp = "wisedeck.mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/sligter/LandPPT"

@@ -840,6 +840,9 @@
     </div>
 </div>
 
+{% set workflow_active_step = 'todo' %}
+{% include "components/project/workflow_progress_strip.html" %}
+
 <!-- Requirements Confirmation Section -->
 {% set requirements_stage = todo_board.stages | selectattr('id', 'equalto', 'requirements_confirmation') | first %}
 {% if not requirements_stage or requirements_stage.status == 'pending' %}

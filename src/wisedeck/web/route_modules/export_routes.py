@@ -33,6 +33,36 @@ router = APIRouter()
 _TASK_PATH_KEYS = {"pdf_path", "pptx_path", "video_path", "audio_path"}
 
 
+@router.get("/api/export/catalog")
+async def api_export_catalog():
+    """导出模式目录（无需登录）：供 UI/MCP 对齐「可编辑优先 vs 栅格兜底」策略。"""
+    from wisedeck.services.export_catalog import export_modes_catalog
+
+    return JSONResponse(export_modes_catalog())
+
+
+@router.get("/api/charts/presets-catalog")
+async def api_chart_presets_catalog():
+    """官方图表类型与别名（无需登录），与大纲 chart_config 字段对齐。"""
+    from wisedeck.services.structured_export.chart_presets import (
+        CHART_TYPE_ALIASES,
+        ICON_SLOT_HINT_ZH,
+        OFFICIAL_CHART_TYPES,
+        official_chart_sample_payload,
+    )
+
+    samples = {t: official_chart_sample_payload(t) for t in OFFICIAL_CHART_TYPES}
+    return JSONResponse(
+        {
+            "schema_version": 1,
+            "official_types": OFFICIAL_CHART_TYPES,
+            "aliases": CHART_TYPE_ALIASES,
+            "icon_hint_zh": ICON_SLOT_HINT_ZH,
+            "samples": samples,
+        }
+    )
+
+
 async def _register_export_job_record(
     task_id: str,
     project_id: str,

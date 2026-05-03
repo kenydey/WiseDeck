@@ -15,21 +15,19 @@ from wisedeck.services.structured_export._presenton.pptx_models import (
     PptxSlideModel,
     PptxTextBoxModel,
 )
+from wisedeck.services.structured_export.chart_presets import CHART_TYPE_ALIASES
 from wisedeck.services.structured_export.schemas import ChartConfigModel, StructuredSlideDeckModel
 
 
 def _normalize_chart_type(raw: str) -> str:
-    t = (raw or "bar").lower().strip()
-    mapping = {
-        "柱状图": "bar",
-        "条形图": "horizontalbar",
-        "折线图": "line",
-        "饼图": "pie",
-        "环形图": "donut",
-        "doughnut": "donut",
-        "面积图": "area",
-    }
-    return mapping.get(t, t)
+    t = (raw or "bar").strip()
+    tl = t.lower()
+    if t in CHART_TYPE_ALIASES:
+        return CHART_TYPE_ALIASES[t]
+    if tl in CHART_TYPE_ALIASES:
+        return CHART_TYPE_ALIASES[tl]
+    # 未知英文标记保持小写原样，由 python-pptx 层尽力兼容
+    return tl
 
 
 def chart_config_to_native_model(cfg: ChartConfigModel) -> PptxChartBoxModel:

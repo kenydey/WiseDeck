@@ -38,12 +38,18 @@
                         }} 页</p>
                 </div>
                 <div>
+                    <a href="/projects/{{ project.project_id }}/todo" class="btn btn-outline-light me-2">
+                        <i class="fas fa-stream"></i> 工作台
+                    </a>
                     <a href="/dashboard" class="btn btn-outline-light">
-                        <i class="fas fa-tasks"></i> 返回主页
+                        <i class="fas fa-tasks"></i> 主页
                     </a>
                 </div>
             </div>
         </div>
+
+        {% set workflow_active_step = 'editor' %}
+        {% include "components/project/workflow_progress_strip.html" %}
 
         <div class="d-flex">
             <!-- Slides Sidebar -->
@@ -148,6 +154,15 @@
                                         <span class="toolbar-dropdown-item__label">客户端导出(beta)</span>
                                     </span>
                                 </a>
+                            </li>
+                            <li>
+                                <hr class="dropdown-divider toolbar-dropdown-divider">
+                            </li>
+                            <li class="px-3 py-2">
+                                <span class="small text-muted d-block">
+                                    <strong>导出策略</strong>：优先可编辑文本/图表（结构化路径），复杂样式可选图片页兜底。
+                                    完整对照见开放接口 <code>/api/export/catalog</code>（对标 PPT Master 矢量思路）。
+                                </span>
                             </li>
                             <li>
                                 <hr class="dropdown-divider toolbar-dropdown-divider">
