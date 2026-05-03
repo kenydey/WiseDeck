@@ -9,6 +9,40 @@ from wisedeck.ai.providers import OpenAIProvider
 from wisedeck.services.template.global_master_template_service import GlobalMasterTemplateService
 
 
+def test_deepseek_model_name_strips_even_with_generic_proxy_host():
+    """模板常用代理域名不含 deepseek；靠 model id 降级。"""
+    provider = OpenAIProvider(
+        {
+            "api_key": "k",
+            "base_url": "https://llm-gateway.internal/v1",
+            "model": "deepseek-v4-pro",
+        }
+    )
+    cfg = provider._merge_config()
+    msg = AIMessage(
+        role=MessageRole.USER,
+        content=[
+            TextContent(text="hi"),
+            ImageContent(image_url={"url": "data:image/png;base64,QQ=="}),
+        ],
+    )
+    out = provider._convert_message_to_openai(msg, cfg)
+    assert all(p.get("type") == "text" for p in out["content"])
+
+
+def test_openai_base_url_env_deepseek_disables_vision(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
+    provider = OpenAIProvider({"api_key": "k", "model": "gpt-4"})
+    cfg = provider._merge_config()
+    assert provider._effective_base_url_host(cfg) == "api.deepseek.com"
+    msg = AIMessage(
+        role=MessageRole.USER,
+        content=[ImageContent(image_url={"url": "data:image/png;base64,QQ=="})],
+    )
+    out = provider._convert_message_to_openai(msg, cfg)
+    assert all(p.get("type") == "text" for p in out["content"])
+
+
 def test_deepseek_base_url_strips_image_url_parts():
     provider = OpenAIProvider(
         {"api_key": "k", "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat"}

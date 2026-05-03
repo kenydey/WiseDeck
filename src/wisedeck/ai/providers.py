@@ -5,6 +5,7 @@ AI provider implementations
 import asyncio
 import json
 import logging
+import os
 import re
 from typing import List, Dict, Any, Optional, AsyncGenerator, Union, Tuple
 from urllib.parse import urlparse
@@ -109,6 +110,9 @@ class OpenAIProvider(AIProvider):
     def _effective_base_url_host(config: Dict[str, Any]) -> str:
         raw = (config.get("base_url") or "").strip()
         if not raw:
+            # AsyncOpenAI may honor OPENAI_BASE_URL when base_url was omitted at construction.
+            raw = (os.getenv("OPENAI_BASE_URL") or "").strip()
+        if not raw:
             return ""
         try:
             host = urlparse(raw).hostname or ""
@@ -124,10 +128,13 @@ class OpenAIProvider(AIProvider):
         explicit = config.get("supports_vision_in_chat_completions")
         if explicit is not None:
             return self._coerce_bool(explicit)
+        model_id = str(config.get("model") or "").strip().lower()
+        if model_id and "deepseek" in model_id:
+            return False
         host = self._effective_base_url_host(config)
         if not host:
             return True
-        if "deepseek.com" in host:
+        if "deepseek" in host:
             return False
         return True
 
