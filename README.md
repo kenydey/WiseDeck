@@ -208,6 +208,17 @@ WiseDeck 是一个基于大语言模型（LLM）的智能演示文稿生成平�
 5. （按需）`uv run playwright install chromium`（若失败，按 [Playwright 文档](https://playwright.dev/python/docs/intro) 安装系统依赖）。
 6. `uv run python run.py`，访问地址与 Windows 相同。远程服务器请保持 `HOST=0.0.0.0`（默认）并放行防火墙中的 `PORT`（默认 8000）。
 
+#### 云代理 / CI 最小测试依赖补齐
+
+若运行环境是精简 Python 镜像（仅装了运行时依赖），可先执行：
+
+```bash
+python3 -m pip install -U pytest pytest-asyncio beautifulsoup4
+python3 -m pytest --version
+```
+
+验证通过后，即可直接使用 `python3 -m pytest` 运行 `tests/` 下单测。
+
 **数据库**：未设置 `DATABASE_URL` 时为 **SQLite + memory cache**，无需本机 PostgreSQL/Valkey。若在 `.env` 中配置了 `DATABASE_URL` 指向 PostgreSQL，需先保证该实例已启动且连接串正确。
 
 #### 3. Docker Compose（可选）
