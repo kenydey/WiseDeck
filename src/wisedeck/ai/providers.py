@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from typing import List, Dict, Any, Optional, AsyncGenerator, Union, Tuple
+from urllib.parse import urlparse
 
 from .base import AIProvider, AIMessage, AIResponse, MessageRole, TextContent, ImageContent, MessageContentType
 from ..core.config import ai_config, resolve_timeout_seconds
@@ -104,6 +105,32 @@ class OpenAIProvider(AIProvider):
     def _should_use_responses_api(self, config: Dict[str, Any]) -> bool:
         return self._coerce_bool(config.get("use_responses_api", self.use_responses_api))
 
+    @staticmethod
+    def _effective_base_url_host(config: Dict[str, Any]) -> str:
+        raw = (config.get("base_url") or "").strip()
+        if not raw:
+            return ""
+        try:
+            host = urlparse(raw).hostname or ""
+            return str(host).lower()
+        except Exception:
+            return ""
+
+    def _chat_completions_supports_image_url_parts(self, config: Dict[str, Any]) -> bool:
+        """
+        OpenAI-compatible `/chat/completions` multimodal (`image_url`) support varies by gateway.
+        DeepSeek etc. reject non-text content parts — downgrade to text placeholders upstream.
+        """
+        explicit = config.get("supports_vision_in_chat_completions")
+        if explicit is not None:
+            return self._coerce_bool(explicit)
+        host = self._effective_base_url_host(config)
+        if not host:
+            return True
+        if "deepseek.com" in host:
+            return False
+        return True
+
     @classmethod
     def _normalize_reasoning_effort(cls, value: Any) -> Optional[str]:
         if value is None:
@@ -137,16 +164,18 @@ class OpenAIProvider(AIProvider):
         else:
             request_kwargs["reasoning_effort"] = reasoning_effort
 
-    def _convert_message_to_openai(self, message: AIMessage) -> Dict[str, Any]:
+    def _convert_message_to_openai(self, message: AIMessage, config: Dict[str, Any]) -> Dict[str, Any]:
         """Convert AIMessage to OpenAI format, supporting multimodal content"""
         openai_message = {"role": message.role.value}
+        supports_images = self._chat_completions_supports_image_url_parts(config)
 
         if isinstance(message.content, str):
             # Simple text message
             openai_message["content"] = message.content
         elif isinstance(message.content, list):
             # Multimodal message
-            content_parts = []
+            content_parts: List[Dict[str, Any]] = []
+            stripped_image_count = 0
             for part in message.content:
                 if isinstance(part, TextContent):
                     content_parts.append({
@@ -154,10 +183,22 @@ class OpenAIProvider(AIProvider):
                         "text": part.text
                     })
                 elif isinstance(part, ImageContent):
-                    content_parts.append({
-                        "type": "image_url",
-                        "image_url": part.image_url
-                    })
+                    if supports_images:
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": part.image_url
+                        })
+                    else:
+                        stripped_image_count += 1
+            if stripped_image_count > 0:
+                notice = (
+                    f"【说明】当前所选模型网关不支持多模态图片输入；本消息中已有 {stripped_image_count} 张参考图被省略。"
+                    "请仅依据上文中的文字摘要、布局结构化信息（若有）与用户要求生成结果，勿臆造未见过的像素细节。\n\n"
+                )
+                if content_parts and content_parts[0].get("type") == "text":
+                    content_parts[0]["text"] = notice + str(content_parts[0].get("text") or "")
+                else:
+                    content_parts.insert(0, {"type": "text", "text": notice.rstrip()})
             openai_message["content"] = content_parts
         else:
             # Fallback to string representation
@@ -168,16 +209,18 @@ class OpenAIProvider(AIProvider):
 
         return openai_message
 
-    def _convert_message_to_responses_input(self, message: AIMessage) -> Dict[str, Any]:
+    def _convert_message_to_responses_input(self, message: AIMessage, config: Dict[str, Any]) -> Dict[str, Any]:
         """Convert AIMessage to OpenAI Responses API input format."""
         responses_message: Dict[str, Any] = {"role": message.role.value}
+        supports_images = self._chat_completions_supports_image_url_parts(config)
 
         if isinstance(message.content, str):
             responses_message["content"] = message.content
             return responses_message
 
         if isinstance(message.content, list):
-            content_parts = []
+            content_parts: List[Dict[str, Any]] = []
+            stripped_image_count = 0
             for part in message.content:
                 if isinstance(part, TextContent):
                     content_parts.append({
@@ -187,11 +230,23 @@ class OpenAIProvider(AIProvider):
                 elif isinstance(part, ImageContent):
                     image_url = part.image_url.get("url") if isinstance(part.image_url, dict) else None
                     if image_url:
-                        content_parts.append({
-                            "type": "input_image",
-                            "image_url": image_url,
-                            "detail": "auto",
-                        })
+                        if supports_images:
+                            content_parts.append({
+                                "type": "input_image",
+                                "image_url": image_url,
+                                "detail": "auto",
+                            })
+                        else:
+                            stripped_image_count += 1
+            if stripped_image_count > 0:
+                notice = (
+                    f"【说明】当前所选模型网关不支持多模态图片输入；本消息中已有 {stripped_image_count} 张参考图被省略。"
+                    "请仅依据上文中的文字摘要、布局结构化信息（若有）与用户要求生成结果。\n\n"
+                )
+                if content_parts and content_parts[0].get("type") == "input_text":
+                    content_parts[0]["text"] = notice + str(content_parts[0].get("text") or "")
+                else:
+                    content_parts.insert(0, {"type": "input_text", "text": notice.rstrip()})
             responses_message["content"] = content_parts or str(message.content)
             return responses_message
 
@@ -406,10 +461,10 @@ class OpenAIProvider(AIProvider):
         
         try:
             if use_responses_api:
-                responses_input = [self._convert_message_to_responses_input(msg) for msg in messages]
+                responses_input = [self._convert_message_to_responses_input(msg, config) for msg in messages]
                 return await self._chat_completion_via_responses(config, responses_input)
 
-            openai_messages = [self._convert_message_to_openai(msg) for msg in messages]
+            openai_messages = [self._convert_message_to_openai(msg, config) for msg in messages]
             return await self._chat_completion_via_chat_completions(config, openai_messages)
             
         except Exception as e:
@@ -440,7 +495,7 @@ class OpenAIProvider(AIProvider):
 
         try:
             if use_responses_api:
-                responses_input = [self._convert_message_to_responses_input(msg) for msg in messages]
+                responses_input = [self._convert_message_to_responses_input(msg, config) for msg in messages]
                 request_kwargs = self._build_responses_request(config, responses_input)
 
                 async def _responses_chunks() -> AsyncGenerator[str, None]:
@@ -453,7 +508,7 @@ class OpenAIProvider(AIProvider):
                     yield visible_chunk
                 return
 
-            openai_messages = [self._convert_message_to_openai(msg) for msg in messages]
+            openai_messages = [self._convert_message_to_openai(msg, config) for msg in messages]
             request_kwargs = self._build_chat_completions_request(config, openai_messages, stream=True)
             stream = await self.client.chat.completions.create(**request_kwargs)
 

@@ -79,36 +79,41 @@ def extract_pptx_layout_hints(pptx_bytes: bytes) -> Dict[str, Any]:
         }
 
     slides_out: List[Dict[str, Any]] = []
+    slide_errors: List[Dict[str, Any]] = []
     for si, slide in enumerate(prs.slides[:_MAX_SLIDES], start=1):
-        shapes_out: List[Dict[str, Any]] = []
-        for shape in list(slide.shapes)[:_MAX_SHAPES_PER_SLIDE]:
-            try:
-                left = int(getattr(shape, "left", 0) or 0)
-                top = int(getattr(shape, "top", 0) or 0)
-                width = int(getattr(shape, "width", 0) or 0)
-                height = int(getattr(shape, "height", 0) or 0)
-            except Exception:
-                continue
-            bbox = [
-                round(left / sw, 4),
-                round(top / sh, 4),
-                round(width / sw, 4),
-                round(height / sh, 4),
-            ]
-            is_ph = False
-            try:
-                is_ph = bool(getattr(shape, "is_placeholder", False))
-            except Exception:
-                pass
-            shapes_out.append(
-                {
-                    "bbox": bbox,
-                    "placeholder_type": _ph_type_name(shape),
-                    "is_placeholder": is_ph,
-                    "shape_kind": _shape_kind(shape),
-                }
-            )
-        slides_out.append({"index": si, "shapes": shapes_out})
+        try:
+            shapes_out: List[Dict[str, Any]] = []
+            for shape in list(slide.shapes)[:_MAX_SHAPES_PER_SLIDE]:
+                try:
+                    left = int(getattr(shape, "left", 0) or 0)
+                    top = int(getattr(shape, "top", 0) or 0)
+                    width = int(getattr(shape, "width", 0) or 0)
+                    height = int(getattr(shape, "height", 0) or 0)
+                except Exception:
+                    continue
+                bbox = [
+                    round(left / sw, 4),
+                    round(top / sh, 4),
+                    round(width / sw, 4),
+                    round(height / sh, 4),
+                ]
+                is_ph = False
+                try:
+                    is_ph = bool(getattr(shape, "is_placeholder", False))
+                except Exception:
+                    pass
+                shapes_out.append(
+                    {
+                        "bbox": bbox,
+                        "placeholder_type": _ph_type_name(shape),
+                        "is_placeholder": is_ph,
+                        "shape_kind": _shape_kind(shape),
+                    }
+                )
+            slides_out.append({"index": si, "shapes": shapes_out})
+        except Exception as e:
+            slide_errors.append({"index": si, "error": str(e)[:300]})
+            continue
 
     payload: Dict[str, Any] = {
         "schema_version": 1,
@@ -116,6 +121,7 @@ def extract_pptx_layout_hints(pptx_bytes: bytes) -> Dict[str, Any]:
         "slide_height_emu": sh,
         "slide_count": len(prs.slides),
         "slides": slides_out,
+        "slide_errors": slide_errors,
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     if len(raw.encode("utf-8")) > _MAX_JSON_BYTES:
