@@ -60,7 +60,7 @@ def main() -> None:
     @mcp.tool()
     def drawingml_poc_status_tool() -> dict[str, Any]:
         """SVG→DrawingML POC 开关状态。"""
-        with _client() as client:
+        with httpx.Client(timeout=30.0) as client:
             r = client.get(f"{_base_url()}/api/export/drawingml-poc-status")
             r.raise_for_status()
             return r.json()
