@@ -1,14 +1,15 @@
-{# 需求确认：设计规格（与 projectSlidesEditor.designSpec 选项保持一致） #}
-<div class="requirements-card wd-design-spec-req" style="margin-bottom: 20px; padding: 15px; background: var(--surface-subtle); border-radius: 12px; border: 1px solid var(--glass-border);">
-    <label style="display: block; margin-bottom: 6px; color: #2c3e50; font-weight: bold;">设计规格（语气 / 密度 / 语言风格）</label>
-    <p class="small text-muted mb-3" style="line-height: 1.45;">
+{# 需求确认：设计规格 — 布局与「主题 / 目标受众」一致（三列一行 Grid + 同系 select 样式） #}
+<div class="wd-design-spec-req-block" style="margin-bottom: 20px;">
+    <label style="display: block; margin-bottom: 8px; color: #2c3e50; font-weight: bold;">设计规格（语气 / 密度 / 语言风格）</label>
+    <p style="font-size: 12px; color: #7f8c8d; margin-bottom: 15px; line-height: 1.45;">
         以下为整稿默认语气与信息密度；进入幻灯片编辑器后仍可在「规格」中调整（含高级 JSON）。
     </p>
-    <div class="row g-2">
-        <div class="col-md-4">
-            <label class="form-label small mb-0" for="wd_req_design_spec_tone_sel">语气 tone</label>
-            <select id="wd_req_design_spec_tone_sel" class="form-select form-select-sm"
-                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+    <div class="wd-design-spec-req-grid"
+        style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start;">
+        <div>
+            <label style="display: block; margin-bottom: 8px; color: #2c3e50; font-weight: bold;" for="wd_req_design_spec_tone_sel">语气 tone</label>
+            <select id="wd_req_design_spec_tone_sel"
+                style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: #fff;">
                 <option value="专业严谨" selected>专业严谨</option>
                 <option value="亲和易懂">亲和易懂</option>
                 <option value="销售说服">销售说服</option>
@@ -17,30 +18,34 @@
                 <option value="__custom__">自定义…</option>
             </select>
             <input type="hidden" name="design_spec_tone" id="wd_req_design_spec_tone_h" value="专业严谨" />
-            <div id="wd_req_design_spec_tone_custom_wrap" style="display: none; margin-top: 6px;">
-                <input type="text" id="wd_req_design_spec_tone_custom" class="form-control form-control-sm"
-                    placeholder="自定义语气" autocomplete="off" />
+            <div id="wd_req_design_spec_tone_custom_wrap" style="display: none; margin-top: 8px;">
+                <input type="text" id="wd_req_design_spec_tone_custom"
+                    placeholder="自定义语气"
+                    autocomplete="off"
+                    style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;" />
             </div>
         </div>
-        <div class="col-md-4">
-            <label class="form-label small mb-0" for="wd_req_design_spec_density_sel">密度 density</label>
-            <select id="wd_req_design_spec_density_sel" class="form-select form-select-sm"
-                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+        <div>
+            <label style="display: block; margin-bottom: 8px; color: #2c3e50; font-weight: bold;" for="wd_req_design_spec_density_sel">密度 density</label>
+            <select id="wd_req_design_spec_density_sel"
+                style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: #fff;">
                 <option value="稀疏要点">稀疏要点</option>
                 <option value="平衡适中" selected>平衡适中</option>
                 <option value="高信息密度">高信息密度</option>
                 <option value="__custom__">自定义…</option>
             </select>
             <input type="hidden" name="design_spec_density" id="wd_req_design_spec_density_h" value="平衡适中" />
-            <div id="wd_req_design_spec_density_custom_wrap" style="display: none; margin-top: 6px;">
-                <input type="text" id="wd_req_design_spec_density_custom" class="form-control form-control-sm"
-                    placeholder="自定义密度" autocomplete="off" />
+            <div id="wd_req_design_spec_density_custom_wrap" style="display: none; margin-top: 8px;">
+                <input type="text" id="wd_req_design_spec_density_custom"
+                    placeholder="自定义密度"
+                    autocomplete="off"
+                    style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;" />
             </div>
         </div>
-        <div class="col-md-4">
-            <label class="form-label small mb-0" for="wd_req_design_spec_language_style_sel">语言风格 language_style</label>
-            <select id="wd_req_design_spec_language_style_sel" class="form-select form-select-sm"
-                style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+        <div>
+            <label style="display: block; margin-bottom: 8px; color: #2c3e50; font-weight: bold;" for="wd_req_design_spec_language_style_sel">语言风格 language_style</label>
+            <select id="wd_req_design_spec_language_style_sel"
+                style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: #fff;">
                 <option value="简体书面" selected>简体书面</option>
                 <option value="简体口语">简体口语</option>
                 <option value="英文简洁">英文简洁</option>
@@ -48,13 +53,22 @@
                 <option value="__custom__">自定义…</option>
             </select>
             <input type="hidden" name="design_spec_language_style" id="wd_req_design_spec_language_style_h" value="简体书面" />
-            <div id="wd_req_design_spec_language_style_custom_wrap" style="display: none; margin-top: 6px;">
-                <input type="text" id="wd_req_design_spec_language_style_custom" class="form-control form-control-sm"
-                    placeholder="自定义语言风格" autocomplete="off" />
+            <div id="wd_req_design_spec_language_style_custom_wrap" style="display: none; margin-top: 8px;">
+                <input type="text" id="wd_req_design_spec_language_style_custom"
+                    placeholder="自定义语言风格"
+                    autocomplete="off"
+                    style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px;" />
             </div>
         </div>
     </div>
 </div>
+<style>
+    @media (max-width: 720px) {
+        .wd-design-spec-req-grid {
+            grid-template-columns: 1fr !important;
+        }
+    }
+</style>
 <script>
 (function () {
     function applyPart(part) {

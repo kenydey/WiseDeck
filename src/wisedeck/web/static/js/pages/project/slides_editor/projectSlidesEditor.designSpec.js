@@ -51,20 +51,23 @@
                 .join('');
         }
         return (
-            '<div class="col-md-4"><label class="form-label small mb-0">' +
-            label +
-            '</label>' +
-            '<select class="form-select form-select-sm" id="' +
+            '<div>' +
+            '<label style="display:block;margin-bottom:8px;color:#2c3e50;font-weight:bold;" for="' +
             selectId +
             '">' +
+            label +
+            '</label>' +
+            '<select id="' +
+            selectId +
+            '" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:14px;background:#fff;">' +
             opts +
             '<option value="__custom__">自定义…</option></select>' +
             '<div id="' +
             wrapId +
-            '" style="display:none;margin-top:6px;">' +
-            '<input type="text" class="form-control form-control-sm" id="' +
+            '" style="display:none;margin-top:8px;">' +
+            '<input type="text" id="' +
             customId +
-            '" placeholder="自定义" autocomplete="off" />' +
+            '" placeholder="自定义" autocomplete="off" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:14px;" />' +
             '</div></div>'
         );
     }
@@ -184,7 +187,7 @@
                 '<div class="form-check mb-2">' +
                 '<input class="form-check-input" type="checkbox" id="wdDesignSpecLockCb" />' +
                 '<label class="form-check-label" for="wdDesignSpecLockCb">锁定规格（锁定后无法修改 JSON 或合并字段，需先取消锁定）</label></div>' +
-                '<div class="row g-2 mb-2">' +
+                '<div class="mb-2" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start;">' +
                 _tripletFieldHtml('语气 tone', 'wdDesignSpecToneSel', 'wdDesignSpecToneCustom', 'wdDesignSpecToneWrap', _tonePresets(), '专业严谨') +
                 _tripletFieldHtml(
                     '密度 density',
