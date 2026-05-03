@@ -614,22 +614,32 @@ class GlobalMasterTemplateService:
         if template_workspace_id:
             workspace_slide_pngs = self._load_workspace_slide_png_paths(template_workspace_id)
             pptx_layout_compact = ""
+            readable_extra = ""
             try:
                 ws_manifest_path = self._template_workspace_manifest_path(template_workspace_id)
-                ws_full = json.loads(ws_manifest_path.read_text(encoding="utf-8"))
-                pl_raw = ws_full.get("pptx_layout")
+                ws_full_cached = json.loads(ws_manifest_path.read_text(encoding="utf-8"))
+                pl_raw = ws_full_cached.get("pptx_layout")
                 if isinstance(pl_raw, dict) and (
                     pl_raw.get("slides") is not None or pl_raw.get("slide_count") is not None
                 ):
                     pptx_layout_compact = self._compact_pptx_layout_for_prompt(pl_raw)
-            except Exception as layout_err:
-                logger.warning("Failed to load pptx_layout from workspace manifest: %s", layout_err)
+                pr_sum = ws_full_cached.get("pptx_readable_summary")
+                if isinstance(pr_sum, dict) and pr_sum:
+                    readable_extra = (
+                        "\n【pptx_readable 摘要】主题色、占位标记并集、元素类型计数（pptxtojson 解析）\n"
+                        + json.dumps(pr_sum, ensure_ascii=False, separators=(",", ":"))[:7000]
+                        + "\n"
+                    )
+            except Exception as ws_err:
+                logger.warning("Failed to load workspace manifest extras (layout/readable summary): %s", ws_err)
 
             workspace_manifest_hint = (
                 f"\n\n【模板导入工作区】workspace_id={template_workspace_id}\n"
                 f"- 参考渲染页（PNG）数量：{len(workspace_slide_pngs)}\n"
                 "- 这些图片来自 LibreOffice→PDF→PNG，可与 python-pptx 结构化摘要对照。\n"
             )
+            if readable_extra:
+                workspace_manifest_hint += readable_extra
             if pptx_layout_compact:
                 workspace_manifest_hint += (
                     "\n【pptx_layout 结构化占位/形状框（相对坐标，供纯文本模型推断版式）】\n"

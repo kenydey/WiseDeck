@@ -65,3 +65,6 @@ USER.md
 
 # Cursor IDE project state
 .cursor/
+
+# pptxtojson npm deps (bundle is committed under scripts/pptxtojson-runner/bundle/)
+scripts/pptxtojson-runner/node_modules/

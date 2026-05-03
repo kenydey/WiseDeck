@@ -1,0 +1,14 @@
+{
+  "name": "wisedeck-pptxtojson-runner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild forked_pptxtojson/pptxtojson.js --bundle --format=esm --platform=node --outfile=bundle/wisedeck-pptx-parse.mjs"
+  },
+  "dependencies": {
+    "pptxtojson": "2.0.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
+}

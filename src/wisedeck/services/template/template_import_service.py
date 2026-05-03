@@ -346,7 +346,26 @@ class TemplateImportService:
             },
         }
 
-        from wisedeck.services.layout_package.manifest import enrich_template_manifest_with_layout_package
+        try:
+            from wisedeck.services.template.pptx_readable_contract import wrap_and_cap_pptx_readable
+            from wisedeck.services.template.pptx_readable_placeholders import (
+                build_pptx_readable_summary_for_manifest,
+            )
+            from wisedeck.services.template.pptx_readable_runner import parse_pptx_to_readable_json
+
+            raw_readable = parse_pptx_to_readable_json(pptx_path)
+            pptx_readable = wrap_and_cap_pptx_readable(raw_readable)
+            manifest["pptx_readable"] = pptx_readable
+            manifest["pptx_readable_summary"] = build_pptx_readable_summary_for_manifest(pptx_readable)
+        except Exception as readable_err:
+            logger.warning("pptx_readable pipeline skipped: %s", readable_err)
+            manifest["pptx_readable"] = {"schema_version": 1, "error": str(readable_err)[:300]}
+            manifest["pptx_readable_summary"] = {}
+
+        from wisedeck.services.layout_package.manifest import (
+            enrich_template_manifest_with_layout_package,
+            overlay_layout_package_with_pptx_readable,
+        )
 
         page_ct = 0
         try:
@@ -359,6 +378,7 @@ class TemplateImportService:
             slide_count=page_ct,
             source="template_import",
         )
+        manifest = overlay_layout_package_with_pptx_readable(manifest)
 
         manifest_path.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2),

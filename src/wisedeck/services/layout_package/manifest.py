@@ -78,3 +78,53 @@ def enrich_template_manifest_with_layout_package(
     block["provenance"] = {"source": source, "slide_count": slide_count}
     out["layout_package"] = block
     return out
+
+
+def overlay_layout_package_with_pptx_readable(manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Merge pptx_readable-derived placeholder/schema hints into layout_package after base enrich.
+    Non-destructive: preserves existing schema keys; adds subtitle/table/chart bindings when detected.
+    """
+    from wisedeck.services.template.pptx_readable_placeholders import summarize_pptx_readable_for_layout_overlay
+
+    out = copy.deepcopy(manifest)
+    pr = out.get("pptx_readable")
+    block = summarize_pptx_readable_for_layout_overlay(pr if isinstance(pr, dict) else None)
+    if not block:
+        return out
+
+    lp = out.get("layout_package")
+    if not isinstance(lp, dict):
+        return out
+
+    overlay_props: Dict[str, Any] = {}
+    ov_schema = block.get("data_schema") or {}
+    if isinstance(ov_schema, dict) and isinstance(ov_schema.get("properties"), dict):
+        overlay_props = ov_schema["properties"]
+
+    base_schema = lp.get("data_schema") if isinstance(lp.get("data_schema"), dict) else {}
+    base_props = dict(base_schema.get("properties") or {}) if isinstance(base_schema.get("properties"), dict) else {}
+
+    if overlay_props:
+        merged_props = {**base_props, **overlay_props}
+        lp["data_schema"] = {"type": "object", "properties": merged_props}
+
+    ov_sample = block.get("sample_data") if isinstance(block.get("sample_data"), dict) else {}
+    if ov_sample:
+        bs = lp.get("sample_data") if isinstance(lp.get("sample_data"), dict) else {}
+        lp["sample_data"] = {**bs, **ov_sample}
+
+    cb = list(lp.get("chart_bindings") or [])
+    for x in block.get("chart_bindings") or []:
+        if isinstance(x, str) and x and x not in cb:
+            cb.append(x)
+    if cb:
+        lp["chart_bindings"] = cb
+
+    prov = lp.get("provenance") if isinstance(lp.get("provenance"), dict) else {}
+    prov = dict(prov)
+    prov["pptx_readable_overlay"] = True
+    prov["pptx_readable_markers"] = block.get("markers_union")
+    prov["pptx_readable_element_counts"] = block.get("element_type_counts")
+    lp["provenance"] = prov
+    return out
