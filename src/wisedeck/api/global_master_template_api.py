@@ -43,7 +43,12 @@ from ..services.template.template_contract_build import build_template_contract_
 from ..services.template.template_import_service import (
     TemplateImportService,
     _resolve_soffice,
+    _run_soffice_convert,
+    _pdf_to_page_assets,
     materialize_office_upload_to_pptx,
+)
+from ..services.template.template_office_svg_placeholder_inject import (
+    inject_placeholders_into_workspace_svgs,
 )
 from ..auth.middleware import get_current_user_required
 from ..core.config import app_config
@@ -134,6 +139,36 @@ def _convert_pdf_template_sync(body: TemplatePdfConvertRequest) -> TemplateOffic
     )
 
 
+def _supplement_svg_from_pptx(
+    pptx_path: Path,
+    root: Path,
+    soffice: str,
+    pptx_layout_hints: dict,
+    slide_count: int,
+) -> tuple[Optional[str], List[str]]:
+    """
+    Generate SVG template + per-slide SVG XMLs from a .pptx via LibreOffice PDF + PyMuPDF.
+
+    Reuses the same pipeline as the svg_stack path:
+      PPTX → PDF (LibreOffice) → per-page SVG (PyMuPDF) → placeholder injection → bundle.
+
+    Returns (svg_template, svg_slide_xmls) or (None, []) on failure.
+    """
+    pdf_dir = root / "svg_supplement_pdf"
+    pdf_path = _run_soffice_convert(soffice, pptx_path, pdf_dir, "pdf")
+
+    svg_dir = root / "svg_supplement_svg"
+    png_dir = root / "svg_supplement_png"
+    _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=2.0)
+
+    inject_placeholders_into_workspace_svgs(svg_dir, pptx_layout_hints)
+
+    svg_t, _html_t, _w_bundle, slide_xmls = bundle_workspace_svgs(
+        svg_dir, "vertical_stack"
+    )
+    return svg_t, slide_xmls
+
+
 def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> TemplateOfficeConvertResponse:
     suggested = (
         Path(body.filename or "upload").stem.replace("\x00", "") or "imported_template"
@@ -192,9 +227,50 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
             if lo_fragments:
                 imp_lo["html_slide_fragments"] = lo_fragments
                 imp_lo["visual_persistence_version"] = max(int(imp_lo.get("visual_persistence_version") or 0), 1)
+
+            svg_t_lo: Optional[str] = None
+            try:
+                svg_t_lo, svg_slide_xmls_lo = _supplement_svg_from_pptx(
+                    pptx_path, root, soffice, hints, slide_count,
+                )
+                if svg_t_lo:
+                    from ..services.template.svg_template_import_meta import (
+                        trim_svg_slide_xmls_for_persistence as _trim_slides,
+                    )
+                    from ..svg_export.placeholder_adapter import scan_svg_placeholder_inner_names
+
+                    markers_union: set[str] = set()
+                    for xml in (svg_slide_xmls_lo or []):
+                        markers_union.update(scan_svg_placeholder_inner_names(xml))
+                    if svg_t_lo:
+                        markers_union.update(scan_svg_placeholder_inner_names(svg_t_lo))
+                    sorted_markers = sorted(markers_union)
+
+                    imp_lo["placeholder_markers"] = sorted_markers
+                    import hashlib as _hl
+                    joined = "|".join(sorted_markers)
+                    imp_lo["placeholder_hash"] = _hl.sha256(joined.encode("utf-8")).hexdigest() if joined else ""
+
+                    if svg_slide_xmls_lo:
+                        trimmed, trim_warnings = _trim_slides(svg_slide_xmls_lo)
+                        warnings_acc.extend(trim_warnings)
+                        if trimmed:
+                            imp_lo["svg_slide_xmls"] = trimmed
+                            imp_lo["visual_persistence_version"] = max(
+                                int(imp_lo.get("visual_persistence_version") or 0), 1
+                            )
+                            imp_lo["native_export_mode"] = "per_slide"
+                            imp_lo["visual_mode"] = "merged_and_pages"
+
+                    imp_lo["svg_supplement"] = True
+                    warnings_acc.append("LibreOffice HTML 管线已补充 SVG 母版和占位符标记（svg_supplement）")
+            except Exception as svg_err:
+                logger.warning("LO HTML svg supplement failed (non-fatal): %s", svg_err)
+                warnings_acc.append(f"SVG 补充失败（不影响 HTML 模板）：{svg_err}")
+
             return TemplateOfficeConvertResponse(
                 html_template=html_t,
-                svg_template=None,
+                svg_template=svg_t_lo,
                 suggested_template_name=stem,
                 slide_count=slide_count,
                 export_engine_used="libreoffice_html",
