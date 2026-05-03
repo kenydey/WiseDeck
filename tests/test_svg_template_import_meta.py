@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from wisedeck.services.template.svg_template_import_meta import (
     build_import_summary,
+    merge_import_summary_with_template_contract,
+    placeholder_markers_from_template_contract,
     trim_svg_slide_xmls_for_persistence,
 )
 
@@ -36,3 +38,25 @@ def test_build_import_summary_marker_union_across_slides():
     assert {"PAGE_TITLE", "CONTENT_AREA", "TABLE_AREA"}.issubset(mk)
     assert s.get("native_export_mode") == "per_slide"
     assert s.get("svg_slide_xmls") == slides
+
+
+def test_placeholder_markers_from_template_contract_summary_union():
+    tc = {
+        "pptx_readable_summary": {
+            "placeholder_markers_union": ["page_title", "CONTENT_AREA", " PAGE_NUM "],
+        }
+    }
+    assert placeholder_markers_from_template_contract(tc) == [
+        "CONTENT_AREA",
+        "PAGE_NUM",
+        "PAGE_TITLE",
+    ]
+
+
+def test_merge_import_summary_with_template_contract_unifies_markers():
+    imp = {"placeholder_markers": ["CONTENT_AREA"], "slide_count": 3}
+    tc = {"pptx_readable_summary": {"placeholder_markers_union": ["PAGE_TITLE", "CONTENT_AREA"]}}
+    out = merge_import_summary_with_template_contract(imp, tc)
+    assert out.get("template_contract") == tc
+    assert out.get("placeholder_markers") == ["CONTENT_AREA", "PAGE_TITLE"]
+    assert isinstance(out.get("placeholder_hash"), str) and len(out["placeholder_hash"]) == 64

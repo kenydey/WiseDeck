@@ -565,6 +565,7 @@ class GlobalMasterTemplateService:
         from wisedeck.services.template.slide_svg_bundler import bundle_workspace_svgs
         from wisedeck.services.template.svg_template_import_meta import (
             build_import_summary,
+            merge_import_summary_with_template_contract,
             trim_svg_slide_xmls_for_persistence,
         )
         from wisedeck.services.template.template_contract_build import build_template_contract_from_manifest
@@ -594,8 +595,8 @@ class GlobalMasterTemplateService:
                     pptx_layout=layout_hints if layout_hints else None,
                     template_provenance="ai_pptx_extract_workspace",
                 )
+                imp = merge_import_summary_with_template_contract(imp, template_contract)
                 imp["structured_contract"] = True
-                imp["template_contract"] = template_contract
                 svg_template_out = svg_t
                 import_summary = imp
             except Exception as e:
@@ -608,8 +609,8 @@ class GlobalMasterTemplateService:
                     pptx_layout=layout_hints if layout_hints else None,
                     template_provenance="ai_pptx_extract_workspace_manifest_only",
                 )
+                imp = merge_import_summary_with_template_contract(imp, template_contract)
                 imp["structured_contract"] = True
-                imp["template_contract"] = template_contract
                 import_summary = imp
         else:
             imp = build_import_summary(
@@ -620,8 +621,8 @@ class GlobalMasterTemplateService:
                 pptx_layout=layout_hints if layout_hints else None,
                 template_provenance="ai_pptx_extract_workspace_manifest_only",
             )
+            imp = merge_import_summary_with_template_contract(imp, template_contract)
             imp["structured_contract"] = True
-            imp["template_contract"] = template_contract
             import_summary = imp
 
         return {

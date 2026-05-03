@@ -122,3 +122,54 @@ def build_import_summary(
         out["native_export_mode"] = "legacy_single"
 
     return out
+
+
+def placeholder_markers_from_template_contract(template_contract: Any) -> list[str]:
+    """Extract normalized marker union from template_contract.pptx_readable_summary."""
+    if not isinstance(template_contract, dict):
+        return []
+    summary = template_contract.get("pptx_readable_summary")
+    raw = summary.get("placeholder_markers_union") if isinstance(summary, dict) else []
+    out: set[str] = set()
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                out.add(item.strip().upper())
+    return sorted(out)
+
+
+def merge_import_summary_with_template_contract(
+    import_summary: Any,
+    template_contract: Any,
+) -> dict[str, Any]:
+    """
+    Merge structured template_contract into import_summary and unify placeholder_markers.
+
+    - keeps existing import_summary fields
+    - sets import_summary["template_contract"]
+    - union(import_summary.placeholder_markers, contract placeholders)
+    - refreshes placeholder_hash after union
+    """
+    out: dict[str, Any] = dict(import_summary) if isinstance(import_summary, dict) else {}
+    if not isinstance(template_contract, dict) or not template_contract:
+        return out
+
+    out["template_contract"] = template_contract
+    merged_markers: set[str] = set()
+
+    raw_existing = out.get("placeholder_markers")
+    if isinstance(raw_existing, list):
+        for item in raw_existing:
+            if isinstance(item, str) and item.strip():
+                merged_markers.add(item.strip().upper())
+
+    for marker in placeholder_markers_from_template_contract(template_contract):
+        merged_markers.add(marker)
+
+    if merged_markers:
+        ordered = sorted(merged_markers)
+        out["placeholder_markers"] = ordered
+        joined = "|".join(ordered)
+        out["placeholder_hash"] = hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+    return out
