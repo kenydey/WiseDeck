@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -243,7 +244,11 @@ class TemplateSelectionService:
 
             default_template = await self.global_template_service.get_default_template()
             if default_template:
-                await self._save_selected_template_to_project(project_id, default_template["id"])
+                await self._save_selected_template_to_project(
+                    project_id,
+                    default_template["id"],
+                    template_row=default_template,
+                )
                 logger.info("Project %s using default template: %s", project_id, default_template["template_name"])
                 return default_template
 
@@ -253,16 +258,39 @@ class TemplateSelectionService:
             logger.error("Error ensuring global master template for project %s: %s", project_id, exc)
             return None
 
-    async def _save_selected_template_to_project(self, project_id: str, template_id: int):
+    async def _save_selected_template_to_project(
+        self,
+        project_id: str,
+        template_id: int,
+        *,
+        template_row: Optional[Dict[str, Any]] = None,
+    ):
         """Persist template selection into project metadata."""
         try:
             project = await self.project_manager.get_project(project_id)
             if not project:
                 return
 
+            tmpl = template_row
+            if tmpl is None:
+                tmpl = await self.global_template_service.get_template_by_id(template_id)
+
             project_metadata = project.project_metadata or {}
             project_metadata["selected_global_template_id"] = template_id
             project_metadata["template_mode"] = "global"
+
+            imp = tmpl.get("import_summary") if isinstance(tmpl, dict) else None
+            tc = imp.get("template_contract") if isinstance(imp, dict) else None
+            lp = tc.get("layout_package") if isinstance(tc, dict) else None
+            if isinstance(lp, dict) and lp:
+                project_metadata["layout_package"] = copy.deepcopy(lp)
+            else:
+                project_metadata.pop("layout_package", None)
+            prov = imp.get("template_provenance") if isinstance(imp, dict) else None
+            if isinstance(prov, str) and prov.strip():
+                project_metadata["template_import_provenance"] = prov.strip()
+            else:
+                project_metadata.pop("template_import_provenance", None)
 
             await self.project_manager.update_project_metadata(project_id, project_metadata)
             self.clear_cached_style_genes(project_id)
@@ -294,7 +322,11 @@ class TemplateSelectionService:
                     raise ValueError("No default template available")
                 template_id = template["id"]
 
-            await self._save_selected_template_to_project(project_id, template_id)
+            await self._save_selected_template_to_project(
+                project_id,
+                template_id,
+                template_row=template,
+            )
             await self.global_template_service.increment_template_usage(template_id)
             return {
                 "success": True,
@@ -327,6 +359,8 @@ class TemplateSelectionService:
             )
             project_metadata["template_mode"] = "free"
             project_metadata.pop("selected_global_template_id", None)
+            project_metadata.pop("layout_package", None)
+            project_metadata.pop("template_import_provenance", None)
             project_metadata["free_template_status"] = "ready" if has_existing_free_template else "pending"
 
             await self.project_manager.update_project_metadata(project_id, project_metadata)

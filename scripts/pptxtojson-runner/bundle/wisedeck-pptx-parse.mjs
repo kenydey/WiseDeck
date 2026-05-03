@@ -18280,6 +18280,12 @@ function wisedeckApplyPlaceholderProps(target, phIdxAttr, phTypeAttr) {
   if (hasIdx) target.placeholderIdx = String(phIdxAttr);
   return target;
 }
+function wisedeckApplyGraphicFramePlaceholderProps(node, target) {
+  if (!target || typeof target !== "object") return target;
+  const phIdxAttr = getTextByPathList(node, ["p:nvGraphicFramePr", "p:nvPr", "p:ph", "attrs", "idx"]);
+  const phTypeAttr = getTextByPathList(node, ["p:nvGraphicFramePr", "p:nvPr", "p:ph", "attrs", "type"]);
+  return wisedeckApplyPlaceholderProps(target, phIdxAttr, phTypeAttr);
+}
 async function parse2(file, options = {}) {
   const slides = [];
   const loadedImages = {};
@@ -19337,7 +19343,7 @@ async function genTable(node, warpObj) {
   }
   let actualTableWidth = colWidths.reduce((sum, width2) => sum + width2, 0);
   if (actualTableWidth) actualTableWidth = numberToFixed(actualTableWidth);
-  return {
+  return wisedeckApplyGraphicFramePlaceholderProps(node, {
     type: "table",
     top,
     left,
@@ -19348,7 +19354,7 @@ async function genTable(node, warpObj) {
     borders,
     rowHeights,
     colWidths
-  };
+  });
 }
 async function genChart(node, warpObj) {
   const order = node["attrs"]["order"];
@@ -19380,7 +19386,7 @@ async function genChart(node, warpObj) {
   if (chart.holeSize !== void 0) data.holeSize = chart.holeSize;
   if (chart.grouping !== void 0) data.grouping = chart.grouping;
   if (chart.style !== void 0) data.style = chart.style;
-  return data;
+  return wisedeckApplyGraphicFramePlaceholderProps(node, data);
 }
 async function genDiagram(node, warpObj) {
   const order = node["attrs"]["order"];
@@ -19401,7 +19407,7 @@ async function genDiagram(node, warpObj) {
   if (diagramWarpObj.diagramContent && diagramWarpObj.diagramContent.data) {
     textList = getSmartArtTextData(diagramWarpObj.diagramContent.data);
   }
-  return {
+  return wisedeckApplyGraphicFramePlaceholderProps(node, {
     type: "diagram",
     left,
     top,
@@ -19410,7 +19416,7 @@ async function genDiagram(node, warpObj) {
     elements,
     textList,
     order
-  };
+  });
 }
 export {
   parse2 as parse

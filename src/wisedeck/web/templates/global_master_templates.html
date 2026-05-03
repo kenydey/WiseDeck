@@ -217,14 +217,7 @@ select {
             <button id="generateWithAIBtn" class="btn btn-success">
                 AI生成模板
             </button>
-            <select id="importExportEngineSelect" class="glass-input" title="PPT/PPTX 导入引擎" style="width:auto;min-width:180px;font-size:0.85rem;">
-                <option value="svg_stack">Office→SVG 纵向合并</option>
-                <option value="libreoffice_html">Office→LibreOffice HTML</option>
-            </select>
-            <label style="display:inline-flex;align-items:center;gap:8px;margin:0;font-size:0.85rem;color:var(--text-secondary);white-space:nowrap;">
-                <input type="checkbox" id="importFallbackSvgStack"/> HTML 失败回退 SVG
-            </label>
-            <input type="file" id="importTemplateInput" accept=".html,.json,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" style="display: none;">
+            <input type="file" id="importTemplateInput" accept=".html,.json,.ppt,.pptx,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" style="display: none;">
             <button id="importTemplateBtn" class="btn btn-secondary">
                 导入模板
             </button>

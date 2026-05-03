@@ -1,6 +1,7 @@
 """
 Map pptx_readable (pptxtojson fork) placeholder OOXML types → WiseDeck SVG markers / layout hints.
-Aligned with template_office_svg_placeholder_inject._PH_TYPE_TO_MARKER semantics.
+
+Single source for OOXML → marker names; template_office_svg_placeholder_inject imports ooxml_placeholder_type_to_marker.
 """
 
 from __future__ import annotations
@@ -32,39 +33,44 @@ def ooxml_placeholder_type_to_marker(ph_type: str) -> Optional[str]:
 
 def _walk_elements(slides: List[Any]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
+
+    def walk(el: Any) -> None:
+        if not isinstance(el, dict):
+            return
+        out.append(el)
+        if el.get("type") == "group" and isinstance(el.get("elements"), list):
+            for child in el["elements"]:
+                walk(child)
+
     for slide in slides:
         if not isinstance(slide, dict):
             continue
         for bucket in ("elements", "layoutElements"):
             for el in slide.get(bucket) or []:
-                if isinstance(el, dict):
-                    out.append(el)
-                if isinstance(el, dict) and el.get("type") == "group" and isinstance(el.get("elements"), list):
-                    for child in el["elements"]:
-                        if isinstance(child, dict):
-                            out.append(child)
+                walk(el)
     return out
 
 
 def collect_markers_union(pptx_readable: Dict[str, Any]) -> Set[str]:
     markers: Set[str] = set()
+
+    def walk_element(el: Any) -> None:
+        if not isinstance(el, dict):
+            return
+        if el.get("isPlaceholder") and el.get("placeholderType"):
+            m = ooxml_placeholder_type_to_marker(str(el["placeholderType"]))
+            if m:
+                markers.add(m)
+        if el.get("type") == "group" and isinstance(el.get("elements"), list):
+            for child in el["elements"]:
+                walk_element(child)
+
     for slide in pptx_readable.get("slides") or []:
         if not isinstance(slide, dict):
             continue
         for bucket in ("elements", "layoutElements"):
             for el in slide.get(bucket) or []:
-                if not isinstance(el, dict):
-                    continue
-                if el.get("isPlaceholder") and el.get("placeholderType"):
-                    m = ooxml_placeholder_type_to_marker(str(el["placeholderType"]))
-                    if m:
-                        markers.add(m)
-                if el.get("type") == "group" and isinstance(el.get("elements"), list):
-                    for child in el["elements"]:
-                        if isinstance(child, dict) and child.get("isPlaceholder") and child.get("placeholderType"):
-                            m = ooxml_placeholder_type_to_marker(str(child["placeholderType"]))
-                            if m:
-                                markers.add(m)
+                walk_element(el)
     return markers
 
 

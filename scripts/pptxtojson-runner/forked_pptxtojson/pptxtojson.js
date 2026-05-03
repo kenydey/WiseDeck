@@ -28,6 +28,14 @@ function wisedeckApplyPlaceholderProps(target, phIdxAttr, phTypeAttr) {
   return target
 }
 
+/** WiseDeck: p:graphicFrame uses p:nvGraphicFramePr (not p:nvSpPr) for p:ph idx/type. */
+function wisedeckApplyGraphicFramePlaceholderProps(node, target) {
+  if (!target || typeof target !== 'object') return target
+  const phIdxAttr = getTextByPathList(node, ['p:nvGraphicFramePr', 'p:nvPr', 'p:ph', 'attrs', 'idx'])
+  const phTypeAttr = getTextByPathList(node, ['p:nvGraphicFramePr', 'p:nvPr', 'p:ph', 'attrs', 'type'])
+  return wisedeckApplyPlaceholderProps(target, phIdxAttr, phTypeAttr)
+}
+
 export async function parse(file, options = {}) {
   const slides = []
   const loadedImages = {}
@@ -1256,7 +1264,7 @@ async function genTable(node, warpObj) {
   let actualTableWidth = colWidths.reduce((sum, width) => sum + width, 0)
   if (actualTableWidth) actualTableWidth = numberToFixed(actualTableWidth)
 
-  return {
+  return wisedeckApplyGraphicFramePlaceholderProps(node, {
     type: 'table',
     top,
     left,
@@ -1267,7 +1275,7 @@ async function genTable(node, warpObj) {
     borders,
     rowHeights,
     colWidths,
-  }
+  })
 }
 
 async function genChart(node, warpObj) {
@@ -1306,7 +1314,7 @@ async function genChart(node, warpObj) {
   if (chart.grouping !== undefined) data.grouping = chart.grouping
   if (chart.style !== undefined) data.style = chart.style
 
-  return data
+  return wisedeckApplyGraphicFramePlaceholderProps(node, data)
 }
 
 async function genDiagram(node, warpObj) {
@@ -1331,7 +1339,7 @@ async function genDiagram(node, warpObj) {
     textList = getSmartArtTextData(diagramWarpObj.diagramContent.data)
   }
 
-  return {
+  return wisedeckApplyGraphicFramePlaceholderProps(node, {
     type: 'diagram',
     left,
     top,
@@ -1340,5 +1348,5 @@ async function genDiagram(node, warpObj) {
     elements,
     textList,
     order,
-  }
+  })
 }

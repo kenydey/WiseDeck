@@ -2,6 +2,14 @@
 
 将 `.pptx` 解析为可读 JSON（基于 [pptxtojson](https://github.com/pipipi-pikachu/pptxtojson) MIT，WiseDeck fork 增加 `placeholderType` / `isPlaceholder` 字段）。
 
+WiseDeck 额外为 **`p:graphicFrame`**（图表 / 表格 / SmartArt）从 `p:nvGraphicFramePr/p:nvPr/p:ph` 写入同上占位字段，便于 `pptx_readable_summary` 与 python-pptx SVG 注入对齐。
+
+全局模板 **`convert-office-template`** API 默认优先 **LibreOffice HTML** 导出；失败且允许降级时再走 svg_stack；结构化 `pptx_readable` / `layout_package` 在两条路径下均可写入契约（详见后端 `global_master_template_api`）。可用 **`WISEDECK_DISABLE_LIBREOFFICE_HTML_IMPORT=1`** 强制跳过 HTML 导出。
+
+### 与上游同步（可选、手工）
+
+若需合并上游新版本：在 `forked_pptxtojson/` 内对照上游 tag/commit，保留 `wisedeckApplyPlaceholderProps`、`wisedeckApplyGraphicFramePlaceholderProps` 与入口差异后执行 `npm run build`，并回归 WiseDeck pytest（`pptx_readable` / placeholder inject）。
+
 ## 依赖
 
 - Node.js 18+（PATH 中有 `node`，或通过环境变量 `WISEDECK_NODE_BIN` 指定）

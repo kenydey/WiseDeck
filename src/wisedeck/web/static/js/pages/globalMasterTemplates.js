@@ -783,18 +783,12 @@ function readFileAsDataURL(file) {
     });
 }
 
-function getOfficeImportOptions() {
-    const engineEl = document.getElementById('importExportEngineSelect');
-    const fallbackEl = document.getElementById('importFallbackSvgStack');
-    return {
-        export_engine: engineEl?.value === 'libreoffice_html' ? 'libreoffice_html' : 'svg_stack',
-        fallback_to_svg_stack: Boolean(fallbackEl?.checked),
-    };
-}
-
 async function handleTemplateImport(event) {
     const file = event.target.files?.[0];
     if (!file) return;
+    /** @type {'office'|'pdf'|null} */
+    let importKind = null;
+    let importWarnings = [];
     try {
         const lower = String(file.name || '').toLowerCase();
         const isOffice =
@@ -802,36 +796,84 @@ async function handleTemplateImport(event) {
             lower.endsWith('.pptx') ||
             file.type === 'application/vnd.ms-powerpoint' ||
             file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        const isPdf = lower.endsWith('.pdf') || file.type === 'application/pdf';
 
         let templateData;
         if (isOffice) {
+            importKind = 'office';
             if (file.size > 50 * 1024 * 1024) {
                 throw new Error('演示文稿过大，请控制在 50MB 以内');
             }
             const dataUrl = await readFileAsDataURL(file);
-            const opts = getOfficeImportOptions();
             const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
                 filename: file.name,
                 data: dataUrl,
-                export_engine: opts.export_engine,
+                prefer_libreoffice_html: true,
+                fallback_to_svg_stack: true,
                 bundle_mode: 'vertical_stack',
-                fallback_to_svg_stack: opts.fallback_to_svg_stack,
             });
             const stem =
                 conv.suggested_template_name ||
                 file.name.replace(/\.(pptx|ppt)$/i, '');
             templateData = {
                 template_name: stem,
-                description: `从文件 ${file.name} 导入（${conv.export_engine_used}）`,
+                description:
+                    `从文件 ${file.name} 结构化导入（${conv.export_engine_used}）。` +
+                    '含 pptx_readable / layout_package 契约。',
                 html_template: conv.html_template,
-                tags: ['导入'],
+                tags: ['导入', '结构化母版'],
                 is_default: false,
             };
             if (conv.svg_template) {
                 templateData.svg_template = conv.svg_template;
             }
-            if (conv.warnings?.length) {
-                console.warn('模板导入警告', conv.warnings);
+            const importSummary = {};
+            if (conv.import_summary && typeof conv.import_summary === 'object') {
+                Object.assign(importSummary, conv.import_summary);
+            }
+            if (conv.template_contract && typeof conv.template_contract === 'object') {
+                importSummary.template_contract = conv.template_contract;
+            }
+            if (Object.keys(importSummary).length) {
+                templateData.import_summary = importSummary;
+            }
+            if (Array.isArray(conv.warnings) && conv.warnings.length) {
+                importWarnings = conv.warnings.slice();
+                console.warn('模板导入警告', importWarnings);
+            }
+        } else if (isPdf) {
+            importKind = 'pdf';
+            if (file.size > 50 * 1024 * 1024) {
+                throw new Error('PDF 过大，请控制在 50MB 以内');
+            }
+            const dataUrl = await readFileAsDataURL(file);
+            const conv = await apiClient.post('/api/global-master-templates/import/convert-pdf-template', {
+                filename: file.name,
+                data: dataUrl,
+                png_zoom: 2.0,
+                bundle_mode: 'vertical_stack',
+            });
+            const stem =
+                conv.suggested_template_name ||
+                file.name.replace(/\.pdf$/i, '');
+            templateData = {
+                template_name: stem,
+                description:
+                    `从 PDF ${file.name} 导入（引擎 ${conv.export_engine_used}）。` +
+                    '此为视觉母版：PDF 无原生幻灯片占位结构；精细替换区建议优先使用 PPTX 导入。',
+                html_template: conv.html_template,
+                tags: ['导入', 'PDF', '视觉母版'],
+                is_default: false,
+            };
+            if (conv.svg_template) {
+                templateData.svg_template = conv.svg_template;
+            }
+            if (conv.import_summary && typeof conv.import_summary === 'object') {
+                templateData.import_summary = conv.import_summary;
+            }
+            if (Array.isArray(conv.warnings) && conv.warnings.length) {
+                importWarnings = conv.warnings.slice();
+                console.warn('模板导入警告', importWarnings);
             }
         } else {
             const content = await readFileContent(file);
@@ -846,7 +888,7 @@ async function handleTemplateImport(event) {
                     is_default: false,
                 };
             } else {
-                throw new Error('请选择 .json、.html、.ppt 或 .pptx 文件');
+                throw new Error('请选择 .json、.html、.pdf、.ppt 或 .pptx 文件');
             }
         }
 
@@ -864,7 +906,21 @@ async function handleTemplateImport(event) {
         await apiClient.post('/api/global-master-templates/', templateData);
         event.target.value = '';
         loadTemplates(1);
-        alert('模板导入成功');
+        const provenanceNote =
+            importKind === 'office'
+                ? '已保存 import_summary（含 pptx_layout 等）。svg_stack 路径会在服务端尝试按 PPTX 占位符位置注入 {{PAGE_TITLE}} 等标记。'
+                : importKind === 'pdf'
+                  ? 'PDF 导入已写入 import_summary（template_provenance=pdf_raster_svg_stack）；不含 PPTX 占位符映射。'
+                  : '';
+        if (importWarnings.length) {
+            alert(
+                '模板导入成功（包含警告）：\n- ' +
+                    importWarnings.join('\n- ') +
+                    (provenanceNote ? '\n\n' + provenanceNote : '')
+            );
+        } else {
+            alert('模板导入成功' + (provenanceNote ? '。\n\n' + provenanceNote : ''));
+        }
     } catch (error) {
         console.error('导入失败', error);
         alert('导入模板失败: ' + error.message);

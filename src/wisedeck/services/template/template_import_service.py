@@ -397,6 +397,83 @@ class TemplateImportService:
             manifest=manifest,
         )
 
+    def build_lightweight_structured_manifest(
+        self,
+        pptx_path: Path,
+        *,
+        workspace_id: str,
+        slide_count: int,
+        source_filename: str,
+    ) -> Dict[str, Any]:
+        """
+        Structured fields for template_contract without PDF→SVG pipeline (paired with LibreOffice HTML export).
+        """
+        pptx_meta: Dict[str, Any] = {}
+        if self._extract_fn:
+            try:
+                b64 = base64.b64encode(pptx_path.read_bytes()).decode("ascii")
+                fn = source_filename or pptx_path.name
+                pptx_meta = self._extract_fn(
+                    {
+                        "filename": fn if fn.lower().endswith(".pptx") else f"{Path(fn).stem}.pptx",
+                        "data": b64,
+                        "size": pptx_path.stat().st_size,
+                        "type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    }
+                )
+            except Exception as e:
+                logger.warning("python-pptx manifest extraction failed: %s", e)
+                pptx_meta = {"error": str(e)}
+
+        from wisedeck.services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
+
+        pptx_layout_hints: Dict[str, Any] = {}
+        try:
+            pptx_layout_hints = extract_pptx_layout_hints(pptx_path.read_bytes())
+        except Exception as e:
+            logger.warning("extract_pptx_layout_hints failed: %s", e)
+            pptx_layout_hints = {"schema_version": 1, "error": str(e)[:200], "slides": []}
+
+        manifest: Dict[str, Any] = {
+            "workspace_id": workspace_id,
+            "source_filename": source_filename,
+            "slide_assets": {"page_count": int(slide_count or 0)},
+            "python_pptx": pptx_meta,
+            "pptx_layout": pptx_layout_hints,
+            "svg_native_meta": {"placeholder_markers": [], "canvas_format_guess": None},
+        }
+
+        try:
+            from wisedeck.services.template.pptx_readable_contract import wrap_and_cap_pptx_readable
+            from wisedeck.services.template.pptx_readable_placeholders import (
+                build_pptx_readable_summary_for_manifest,
+            )
+            from wisedeck.services.template.pptx_readable_runner import parse_pptx_to_readable_json
+
+            raw_readable = parse_pptx_to_readable_json(pptx_path)
+            pptx_readable = wrap_and_cap_pptx_readable(raw_readable)
+            manifest["pptx_readable"] = pptx_readable
+            manifest["pptx_readable_summary"] = build_pptx_readable_summary_for_manifest(pptx_readable)
+        except Exception as readable_err:
+            logger.warning("pptx_readable pipeline skipped (lightweight manifest): %s", readable_err)
+            manifest["pptx_readable"] = {"schema_version": 1, "error": str(readable_err)[:300]}
+            manifest["pptx_readable_summary"] = {}
+
+        from wisedeck.services.layout_package.manifest import (
+            enrich_template_manifest_with_layout_package,
+            overlay_layout_package_with_pptx_readable,
+        )
+
+        page_ct = int(slide_count or 0)
+        manifest = enrich_template_manifest_with_layout_package(
+            manifest,
+            workspace_id=workspace_id,
+            slide_count=page_ct,
+            source="template_import_lo_html",
+        )
+        manifest = overlay_layout_package_with_pptx_readable(manifest)
+        return manifest
+
     def import_pdf_from_upload(
         self,
         *,

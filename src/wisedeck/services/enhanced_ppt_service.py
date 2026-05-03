@@ -438,7 +438,8 @@ class EnhancedPPTService(PPTService):
     async def _build_creative_template_context(self, slide_data: Dict[str, Any], template_html: str,
                                        template_name: str, page_number: int, total_pages: int,
                                        confirmed_requirements: Dict[str, Any], all_slides: List[Dict[str, Any]] = None,
-                                       project_id: str = None) -> str:
+                                       project_id: str = None,
+                                       template_record: Optional[Dict[str, Any]] = None) -> str:
         return await self.creative_design._build_creative_template_context(
             slide_data,
             template_html,
@@ -448,6 +449,7 @@ class EnhancedPPTService(PPTService):
             confirmed_requirements,
             all_slides=all_slides,
             project_id=project_id,
+            template_record=template_record,
         )
 
     async def _extract_style_genes(self, template_html: str) -> str:
@@ -670,8 +672,17 @@ class EnhancedPPTService(PPTService):
     async def _ensure_global_master_template_selected(self, project_id: str) -> Optional[Dict[str, Any]]:
         return await self.template_selection._ensure_global_master_template_selected(project_id)
 
-    async def _save_selected_template_to_project(self, project_id: str, template_id: int):
-        return await self.template_selection._save_selected_template_to_project(project_id, template_id)
+    async def _save_selected_template_to_project(
+        self,
+        project_id: str,
+        template_id: int,
+        template_row: Optional[Dict[str, Any]] = None,
+    ):
+        return await self.template_selection._save_selected_template_to_project(
+            project_id,
+            template_id,
+            template_row=template_row,
+        )
 
     async def select_global_template_for_project(self, project_id: str, template_id: Optional[int] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
         return await self.template_selection.select_global_template_for_project(project_id, template_id, user_id=user_id)

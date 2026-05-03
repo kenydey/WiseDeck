@@ -7,6 +7,7 @@ from wisedeck.services.layout_package.manifest import (
 from wisedeck.services.template.pptx_readable_contract import strip_media_blobs, wrap_and_cap_pptx_readable
 from wisedeck.services.template.pptx_readable_placeholders import (
     collect_markers_union,
+    count_element_types,
     ooxml_placeholder_type_to_marker,
     summarize_pptx_readable_for_layout_overlay,
 )
@@ -16,6 +17,61 @@ def test_ooxml_placeholder_to_marker_ctr_title():
     assert ooxml_placeholder_type_to_marker("ctrTitle") == "PAGE_TITLE"
     assert ooxml_placeholder_type_to_marker("subTitle") == "SUBTITLE"
     assert ooxml_placeholder_type_to_marker("body") == "CONTENT_AREA"
+    assert ooxml_placeholder_type_to_marker("chart") == "CHART_AREA"
+    assert ooxml_placeholder_type_to_marker("tbl") == "TABLE_AREA"
+
+
+def test_collect_markers_union_deep_nested_group():
+    data = {
+        "slides": [
+            {
+                "elements": [
+                    {
+                        "type": "group",
+                        "elements": [
+                            {
+                                "type": "group",
+                                "elements": [
+                                    {
+                                        "type": "shape",
+                                        "isPlaceholder": True,
+                                        "placeholderType": "tbl",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "type": "chart",
+                        "isPlaceholder": True,
+                        "placeholderType": "chart",
+                    },
+                ],
+            },
+        ],
+    }
+    m = collect_markers_union(data)
+    assert "TABLE_AREA" in m and "CHART_AREA" in m
+
+
+def test_count_element_types_includes_deep_group_children():
+    slides = [
+        {
+            "elements": [
+                {
+                    "type": "group",
+                    "elements": [
+                        {"type": "text"},
+                        {"type": "group", "elements": [{"type": "chart"}]},
+                    ],
+                }
+            ]
+        }
+    ]
+    c = count_element_types({"slides": slides})
+    assert c.get("group") == 2
+    assert c.get("text") == 1
+    assert c.get("chart") == 1
 
 
 def test_strip_media_blobs_removes_base64_keys():

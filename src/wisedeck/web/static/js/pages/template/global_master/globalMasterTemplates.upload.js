@@ -183,15 +183,6 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
         });
     }
 
-    function getOfficeImportOptions() {
-        const engineEl = document.getElementById('importExportEngineSelect');
-        const fallbackEl = document.getElementById('importFallbackSvgStack');
-        return {
-            export_engine: engineEl?.value === 'libreoffice_html' ? 'libreoffice_html' : 'svg_stack',
-            fallback_to_svg_stack: Boolean(fallbackEl?.checked),
-        };
-    }
-
     function setImportButtonBusy(busy, label) {
         const btn = document.getElementById('importTemplateBtn');
         if (!btn) return;
@@ -258,15 +249,14 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 busy = true;
                 await checkOfficeEngineAvailable();
 
-                setImportButtonBusy(true, '转换中（LibreOffice）…');
+                setImportButtonBusy(true, '结构化导入…');
                 const dataUrl = await readFileAsDataURL(file);
-                const opts = getOfficeImportOptions();
                 const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
                     filename: file.name,
                     data: dataUrl,
-                    export_engine: opts.export_engine,
+                    prefer_libreoffice_html: true,
+                    fallback_to_svg_stack: true,
                     bundle_mode: 'vertical_stack',
-                    fallback_to_svg_stack: opts.fallback_to_svg_stack,
                 });
                 const stem =
                     conv.suggested_template_name ||
@@ -274,17 +264,24 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 templateData = {
                     template_name: stem,
                     description:
-                        `从文件 ${file.name} 导入（${conv.export_engine_used}）。` +
-                        '此类为「视觉母版」：保留版式外观；svg_native 可替换区来自导入后自动注入的占位符（若有 PPTX 占位符）或后续 AI/手改。',
+                        `从文件 ${file.name} 结构化导入（${conv.export_engine_used}）。` +
+                        '含 pptx_readable / layout_package 契约；生成时可对齐占位符；HTML/SVG 供预览与导出。',
                     html_template: conv.html_template,
-                    tags: ['导入', '视觉母版'],
+                    tags: ['导入', '结构化母版'],
                     is_default: false,
                 };
                 if (conv.svg_template) {
                     templateData.svg_template = conv.svg_template;
                 }
+                const importSummary = {};
                 if (conv.import_summary && typeof conv.import_summary === 'object') {
-                    templateData.import_summary = conv.import_summary;
+                    Object.assign(importSummary, conv.import_summary);
+                }
+                if (conv.template_contract && typeof conv.template_contract === 'object') {
+                    importSummary.template_contract = conv.template_contract;
+                }
+                if (Object.keys(importSummary).length) {
+                    templateData.import_summary = importSummary;
                 }
                 if (Array.isArray(conv.warnings) && conv.warnings.length) {
                     importWarnings = conv.warnings.slice();

@@ -7,6 +7,8 @@ import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..prompts import prompts_manager
+from wisedeck.services.slide.slide_html_placeholder_enforce import enforce_slide_placeholder_slots
+from wisedeck.services.slide.slide_html_placeholder_policy import required_markers_for_slide
 
 
 logger = logging.getLogger(__name__)
@@ -97,6 +99,48 @@ class CreativeDesignService:
 
         return "\n".join(lines) if lines else "(未提供完整大纲摘要)"
 
+    @staticmethod
+    def _format_template_contract_hint(import_summary: Optional[Dict[str, Any]]) -> str:
+        """Structured PPTX import: steer HTML toward WiseDeck placeholder markers."""
+        if not isinstance(import_summary, dict):
+            return ""
+        tc = import_summary.get("template_contract")
+        has_contract = isinstance(tc, dict) and bool(tc)
+        if not import_summary.get("structured_contract") and not has_contract:
+            return ""
+
+        lines: List[str] = []
+        summary = tc.get("pptx_readable_summary") if isinstance(tc, dict) else None
+        if isinstance(summary, dict) and summary:
+            markers = summary.get("placeholder_markers_union") or []
+            if markers:
+                lines.append(
+                    "【导入模板占位符（请在 HTML 中为下列语义保留清晰可替换区域，推荐使用双花括号标记）】"
+                )
+                lines.append(", ".join(str(x) for x in markers[:48]))
+            counts = summary.get("element_type_counts") or {}
+            if isinstance(counts, dict) and counts:
+                pairs = list(counts.items())[:16]
+                lines.append("【元素类型计数】" + ", ".join(f"{k}:{v}" for k, v in pairs))
+            fonts = summary.get("used_fonts") or []
+            if fonts:
+                lines.append("【字体】" + ", ".join(str(x) for x in fonts[:12]))
+            colors = summary.get("theme_colors") or []
+            if colors:
+                lines.append("【主题色】" + ", ".join(str(x) for x in colors[:10]))
+
+        flat_markers = import_summary.get("placeholder_markers") or []
+        if flat_markers and not lines:
+            lines.append(
+                "【占位标记】" + ", ".join(str(x) for x in flat_markers[:32]),
+            )
+
+        lines.append(
+            "占位语义对齐：PAGE_TITLE（标题）、SUBTITLE（副标题）、CONTENT_AREA（正文）、"
+            "CHART_AREA（图表区）、TABLE_AREA（表格区）；示例：`{{PAGE_TITLE}}`、`{{CONTENT_AREA}}`。"
+        )
+        return "\n".join(lines)
+
     async def _generate_slide_with_template(
         self,
         slide_data: Dict[str, Any],
@@ -122,6 +166,7 @@ class CreativeDesignService:
                 confirmed_requirements,
                 all_slides=all_slides,
                 project_id=project_id,
+                template_record=template,
             )
 
             system_prompt = self._load_prompts_md_system_prompt()
@@ -133,6 +178,16 @@ class CreativeDesignService:
                 total_pages,
                 max_retries=5,
             )
+
+            req_mk = required_markers_for_slide(template, slide_data, page_number)
+            if html_content and req_mk:
+                html_content, injected_mk = enforce_slide_placeholder_slots(
+                    html_content,
+                    req_mk,
+                    slide_data=slide_data,
+                )
+                if injected_mk:
+                    logger.info("第%s页占位符槽位已补齐: %s", page_number, injected_mk)
 
             if html_content:
                 logger.info("成功使用模板 %s 风格生成第%s页", template_name, page_number)
@@ -156,12 +211,17 @@ class CreativeDesignService:
         confirmed_requirements: Dict[str, Any],
         all_slides: List[Dict[str, Any]] = None,
         project_id: str = None,
+        template_record: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Build slide-generation prompt context with consistent style guidance."""
         del template_name
 
         if not project_id:
             project_id = confirmed_requirements.get("project_id")
+
+        contract_hint = ""
+        if isinstance(template_record, dict):
+            contract_hint = self._format_template_contract_hint(template_record.get("import_summary"))
 
         await self._ensure_slide_images_context(
             slide_data,
@@ -202,7 +262,7 @@ class CreativeDesignService:
 
         context_info = self._build_slide_context(slide_data, page_number, total_pages)
 
-        return prompts_manager.get_creative_template_context_prompt(
+        prompt_body = prompts_manager.get_creative_template_context_prompt(
             slide_data=slide_data,
             template_html=template_html,
             slide_title=slide_title,
@@ -218,6 +278,9 @@ class CreativeDesignService:
             global_constitution=global_constitution,
             current_page_brief=current_page_brief,
         )
+        if contract_hint:
+            return contract_hint + "\n\n---\n\n" + prompt_body
+        return prompt_body
 
     async def _extract_style_genes(self, template_html: str) -> str:
         """Extract core design genes from a template with AI fallback."""

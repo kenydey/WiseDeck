@@ -345,15 +345,19 @@ class TemplateOfficeConvertRequest(BaseModel):
     )
     export_engine: Literal["svg_stack", "libreoffice_html"] = Field(
         "svg_stack",
-        description="svg_stack: PDF→SVG merge; libreoffice_html: Impress HTML export + inline",
+        description="Legacy hint; server tries LibreOffice HTML first when prefer_libreoffice_html is true.",
+    )
+    prefer_libreoffice_html: bool = Field(
+        True,
+        description="Try LibreOffice HTML export first; combine structured template_contract from same pptx when successful.",
     )
     bundle_mode: Literal["vertical_stack", "first_slide_only"] = Field(
         "vertical_stack",
         description="Applies only when export_engine_used is svg_stack",
     )
     fallback_to_svg_stack: bool = Field(
-        False,
-        description="If libreoffice_html fails, convert via svg_stack instead",
+        True,
+        description="If LibreOffice HTML fails, convert via svg_stack instead",
     )
 
 
@@ -371,6 +375,10 @@ class TemplateOfficeConvertResponse(BaseModel):
     import_summary: Optional[Dict[str, Any]] = Field(
         None,
         description="Metadata for svg_native (placeholders, hash); pass through to create_template.import_summary",
+    )
+    template_contract: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Structured import: pptx_readable, layout_package, summaries (persist under import_summary.template_contract)",
     )
 
 

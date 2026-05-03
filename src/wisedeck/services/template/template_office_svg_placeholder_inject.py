@@ -7,19 +7,11 @@ Only runs when pptx_layout hints exist; best-effort coordinate mapping (normaliz
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Set
 
+from wisedeck.services.template.pptx_readable_placeholders import ooxml_placeholder_type_to_marker
 
-# pptx placeholder type suffix -> inner marker name (no braces)
-_PH_TYPE_TO_MARKER: Dict[str, str] = {
-    "TITLE": "PAGE_TITLE",
-    "CENTER_TITLE": "PAGE_TITLE",
-    "VERTICAL_TITLE": "PAGE_TITLE",
-    "SUBTITLE": "SUBTITLE",
-    "BODY": "CONTENT_AREA",
-    "OBJECT": "CONTENT_AREA",
-}
+_MAX_DISTINCT_MARKERS = 12
 
 
 def _svg_pixel_size(svg_xml: str) -> tuple[float, float]:
@@ -51,8 +43,9 @@ def inject_pptx_placeholders_into_slide_svg(
     slide_layout: Optional[Dict[str, Any]],
 ) -> str:
     """
-    Append <text> nodes with {{MARKER}} for the first TITLE / SUBTITLE / BODY placeholders.
-    Skips if markers already appear in XML.
+    Append <text> nodes with {{MARKER}} for placeholder shapes (python-pptx hints).
+    Uses the same OOXML type → marker mapping as pptx_readable_placeholders.
+    Skips shapes without placeholder metadata; skips duplicate markers already in SVG.
     """
     if not isinstance(svg_xml, str) or not svg_xml.strip():
         return svg_xml
@@ -69,13 +62,10 @@ def inject_pptx_placeholders_into_slide_svg(
     for sh in shapes:
         if not isinstance(sh, dict):
             continue
-        if sh.get("shape_kind") == "chart":
-            continue
         ph = sh.get("placeholder_type")
         if not ph or not sh.get("is_placeholder"):
             continue
-        token_ph = str(ph).split(".")[-1].split("(")[0].strip().upper()
-        marker = _PH_TYPE_TO_MARKER.get(token_ph)
+        marker = ooxml_placeholder_type_to_marker(str(ph))
         if not marker or marker in placed:
             continue
         token = "{{" + marker + "}}"
@@ -97,7 +87,7 @@ def inject_pptx_placeholders_into_slide_svg(
             f'fill="#1a1a1a" text-anchor="middle" dominant-baseline="middle">{token}</text>'
         )
         placed.add(marker)
-        if len(placed) >= 3:
+        if len(placed) >= _MAX_DISTINCT_MARKERS:
             break
 
     if not fragments:

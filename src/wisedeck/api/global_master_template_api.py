@@ -5,6 +5,8 @@ Global Master Template API endpoints
 import asyncio
 import copy
 import logging
+import os
+import uuid
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query, Request, Body
@@ -27,6 +29,7 @@ from ..services.template.libreoffice_html_exporter import export_presentation_ht
 from ..services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
 from ..services.template.slide_svg_bundler import BundleMode, bundle_workspace_svgs
 from ..services.template.svg_template_import_meta import build_import_summary
+from ..services.template.template_contract_build import build_template_contract_from_manifest
 from ..services.template.template_import_service import (
     TemplateImportService,
     _resolve_soffice,
@@ -37,6 +40,11 @@ from ..core.config import app_config
 from ..database.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
+
+_LIBREOFFICE_HTML_IMPORT_DISABLED = os.getenv(
+    "WISEDECK_DISABLE_LIBREOFFICE_HTML_IMPORT", ""
+).strip().lower() in ("1", "true", "yes")
+
 
 # Create router
 router = APIRouter(prefix="/api/global-master-templates", tags=["Global Master Templates"])
@@ -117,7 +125,13 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
     )
     warnings_acc: List[str] = []
 
-    if body.export_engine == "libreoffice_html":
+    try_lo = bool(body.prefer_libreoffice_html)
+    if _LIBREOFFICE_HTML_IMPORT_DISABLED:
+        try_lo = False
+        warnings_acc.append(
+            "已跳过 LibreOffice HTML：设置了 WISEDECK_DISABLE_LIBREOFFICE_HTML_IMPORT，直接使用 svg_stack"
+        )
+    if try_lo:
         try:
             pptx_path, root, safe_name = materialize_office_upload_to_pptx(
                 filename=body.filename,
@@ -131,21 +145,38 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
             )
             stem = Path(safe_name).stem or suggested
             hints = _layout_hints_from_pptx_path(pptx_path)
+            lw_wid = str(uuid.uuid4())
+            importer = _template_import_service()
+            lw_manifest = importer.build_lightweight_structured_manifest(
+                pptx_path,
+                workspace_id=lw_wid,
+                slide_count=slide_count,
+                source_filename=stem,
+            )
+            template_contract = build_template_contract_from_manifest(
+                lw_manifest,
+                slide_count=slide_count,
+                source_filename=suggested,
+            )
+            imp_lo = build_import_summary(
+                svg_template=None,
+                slide_count=slide_count,
+                bundle_mode=None,
+                source_filename=stem,
+                pptx_layout=hints,
+                template_provenance="office_libreoffice_html",
+            )
+            imp_lo["structured_contract"] = True
+            imp_lo["html_engine"] = "libreoffice_html"
             return TemplateOfficeConvertResponse(
                 html_template=html_t,
                 svg_template=None,
                 suggested_template_name=stem,
                 slide_count=slide_count,
                 export_engine_used="libreoffice_html",
-                warnings=warnings,
-                import_summary=build_import_summary(
-                    svg_template=None,
-                    slide_count=slide_count,
-                    bundle_mode=None,
-                    source_filename=stem,
-                    pptx_layout=hints,
-                    template_provenance="office_libreoffice_html",
-                ),
+                warnings=list(warnings or []) + warnings_acc,
+                import_summary=imp_lo,
+                template_contract=template_contract,
             )
         except Exception as e:
             if not body.fallback_to_svg_stack:
@@ -166,6 +197,21 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
     slide_assets = ws.manifest.get("slide_assets") or {}
     slide_count = int(slide_assets.get("page_count") or 0)
 
+    template_contract = build_template_contract_from_manifest(
+        ws.manifest if isinstance(ws.manifest, dict) else {},
+        slide_count=slide_count,
+        source_filename=suggested,
+    )
+    imp = build_import_summary(
+        svg_template=svg_t,
+        slide_count=slide_count,
+        bundle_mode=body.bundle_mode,
+        source_filename=suggested,
+        pptx_layout=layout_hints if isinstance(layout_hints, dict) else None,
+        template_provenance="office_svg_stack_injected",
+    )
+    imp["structured_contract"] = True
+
     return TemplateOfficeConvertResponse(
         html_template=html_t,
         svg_template=svg_t,
@@ -173,14 +219,8 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
         slide_count=slide_count,
         export_engine_used="svg_stack",
         warnings=warnings_acc,
-        import_summary=build_import_summary(
-            svg_template=svg_t,
-            slide_count=slide_count,
-            bundle_mode=body.bundle_mode,
-            source_filename=suggested,
-            pptx_layout=layout_hints if isinstance(layout_hints, dict) else None,
-            template_provenance="office_svg_stack_injected",
-        ),
+        import_summary=imp,
+        template_contract=template_contract,
     )
 
 

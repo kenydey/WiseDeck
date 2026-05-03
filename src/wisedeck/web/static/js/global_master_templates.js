@@ -634,15 +634,6 @@ function readFileAsDataURL(file) {
     });
 }
 
-function getOfficeImportOptionsLegacy() {
-    const engineEl = document.getElementById('importExportEngineSelect');
-    const fallbackEl = document.getElementById('importFallbackSvgStack');
-    return {
-        export_engine: engineEl && engineEl.value === 'libreoffice_html' ? 'libreoffice_html' : 'svg_stack',
-        fallback_to_svg_stack: !!(fallbackEl && fallbackEl.checked),
-    };
-}
-
 function detailMessage(detail) {
     if (!detail) return '';
     if (typeof detail === 'string') return detail;
@@ -671,7 +662,6 @@ async function handleTemplateImport(event) {
                 throw new Error('演示文稿过大，请控制在 50MB 以内');
             }
             const dataUrl = await readFileAsDataURL(file);
-            const opts = getOfficeImportOptionsLegacy();
             const convRes = await fetch('/api/global-master-templates/import/convert-office-template', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -679,9 +669,9 @@ async function handleTemplateImport(event) {
                 body: JSON.stringify({
                     filename: file.name,
                     data: dataUrl,
-                    export_engine: opts.export_engine,
+                    prefer_libreoffice_html: true,
+                    fallback_to_svg_stack: true,
                     bundle_mode: 'vertical_stack',
-                    fallback_to_svg_stack: opts.fallback_to_svg_stack,
                 }),
             });
             const convPayload = await convRes.json().catch(() => ({}));
@@ -693,13 +683,25 @@ async function handleTemplateImport(event) {
                 file.name.replace(/\.(pptx|ppt)$/i, '');
             templateData = {
                 template_name: stem,
-                description: `从文件 ${file.name} 导入（${convPayload.export_engine_used}）`,
+                description:
+                    `从文件 ${file.name} 结构化导入（${convPayload.export_engine_used}）。` +
+                    '含 pptx_readable / layout_package 契约。',
                 html_template: convPayload.html_template,
-                tags: ['导入'],
+                tags: ['导入', '结构化母版'],
                 is_default: false,
             };
             if (convPayload.svg_template) {
                 templateData.svg_template = convPayload.svg_template;
+            }
+            const importSummaryLegacy = {};
+            if (convPayload.import_summary && typeof convPayload.import_summary === 'object') {
+                Object.assign(importSummaryLegacy, convPayload.import_summary);
+            }
+            if (convPayload.template_contract && typeof convPayload.template_contract === 'object') {
+                importSummaryLegacy.template_contract = convPayload.template_contract;
+            }
+            if (Object.keys(importSummaryLegacy).length) {
+                templateData.import_summary = importSummaryLegacy;
             }
             if (convPayload.warnings && convPayload.warnings.length) {
                 console.warn('模板导入警告', convPayload.warnings);
