@@ -1,5 +1,9 @@
 """
-Merge PyMuPDF-exported per-slide SVG files into one composite SVG (vertical_stack / first_slide_only).
+Merge PyMuPDF-exported per-slide SVG files into one composite SVG (vertical_stack / first_slide_only / per_slide).
+
+For template import, callers should prefer ``per_slide``: ``bundle_workspace_svgs`` returns the **first slide only**
+as ``svg_template`` / ``html_template`` while ``slide_xmls`` lists every page. ``vertical_stack`` additionally yields
+``merged_svg_template`` (full vertical composite) as the 5th return value for optional storage in import_summary.
 """
 
 from __future__ import annotations
@@ -8,11 +12,11 @@ import os
 import re
 from html import escape
 from pathlib import Path
-from typing import List, Literal, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from bs4 import BeautifulSoup
 
-BundleMode = Literal["vertical_stack", "first_slide_only"]
+BundleMode = Literal["vertical_stack", "first_slide_only", "per_slide"]
 
 _SOFT_WARN_SLIDE_COUNT = int(os.getenv("WISEDECK_TEMPLATE_IMPORT_SLIDE_WARN", "40"))
 
@@ -64,6 +68,7 @@ def read_workspace_slide_svgs(svg_dir: Path, bundle_mode: BundleMode) -> List[st
         raise ValueError("工作区中没有 slide_*.svg 文件")
     if bundle_mode == "first_slide_only":
         paths = paths[:1]
+    # per_slide and vertical_stack: all slides
     return [p.read_text(encoding="utf-8") for p in paths]
 
 
@@ -72,14 +77,20 @@ def bundle_slide_svgs(
     bundle_mode: BundleMode = "vertical_stack",
 ) -> Tuple[str, str, List[str]]:
     """
-    Returns (svg_template, html_template, slide_xmls) with scrollable HTML wrapper.
+    Returns (svg_template, html_template, slide_xmls) with scrollable HTML wrapper for vertical_stack.
     slide_xmls are raw file contents per slide included in the bundle (same order as slide_N.svg).
+
+    For ``first_slide_only``, only the first path is merged into one composite (may still be a wrapper
+    around a single <svg>). Prefer :func:`bundle_workspace_svgs` for import, which normalizes to one
+    raw slide + ``wrap_single_slide_html``.
     """
     if not svg_paths:
         raise ValueError("没有找到幻灯片 SVG 文件")
 
     if bundle_mode == "first_slide_only":
         svg_paths = svg_paths[:1]
+    elif bundle_mode == "per_slide":
+        raise ValueError("bundle_slide_svgs does not support per_slide; use bundle_workspace_svgs")
 
     max_w = 0.0
     heights: List[float] = []
@@ -162,10 +173,20 @@ def wrap_single_slide_html(svg_slide_xml: str, template_name: str = "Slide") -> 
 </html>"""
 
 
-def bundle_workspace_svgs(svg_dir: Path, bundle_mode: BundleMode) -> Tuple[str, str, List[str], List[str]]:
+def bundle_workspace_svgs(
+    svg_dir: Path,
+    bundle_mode: BundleMode,
+) -> Tuple[str, str, List[str], List[str], Optional[str]]:
     """
     Reads slide_*.svg from workspace svg_dir.
-    Returns (svg_template, html_template, warnings, slide_xmls).
+
+    Returns ``(svg_template, html_template, warnings, slide_xmls, merged_svg_template)``.
+
+    - ``svg_template`` / ``html_template`` are always **the first slide only** (raw slide SVG + single-page HTML).
+    - ``slide_xmls`` lists every slide (same order as ``slide_N.svg``), except ``first_slide_only`` which keeps a
+      single entry for backward compatibility with callers that only persist one page.
+    - ``merged_svg_template`` is set only for ``vertical_stack``: full vertical composite for optional
+      ``import_summary.merged_svg_template``; otherwise ``None``.
     """
     warnings: List[str] = []
     paths = _sorted_slide_svg_paths(svg_dir)
@@ -177,8 +198,44 @@ def bundle_workspace_svgs(svg_dir: Path, bundle_mode: BundleMode) -> Tuple[str, 
             f"幻灯片数量较多（{len(paths)}），合并后模板体积较大，预览或保存可能变慢"
         )
 
-    svg_t, html_t, slide_xmls = bundle_slide_svgs(paths, bundle_mode=bundle_mode)
-    return svg_t, html_t, warnings, slide_xmls
+    if bundle_mode == "per_slide":
+        slide_xmls = []
+        for p in paths:
+            text = p.read_text(encoding="utf-8")
+            soup = BeautifulSoup(text, "xml")
+            if soup.find("svg") is None:
+                raise ValueError(f"无效的 SVG 文件（缺少 <svg> 根）: {p.name}")
+            slide_xmls.append(text)
+        first = slide_xmls[0]
+        return (
+            first,
+            wrap_single_slide_html(first, "Imported Template"),
+            warnings,
+            slide_xmls,
+            None,
+        )
+
+    if bundle_mode == "first_slide_only":
+        _merged, _merged_html, slide_xmls = bundle_slide_svgs(paths, "first_slide_only")
+        first = slide_xmls[0]
+        return (
+            first,
+            wrap_single_slide_html(first, "Imported Template"),
+            warnings,
+            slide_xmls,
+            None,
+        )
+
+    # vertical_stack
+    merged_svg, _merged_html, slide_xmls = bundle_slide_svgs(paths, "vertical_stack")
+    first = slide_xmls[0]
+    return (
+        first,
+        wrap_single_slide_html(first, "Imported Template"),
+        warnings,
+        slide_xmls,
+        merged_svg,
+    )
 
 
 __all__ = [

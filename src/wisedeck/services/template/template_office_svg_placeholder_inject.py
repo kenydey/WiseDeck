@@ -134,15 +134,22 @@ def _svg_has_required_markers(svg_xml: str) -> bool:
 def inject_placeholders_into_workspace_svgs(
     svg_dir: Any,
     pptx_layout: Optional[Dict[str, Any]],
+    *,
+    pptx_readable: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Mutate slide_*.svg files on disk.
 
-    When pptx_layout contains valid slides[], uses per-slide layout hints first.
+    When pptx_readable is present, prefer pptxtojson placeholder geometry per slide;
+    otherwise use python-pptx pptx_layout hints.
     After each slide, if required markers (PAGE_TITLE, CONTENT_AREA) are still
     missing, falls back to injecting them at canonical positions.
     This guarantees downstream placeholder scanning always finds markers.
     """
     from pathlib import Path
+
+    from wisedeck.services.template.pptx_readable_layout_bridge import (
+        slide_layout_hints_from_pptx_readable_slide,
+    )
 
     root = Path(svg_dir)
     if not root.is_dir():
@@ -165,6 +172,15 @@ def inject_placeholders_into_workspace_svgs(
     else:
         by_index = {}
 
+    readable_by_index: Dict[int, Dict[str, Any]] = {}
+    if isinstance(pptx_readable, dict) and not pptx_readable.get("error"):
+        rslides = pptx_readable.get("slides") or []
+        if isinstance(rslides, list):
+            for i in range(1, len(rslides) + 1):
+                h = slide_layout_hints_from_pptx_readable_slide(pptx_readable, i)
+                if h and isinstance(h.get("shapes"), list) and h["shapes"]:
+                    readable_by_index[i] = h
+
     for p in sorted(root.glob("slide_*.svg")):
         m = re.match(r"slide_(\d+)\.svg$", p.name, re.I)
         if not m:
@@ -176,7 +192,7 @@ def inject_placeholders_into_workspace_svgs(
             continue
 
         result = raw
-        hint_layout = by_index.get(idx)
+        hint_layout = readable_by_index.get(idx) or by_index.get(idx)
         if hint_layout:
             result = inject_pptx_placeholders_into_slide_svg(result, slide_layout=hint_layout)
 

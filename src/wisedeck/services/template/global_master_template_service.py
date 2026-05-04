@@ -582,7 +582,9 @@ class GlobalMasterTemplateService:
 
         if svg_dir.is_dir() and list(svg_dir.glob("slide_*.svg")):
             try:
-                svg_t, _html_t, w_bundle, slide_xmls = bundle_workspace_svgs(svg_dir, "vertical_stack")
+                svg_t, _html_t, w_bundle, slide_xmls, merged_svg = bundle_workspace_svgs(
+                    svg_dir, "per_slide"
+                )
                 warnings.extend(w_bundle)
                 trimmed, trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
                 warnings.extend(trim_warn)
@@ -590,13 +592,15 @@ class GlobalMasterTemplateService:
                     svg_template=svg_t,
                     svg_slide_xmls=trimmed,
                     slide_count=slide_count,
-                    bundle_mode="vertical_stack",
+                    bundle_mode="per_slide",
                     source_filename=source_filename,
                     pptx_layout=layout_hints if layout_hints else None,
                     template_provenance="ai_pptx_extract_workspace",
                 )
                 imp = merge_import_summary_with_template_contract(imp, template_contract)
                 imp["structured_contract"] = True
+                if merged_svg:
+                    imp["merged_svg_template"] = merged_svg
                 svg_template_out = svg_t
                 import_summary = imp
             except Exception as e:

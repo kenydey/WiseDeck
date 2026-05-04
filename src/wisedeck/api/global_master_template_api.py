@@ -7,6 +7,7 @@ import copy
 import logging
 import os
 import uuid
+from html import escape as html_escape
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query, Request, Body
@@ -29,6 +30,7 @@ from ..services.template.libreoffice_html_exporter import (
     export_presentation_html_bundle,
     inject_hidden_placeholder_slots,
     split_lo_merged_html_slide_fragments,
+    wrap_lo_slide_fragment_html,
 )
 from ..services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
 from ..services.template.slide_svg_bundler import BundleMode, bundle_workspace_svgs
@@ -108,8 +110,13 @@ def _convert_pdf_template_sync(body: TemplatePdfConvertRequest) -> TemplateOffic
         data=body.data,
         png_zoom=float(body.png_zoom or 2.0),
     )
-    bm: BundleMode = "first_slide_only" if body.bundle_mode == "first_slide_only" else "vertical_stack"
-    svg_t, html_t, w_bundle, slide_xmls = bundle_workspace_svgs(ws.svg_dir, bm)
+    if body.bundle_mode == "first_slide_only":
+        bm: BundleMode = "first_slide_only"
+    elif body.bundle_mode == "per_slide":
+        bm = "per_slide"
+    else:
+        bm = "vertical_stack"
+    svg_t, html_t, w_bundle, slide_xmls, merged_svg = bundle_workspace_svgs(ws.svg_dir, bm)
     slide_assets = ws.manifest.get("slide_assets") or {}
     try:
         slide_count = int(slide_assets.get("page_count") or 0)
@@ -127,6 +134,8 @@ def _convert_pdf_template_sync(body: TemplatePdfConvertRequest) -> TemplateOffic
         pptx_layout=None,
         template_provenance="pdf_raster_svg_stack",
     )
+    if merged_svg:
+        imp_pdf["merged_svg_template"] = merged_svg
 
     return TemplateOfficeConvertResponse(
         html_template=html_t,
@@ -145,14 +154,18 @@ def _supplement_svg_from_pptx(
     soffice: str,
     pptx_layout_hints: dict,
     slide_count: int,
-) -> tuple[Optional[str], List[str]]:
+    *,
+    pptx_readable: Optional[dict] = None,
+) -> tuple[Optional[str], List[str], Optional[str]]:
     """
     Generate SVG template + per-slide SVG XMLs from a .pptx via LibreOffice PDF + PyMuPDF.
 
     Reuses the same pipeline as the svg_stack path:
       PPTX → PDF (LibreOffice) → per-page SVG (PyMuPDF) → placeholder injection → bundle.
 
-    Returns (svg_template, svg_slide_xmls) or (None, []) on failure.
+    Returns (svg_template, svg_slide_xmls, merged_svg_template) or (None, [], None) on failure.
+    ``merged_svg_template`` is the vertical composite when multiple slides exist; the first return
+    value is always the first slide only (same contract as :func:`bundle_workspace_svgs`).
     """
     pdf_dir = root / "svg_supplement_pdf"
     pdf_path = _run_soffice_convert(soffice, pptx_path, pdf_dir, "pdf")
@@ -161,21 +174,155 @@ def _supplement_svg_from_pptx(
     png_dir = root / "svg_supplement_png"
     _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=2.0)
 
-    inject_placeholders_into_workspace_svgs(svg_dir, pptx_layout_hints)
+    inject_placeholders_into_workspace_svgs(
+        svg_dir,
+        pptx_layout_hints,
+        pptx_readable=pptx_readable,
+    )
 
-    svg_t, _html_t, _w_bundle, slide_xmls = bundle_workspace_svgs(
+    svg_t, _html_t, _w_bundle, slide_xmls, merged_svg = bundle_workspace_svgs(
         svg_dir, "vertical_stack"
     )
-    return svg_t, slide_xmls
+    return svg_t, slide_xmls, merged_svg
+
+
+def _convert_office_structured_only_sync(
+    body: TemplateOfficeConvertRequest,
+    suggested: str,
+) -> TemplateOfficeConvertResponse:
+    """PPTX→pptxtojson only: no LibreOffice / PyMuPDF. Requires Node + runner bundle."""
+    from wisedeck.services.template.pptx_readable_runner import parse_pptx_to_readable_json
+
+    pptx_path, _root, safe_name = materialize_office_upload_to_pptx(
+        filename=body.filename,
+        data=body.data,
+    )
+    stem = Path(safe_name).stem or suggested
+    lw_wid = str(uuid.uuid4())
+    importer = _template_import_service()
+    raw = parse_pptx_to_readable_json(pptx_path, strict=True)
+    slides = raw.get("slides") if isinstance(raw, dict) else None
+    slide_count = len(slides) if isinstance(slides, list) else 0
+    lw_manifest = importer.build_lightweight_structured_manifest(
+        pptx_path,
+        workspace_id=lw_wid,
+        slide_count=slide_count,
+        source_filename=stem,
+        strict_pptx_readable=False,
+        pre_parsed_raw=raw if isinstance(raw, dict) else None,
+    )
+    template_contract = build_template_contract_from_manifest(
+        lw_manifest,
+        slide_count=slide_count,
+        source_filename=suggested,
+    )
+    hints = lw_manifest.get("pptx_layout") if isinstance(lw_manifest.get("pptx_layout"), dict) else {}
+    imp = build_import_summary(
+        svg_template=None,
+        slide_count=slide_count,
+        bundle_mode=None,
+        source_filename=stem,
+        pptx_layout=hints,
+        template_provenance="office_pptxtojson_only",
+    )
+    imp = merge_import_summary_with_template_contract(imp, template_contract)
+    imp["structured_contract"] = True
+    imp["html_engine"] = "pptxtojson_only"
+    safe_title = html_escape((stem or "template").replace("<", "").replace(">", ""))
+    html_stub = (
+        f"<!doctype html><html><head><meta charset=\"UTF-8\"><title>{safe_title}</title></head>"
+        f"<body><p>结构化导入模式（pptxtojson_only）：无 LibreOffice 视觉参考；"
+        f"请依赖 template_contract / 生成流程填充幻灯片。</p></body></html>"
+    )
+    return TemplateOfficeConvertResponse(
+        html_template=html_stub,
+        svg_template=None,
+        suggested_template_name=stem,
+        slide_count=slide_count,
+        export_engine_used="pptxtojson_only",
+        warnings=[],
+        import_summary=imp,
+        template_contract=template_contract,
+    )
+
+
+def _convert_office_svg_stack_sync(
+    body: TemplateOfficeConvertRequest,
+    suggested: str,
+    warnings_acc: List[str],
+) -> TemplateOfficeConvertResponse:
+    """PPTX → PDF → SVG stack (existing path)."""
+    importer = _template_import_service()
+    ws = importer.import_from_upload(
+        filename=body.filename,
+        data=body.data,
+        png_zoom=float(body.png_zoom or 2.0),
+    )
+    layout_hints = ws.manifest.get("pptx_layout")
+    if not isinstance(layout_hints, dict):
+        layout_hints = _layout_hints_from_pptx_path(ws.pptx_path)
+    svg_t, html_t, w_bundle, slide_xmls, merged_svg = bundle_workspace_svgs(
+        ws.svg_dir, body.bundle_mode
+    )
+    warnings_acc.extend(w_bundle)
+
+    trimmed_slides, trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
+    warnings_acc.extend(trim_warn)
+    slide_assets = ws.manifest.get("slide_assets") or {}
+    slide_count = int(slide_assets.get("page_count") or 0)
+
+    template_contract = build_template_contract_from_manifest(
+        ws.manifest if isinstance(ws.manifest, dict) else {},
+        slide_count=slide_count,
+        source_filename=suggested,
+    )
+    imp = build_import_summary(
+        svg_template=svg_t,
+        svg_slide_xmls=trimmed_slides,
+        slide_count=slide_count,
+        bundle_mode=body.bundle_mode,
+        source_filename=suggested,
+        pptx_layout=layout_hints if isinstance(layout_hints, dict) else None,
+        template_provenance="office_svg_stack_injected",
+    )
+    imp = merge_import_summary_with_template_contract(imp, template_contract)
+    imp["structured_contract"] = True
+    if merged_svg:
+        imp["merged_svg_template"] = merged_svg
+
+    return TemplateOfficeConvertResponse(
+        html_template=html_t,
+        svg_template=svg_t,
+        suggested_template_name=suggested,
+        slide_count=slide_count,
+        export_engine_used="svg_stack",
+        warnings=warnings_acc,
+        import_summary=imp,
+        template_contract=template_contract,
+    )
 
 
 def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> TemplateOfficeConvertResponse:
     suggested = (
         Path(body.filename or "upload").stem.replace("\x00", "") or "imported_template"
     )
-    warnings_acc: List[str] = []
+    mode = str(getattr(body, "import_mode", None) or "structured_with_html").strip()
+    if not body.prefer_libreoffice_html and mode == "structured_with_html":
+        mode = "structured_with_svg"
 
-    try_lo = bool(body.prefer_libreoffice_html)
+    if mode == "structured":
+        return _convert_office_structured_only_sync(body, suggested)
+
+    warnings_acc: List[str] = []
+    if mode == "structured_with_svg":
+        warnings_acc.append("import_mode=structured_with_svg：跳过 LibreOffice HTML，使用 PDF→SVG 管线")
+        try_lo = False
+    elif mode == "full":
+        try_lo = True
+        warnings_acc.append("import_mode=full：与 structured_with_html 相同（LibreOffice HTML 优先）")
+    else:
+        try_lo = bool(body.prefer_libreoffice_html)
+
     if _LIBREOFFICE_HTML_IMPORT_DISABLED:
         try_lo = False
         warnings_acc.append(
@@ -224,14 +371,27 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
             imp_lo["structured_contract"] = True
             imp_lo["html_engine"] = "libreoffice_html"
             lo_fragments = split_lo_merged_html_slide_fragments(html_t)
+            html_template_out = html_t
             if lo_fragments:
                 imp_lo["html_slide_fragments"] = lo_fragments
                 imp_lo["visual_persistence_version"] = max(int(imp_lo.get("visual_persistence_version") or 0), 1)
+                imp_lo["merged_libreoffice_html"] = html_t
+                html_template_out = wrap_lo_slide_fragment_html(
+                    lo_fragments[0],
+                    title=f"{stem} · 第1页",
+                )
 
             svg_t_lo: Optional[str] = None
             try:
-                svg_t_lo, svg_slide_xmls_lo = _supplement_svg_from_pptx(
-                    pptx_path, root, soffice, hints, slide_count,
+                svg_t_lo, svg_slide_xmls_lo, merged_sup_svg = _supplement_svg_from_pptx(
+                    pptx_path,
+                    root,
+                    soffice,
+                    hints,
+                    slide_count,
+                    pptx_readable=lw_manifest.get("pptx_readable")
+                    if isinstance(lw_manifest, dict)
+                    else None,
                 )
                 if svg_t_lo:
                     from ..services.template.svg_template_import_meta import (
@@ -264,12 +424,14 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
 
                     imp_lo["svg_supplement"] = True
                     warnings_acc.append("LibreOffice HTML 管线已补充 SVG 母版和占位符标记（svg_supplement）")
+                    if merged_sup_svg:
+                        imp_lo["merged_svg_template"] = merged_sup_svg
             except Exception as svg_err:
                 logger.warning("LO HTML svg supplement failed (non-fatal): %s", svg_err)
                 warnings_acc.append(f"SVG 补充失败（不影响 HTML 模板）：{svg_err}")
 
             return TemplateOfficeConvertResponse(
-                html_template=html_t,
+                html_template=html_template_out,
                 svg_template=svg_t_lo,
                 suggested_template_name=stem,
                 slide_count=slide_count,
@@ -283,50 +445,7 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                 raise
             warnings_acc.append(f"libreoffice_html 失败，已回退 svg_stack：{e}")
 
-    importer = _template_import_service()
-    ws = importer.import_from_upload(
-        filename=body.filename,
-        data=body.data,
-        png_zoom=float(body.png_zoom or 2.0),
-    )
-    layout_hints = ws.manifest.get("pptx_layout")
-    if not isinstance(layout_hints, dict):
-        layout_hints = _layout_hints_from_pptx_path(ws.pptx_path)
-    svg_t, html_t, w_bundle, slide_xmls = bundle_workspace_svgs(ws.svg_dir, body.bundle_mode)
-    warnings_acc.extend(w_bundle)
-
-    trimmed_slides, trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
-    warnings_acc.extend(trim_warn)
-    slide_assets = ws.manifest.get("slide_assets") or {}
-    slide_count = int(slide_assets.get("page_count") or 0)
-
-    template_contract = build_template_contract_from_manifest(
-        ws.manifest if isinstance(ws.manifest, dict) else {},
-        slide_count=slide_count,
-        source_filename=suggested,
-    )
-    imp = build_import_summary(
-        svg_template=svg_t,
-        svg_slide_xmls=trimmed_slides,
-        slide_count=slide_count,
-        bundle_mode=body.bundle_mode,
-        source_filename=suggested,
-        pptx_layout=layout_hints if isinstance(layout_hints, dict) else None,
-        template_provenance="office_svg_stack_injected",
-    )
-    imp = merge_import_summary_with_template_contract(imp, template_contract)
-    imp["structured_contract"] = True
-
-    return TemplateOfficeConvertResponse(
-        html_template=html_t,
-        svg_template=svg_t,
-        suggested_template_name=suggested,
-        slide_count=slide_count,
-        export_engine_used="svg_stack",
-        warnings=warnings_acc,
-        import_summary=imp,
-        template_contract=template_contract,
-    )
+    return _convert_office_svg_stack_sync(body, suggested, warnings_acc)
 
 
 @router.post("/import/convert-office-template", response_model=TemplateOfficeConvertResponse)

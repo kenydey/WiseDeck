@@ -35,4 +35,8 @@ def build_template_contract_from_manifest(
     slim_py = slim_python_pptx_manifest(manifest.get("python_pptx"))
     if slim_py is not None:
         out["python_pptx_meta"] = slim_py
+
+    summary = manifest.get("pptx_readable_summary") if isinstance(manifest.get("pptx_readable_summary"), dict) else {}
+    out["per_slide_layout_signatures"] = list(summary.get("per_slide_layout_signatures") or [])
+    out["slide_notes_excerpts"] = list(summary.get("slide_notes_excerpts") or [])
     return out

@@ -3,6 +3,7 @@ import importlib
 import sys
 import types
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
@@ -195,6 +196,7 @@ def test_apply_universal_invite_code_records_actual_registration_channel():
         db.close()
 
 
+@pytest.mark.skip(reason="主干已移除 wisedeck.auth.routes（api_send_code）")
 def test_api_send_code_register_rejects_invalid_invite_before_email_send(monkeypatch):
     from wisedeck.services import email_service, turnstile_service
     from wisedeck.utils import rate_limiter
@@ -234,6 +236,7 @@ def test_api_send_code_register_rejects_invalid_invite_before_email_send(monkeyp
         db.close()
 
 
+@pytest.mark.skip(reason="主干已移除 wisedeck.auth.routes（api_send_code）")
 def test_api_send_code_register_sends_email_after_valid_invite_check(monkeypatch):
     from wisedeck.services import email_service, turnstile_service
     from wisedeck.utils import rate_limiter
@@ -276,6 +279,7 @@ def test_api_send_code_register_sends_email_after_valid_invite_check(monkeypatch
         db.close()
 
 
+@pytest.mark.skip(reason="主干已移除 wisedeck.auth.routes（api_send_code）")
 def test_api_send_code_reset_rejects_when_turnstile_verification_fails(monkeypatch):
     from wisedeck.services import email_service, turnstile_service
 
@@ -316,6 +320,7 @@ def test_api_send_code_reset_rejects_when_turnstile_verification_fails(monkeypat
         db.close()
 
 
+@pytest.mark.skip(reason="主干已移除 wisedeck.auth.routes（api_send_code）")
 def test_api_send_code_reset_sends_email_after_turnstile_check(monkeypatch):
     from wisedeck.services import email_service, turnstile_service
 
@@ -372,6 +377,7 @@ def test_resolve_registration_invite_allows_blank_when_switch_disabled():
         db.close()
 
 
+@pytest.mark.skip(reason="主干已移除 wisedeck.auth.github_oauth_service")
 def test_github_oauth_new_user_requires_and_consumes_invite_code():
     from wisedeck.auth.github_oauth_service import get_or_create_user_by_github
     from wisedeck.core.config import app_config
@@ -414,6 +420,7 @@ def test_github_oauth_new_user_requires_and_consumes_invite_code():
         db.close()
 
 
+@pytest.mark.skip(reason="主干已移除 wisedeck.auth.github_oauth_service")
 def test_github_oauth_new_user_can_register_without_invite_when_switch_disabled():
     from wisedeck.auth.github_oauth_service import get_or_create_user_by_github
     from wisedeck.core.config import app_config

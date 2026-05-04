@@ -810,7 +810,7 @@ async function handleTemplateImport(event) {
                 data: dataUrl,
                 prefer_libreoffice_html: true,
                 fallback_to_svg_stack: true,
-                bundle_mode: 'vertical_stack',
+                bundle_mode: 'per_slide',
             });
             const stem =
                 conv.suggested_template_name ||
@@ -851,7 +851,7 @@ async function handleTemplateImport(event) {
                 filename: file.name,
                 data: dataUrl,
                 png_zoom: 2.0,
-                bundle_mode: 'vertical_stack',
+                bundle_mode: 'per_slide',
             });
             const stem =
                 conv.suggested_template_name ||

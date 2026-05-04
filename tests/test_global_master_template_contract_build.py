@@ -33,3 +33,21 @@ def test_slim_python_pptx_manifest_truncates_error():
 def test_slim_python_pptx_manifest_non_dict_returns_none():
     assert slim_python_pptx_manifest(None) is None
     assert slim_python_pptx_manifest([]) is None
+
+
+def test_build_template_contract_includes_per_slide_signatures():
+    manifest = {
+        "pptx_readable": {"slides": []},
+        "pptx_readable_summary": {
+            "per_slide_layout_signatures": [{"index": 1, "placeholder_markers": ["PAGE_TITLE"]}],
+            "slide_notes_excerpts": ["hello"],
+        },
+        "layout_package": {},
+        "pptx_layout": {"slides": []},
+        "python_pptx": {},
+    }
+    c = build_template_contract_from_manifest(
+        manifest, slide_count=1, source_filename="deck.pptx"
+    )
+    assert c["per_slide_layout_signatures"][0]["index"] == 1
+    assert c["slide_notes_excerpts"] == ["hello"]

@@ -221,9 +221,10 @@ select {
             <button id="importTemplateBtn" class="btn btn-secondary">
                 导入模板
             </button>
-            <label for="officeImportBundleMode" style="font-size:0.82rem;color:var(--text-secondary);white-space:nowrap;">Office合并</label>
-            <select id="officeImportBundleMode" class="glass-input" title="仅影响 ppt/pptx 走 svg_stack 时的 SVG 合并方式" style="padding:8px 12px;font-size:0.82rem;min-width:132px;">
-                <option value="vertical_stack" selected>多页纵向</option>
+            <label for="officeImportBundleMode" style="font-size:0.82rem;color:var(--text-secondary);white-space:nowrap;">Office打包</label>
+            <select id="officeImportBundleMode" class="glass-input" title="ppt/pptx 走 PDF→SVG 时：逐页保存到 import_summary；首页作为 html/svg 主字段；纵向合并图可选" style="padding:8px 12px;font-size:0.82rem;min-width:132px;">
+                <option value="per_slide" selected>逐页（推荐）</option>
+                <option value="vertical_stack">多页纵向（另存 merged_svg_template）</option>
                 <option value="first_slide_only">仅首页</option>
             </select>
         </div>

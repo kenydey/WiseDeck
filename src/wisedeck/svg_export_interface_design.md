@@ -7,6 +7,19 @@
 本文件定义建议的模块边界与纯函数/薄封装接口，使得后续可以“白盒移植”`ppt-master` 的：
 `svg_quality_checker -> finalize_svg -> svg_to_pptx` 以及必要的 placeholder 适配层。
 
+## Office 模板导入 `import_mode`（与 SVG 占位符对齐）
+
+`POST /api/global-master-templates/import/convert-office-template` 请求体字段 **`import_mode`**：
+
+| 值 | 行为 |
+| --- | --- |
+| `structured` | 仅运行 pptxtojson（Node），生成 `template_contract` / `pptx_readable_summary`（含按页签名）；`html_template` 为占位 stub；无需 LibreOffice |
+| `structured_with_html` | 默认：LibreOffice HTML + 结构化契约；可选 SVG 补充 |
+| `structured_with_svg` | 跳过 LibreOffice HTML，走 PDF→SVG 栈 |
+| `full` | 与 `structured_with_html` 相同 |
+
+SVG 占位符注入优先使用 **`pptx_readable` 几何**（`pptx_readable_layout_bridge`），python-pptx `pptx_layout` 仅作回落。
+
 ## 总体 Pipeline（建议）
 ```mermaid
 flowchart TD

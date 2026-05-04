@@ -5,7 +5,7 @@ HTML slide placeholders: allowed marker names (aligned with svg_native / pptx_re
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, FrozenSet, Optional, Set
+from typing import Any, Dict, FrozenSet, List, Optional, Set
 
 # Align with global_master_template_service SVG validation allowed_exact + structured-import markers + TOC patterns.
 _BASE_ALLOWED = frozenset(
@@ -82,6 +82,43 @@ def _markers_union_from_template(template_record: Optional[Dict[str, Any]]) -> S
     return out
 
 
+def _per_slide_layout_signatures_from_template(template_record: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not isinstance(template_record, dict):
+        return []
+    imp = template_record.get("import_summary")
+    if not isinstance(imp, dict):
+        return []
+    tc = imp.get("template_contract")
+    if not isinstance(tc, dict):
+        return []
+    sig = tc.get("per_slide_layout_signatures")
+    if isinstance(sig, list) and sig:
+        return [x for x in sig if isinstance(x, dict)]
+    summary = tc.get("pptx_readable_summary")
+    if isinstance(summary, dict):
+        alt = summary.get("per_slide_layout_signatures")
+        if isinstance(alt, list) and alt:
+            return [x for x in alt if isinstance(x, dict)]
+    return []
+
+
+def _markers_for_slide_page(template_record: Optional[Dict[str, Any]], page_number: int) -> Optional[Set[str]]:
+    """
+    Per-slide placeholder markers from pptx_readable-derived signatures.
+    Returns None when no per-slide list is available (caller uses deck union).
+    """
+    sigs = _per_slide_layout_signatures_from_template(template_record)
+    if not sigs or page_number < 1 or page_number > len(sigs):
+        return None
+    entry = sigs[page_number - 1]
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("placeholder_markers") or []
+    if not isinstance(raw, list):
+        return set()
+    return {str(x).strip().upper() for x in raw if isinstance(x, str) and x.strip()}
+
+
 def _slide_hints_chart_table(slide_data: Optional[Dict[str, Any]]) -> tuple[bool, bool]:
     if not isinstance(slide_data, dict):
         return False, False
@@ -103,10 +140,15 @@ def required_markers_for_slide(
     Empty set means skip enforcement (no structured contract / union).
     """
     union = _markers_union_from_template(template_record)
-    if not union:
+    page_m = _markers_for_slide_page(template_record, page_number)
+    if page_m is not None:
+        base = page_m if page_m else union
+    else:
+        base = union
+    if not base:
         return set()
 
-    union_ok = {m for m in union if is_allowed_placeholder_inner(m)}
+    union_ok = {m for m in base if is_allowed_placeholder_inner(m)}
     required: Set[str] = set()
 
     if "PAGE_TITLE" in union_ok:

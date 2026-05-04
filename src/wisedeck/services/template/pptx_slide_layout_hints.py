@@ -16,6 +16,10 @@ _MAX_JSON_BYTES = 120_000
 
 
 def _ph_type_name(shape: object) -> Optional[str]:
+    """Deprecated for placeholder semantics: prefer pptx_readable (pptxtojson) isPlaceholder/placeholderType.
+
+    Still used for best-effort bbox extraction when pptx_readable geometry is unavailable.
+    """
     try:
         if not bool(getattr(shape, "is_placeholder", False)):
             return None

@@ -343,17 +343,22 @@ class TemplateOfficeConvertRequest(BaseModel):
         ge=1.0,
         le=4.0,
     )
+    import_mode: Literal["structured", "structured_with_html", "structured_with_svg", "full"] = Field(
+        "structured_with_html",
+        description="structured: pptxtojson only; structured_with_html: + LibreOffice HTML; structured_with_svg: PDF→SVG stack; full: same as structured_with_html",
+    )
     export_engine: Literal["svg_stack", "libreoffice_html"] = Field(
         "svg_stack",
         description="Legacy hint; server tries LibreOffice HTML first when prefer_libreoffice_html is true.",
     )
     prefer_libreoffice_html: bool = Field(
         True,
-        description="Try LibreOffice HTML export first; combine structured template_contract from same pptx when successful.",
+        description="Try LibreOffice HTML export first; combine structured template_contract from same pptx when successful. Prefer import_mode=structured_with_svg to skip LibreOffice HTML.",
     )
-    bundle_mode: Literal["vertical_stack", "first_slide_only"] = Field(
-        "vertical_stack",
-        description="Applies only when export_engine_used is svg_stack",
+    bundle_mode: Literal["vertical_stack", "first_slide_only", "per_slide"] = Field(
+        "per_slide",
+        description="svg_stack / pdf: per_slide (default) keeps every page in import_summary.svg_slide_xmls; "
+        "html_template/svg_template are first slide only. vertical_stack also stores merged_svg_template.",
     )
     fallback_to_svg_stack: bool = Field(
         True,
@@ -363,14 +368,17 @@ class TemplateOfficeConvertRequest(BaseModel):
 
 class TemplateOfficeConvertResponse(BaseModel):
     success: bool = True
-    html_template: str = Field(..., description="Full HTML document for create_template")
+    html_template: str = Field(
+        ...,
+        description="Single-slide HTML document (first slide) for create_template; use import_summary for all pages",
+    )
     svg_template: Optional[str] = Field(
         None,
-        description="Composite SVG when export_engine_used is svg_stack; null for pure HTML path",
+        description="First slide raw SVG when export_engine_used is svg_stack/pdf_svg_stack; null for pure HTML path",
     )
     suggested_template_name: str = Field(..., description="Stem from filename for default naming")
     slide_count: int = Field(..., ge=0)
-    export_engine_used: Literal["svg_stack", "libreoffice_html", "pdf_svg_stack"]
+    export_engine_used: Literal["svg_stack", "libreoffice_html", "pdf_svg_stack", "pptxtojson_only"]
     warnings: List[str] = Field(default_factory=list)
     import_summary: Optional[Dict[str, Any]] = Field(
         None,
@@ -399,9 +407,9 @@ class TemplatePdfConvertRequest(BaseModel):
         ge=1.0,
         le=4.0,
     )
-    bundle_mode: Literal["vertical_stack", "first_slide_only"] = Field(
-        "vertical_stack",
-        description="How to merge slide SVGs",
+    bundle_mode: Literal["vertical_stack", "first_slide_only", "per_slide"] = Field(
+        "per_slide",
+        description="How to pack slide SVGs: per_slide (default) stores all pages in import_summary; vertical_stack adds merged_svg_template",
     )
 
 

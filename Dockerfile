@@ -31,6 +31,8 @@ RUN set -eux; \
     git \
     libpq-dev \
     libatomic1 \
+    nodejs \
+    npm \
     ; \
     rm -rf /var/lib/apt/lists/*
 
@@ -48,6 +50,8 @@ ENV VIRTUAL_ENV=/opt/venv \
 WORKDIR /app
 COPY pyproject.toml uv.lock* uv.toml README.md ./
 COPY src/ ./src/
+COPY scripts/pptxtojson-runner/package.json scripts/pptxtojson-runner/package-lock.json ./scripts/pptxtojson-runner/
+RUN cd scripts/pptxtojson-runner && npm ci --omit=dev
 
 # Install Python dependencies using uv
 # uv sync will create venv at UV_PROJECT_ENVIRONMENT and install all dependencies
@@ -99,6 +103,8 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends \
     libreoffice-impress \
     libreoffice-writer-nogui \
+    nodejs \
+    npm \
     ffmpeg \
     poppler-utils \
     libmagic1 \
@@ -164,6 +170,7 @@ WORKDIR /app
 # Copy application code (minimize layers)
 COPY run.py ./
 COPY src/ ./src/
+COPY --from=builder /app/scripts/pptxtojson-runner ./scripts/pptxtojson-runner
 COPY template_examples/ ./template_examples/
 COPY docker-healthcheck.sh docker-entrypoint.sh /usr/local/bin/
 COPY .env.example ./.env

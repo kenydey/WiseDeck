@@ -22,6 +22,10 @@ class LayoutPackageManifest(BaseModel):
         default_factory=list,
         description="图表占位字段路径，如 slides[].chart_config",
     )
+    per_slide_data_schemas: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="按页 data_schema / sample_data（pptx_readable 派生，可选）",
+    )
 
 
 def layout_package_manifest_json_schema() -> Dict[str, Any]:
@@ -127,4 +131,8 @@ def overlay_layout_package_with_pptx_readable(manifest: Dict[str, Any]) -> Dict[
     prov["pptx_readable_markers"] = block.get("markers_union")
     prov["pptx_readable_element_counts"] = block.get("element_type_counts")
     lp["provenance"] = prov
+
+    pss = block.get("per_slide_data_schemas")
+    if isinstance(pss, list) and pss:
+        lp["per_slide_data_schemas"] = pss
     return out

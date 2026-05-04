@@ -254,7 +254,7 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 setImportButtonBusy(true, '结构化导入…');
                 const dataUrl = await readFileAsDataURL(file);
                 const bundleMode =
-                    document.getElementById('officeImportBundleMode')?.value || 'vertical_stack';
+                    document.getElementById('officeImportBundleMode')?.value || 'per_slide';
                 const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
                     filename: file.name,
                     data: dataUrl,
@@ -304,7 +304,7 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                     filename: file.name,
                     data: dataUrl,
                     png_zoom: 2.0,
-                    bundle_mode: 'vertical_stack',
+                    bundle_mode: 'per_slide',
                 });
                 importConvertResult = conv;
                 const stem =

@@ -78,7 +78,7 @@ def test_bundle_workspace_svgs_with_injected_placeholders(tmp_path):
     injected = inject_pptx_placeholders_into_slide_svg(MINIMAL_SVG, slide_layout=layout)
     (svg_dir / "slide_01.svg").write_text(injected, encoding="utf-8")
 
-    svg_t, html_t, warnings, slide_xmls = bundle_workspace_svgs(svg_dir, "vertical_stack")
+    svg_t, html_t, warnings, slide_xmls, _merged = bundle_workspace_svgs(svg_dir, "vertical_stack")
 
     assert "{{PAGE_TITLE}}" in svg_t
     assert "{{CONTENT_AREA}}" in svg_t

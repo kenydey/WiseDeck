@@ -46,14 +46,14 @@ def test_pdf_import_bundle_and_summary_matches_export_pipeline(tmp_path: Path) -
     svc = TemplateImportService(cache_root=tmp_path / "cache")
     b64 = base64.b64encode(pdf_path.read_bytes()).decode("ascii")
     ws = svc.import_pdf_from_upload(filename="smoke.pdf", data=b64, png_zoom=1.0)
-    svg_t, html_t, _warnings, slide_xmls = bundle_workspace_svgs(ws.svg_dir, "vertical_stack")
+    svg_t, html_t, _warnings, slide_xmls, _merged = bundle_workspace_svgs(ws.svg_dir, "per_slide")
     trimmed, _trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
     slide_count = int((ws.manifest.get("slide_assets") or {}).get("page_count") or 0)
     summary = build_import_summary(
         svg_template=svg_t,
         svg_slide_xmls=trimmed,
         slide_count=slide_count,
-        bundle_mode="vertical_stack",
+        bundle_mode="per_slide",
         source_filename="smoke",
         pptx_layout=None,
         template_provenance="pdf_raster_svg_stack",

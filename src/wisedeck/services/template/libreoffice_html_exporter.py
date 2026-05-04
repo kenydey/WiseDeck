@@ -22,7 +22,10 @@ _JS_SCHEME = re.compile(r"^\s*javascript\s*:", re.I)
 
 
 def default_structured_markers_fallback() -> List[str]:
-    """Minimum structured placeholders required for imported office HTML templates."""
+    """Minimum structured placeholders when pptx_readable markers are unavailable (final fallback).
+
+    Prefer template_contract / pptx_readable_summary.placeholder_markers_union when present.
+    """
     return ["PAGE_TITLE", "CONTENT_AREA", "PAGE_NUM"]
 
 

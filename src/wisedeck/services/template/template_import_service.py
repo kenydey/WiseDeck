@@ -314,7 +314,11 @@ class TemplateImportService:
             logger.warning("extract_pptx_layout_hints failed: %s", e)
             pptx_layout_hints = {"schema_version": 1, "error": str(e)[:200], "slides": []}
 
-        inject_placeholders_into_workspace_svgs(svg_dir, pptx_layout_hints)
+        inject_placeholders_into_workspace_svgs(
+            svg_dir,
+            pptx_layout_hints,
+            pptx_readable=manifest.get("pptx_readable"),
+        )
 
         per_slide_markers = scan_svg_dir_placeholder_markers(svg_dir)
         first_svg = ""
@@ -404,6 +408,8 @@ class TemplateImportService:
         workspace_id: str,
         slide_count: int,
         source_filename: str,
+        strict_pptx_readable: bool = False,
+        pre_parsed_raw: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Structured fields for template_contract without PDF→SVG pipeline (paired with LibreOffice HTML export).
@@ -450,11 +456,17 @@ class TemplateImportService:
             )
             from wisedeck.services.template.pptx_readable_runner import parse_pptx_to_readable_json
 
-            raw_readable = parse_pptx_to_readable_json(pptx_path)
-            pptx_readable = wrap_and_cap_pptx_readable(raw_readable)
+            if isinstance(pre_parsed_raw, dict) and pre_parsed_raw:
+                raw_readable = pre_parsed_raw
+                pptx_readable = wrap_and_cap_pptx_readable(raw_readable)
+            else:
+                raw_readable = parse_pptx_to_readable_json(pptx_path, strict=strict_pptx_readable)
+                pptx_readable = wrap_and_cap_pptx_readable(raw_readable)
             manifest["pptx_readable"] = pptx_readable
             manifest["pptx_readable_summary"] = build_pptx_readable_summary_for_manifest(pptx_readable)
         except Exception as readable_err:
+            if strict_pptx_readable:
+                raise
             logger.warning("pptx_readable pipeline skipped (lightweight manifest): %s", readable_err)
             manifest["pptx_readable"] = {"schema_version": 1, "error": str(readable_err)[:300]}
             manifest["pptx_readable_summary"] = {}

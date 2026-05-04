@@ -58,8 +58,12 @@ def test_bundle_workspace_warns_many_slides(tmp_path: Path, monkeypatch):
     d = tmp_path
     (d / "slide_01.svg").write_text(SVG_A, encoding="utf-8")
     (d / "slide_02.svg").write_text(SVG_B, encoding="utf-8")
-    _svg, _html, warnings, slide_xmls = ssb.bundle_workspace_svgs(d, "vertical_stack")
+    main_svg, _html, warnings, slide_xmls, merged = ssb.bundle_workspace_svgs(d, "vertical_stack")
     assert len(slide_xmls) == 2
+    assert "#ff0000" in main_svg
+    assert "#0000ff" not in main_svg
+    assert merged is not None
+    assert "#0000ff" in merged
     assert any("幻灯片数量较多" in w for w in warnings)
 
 
@@ -77,3 +81,10 @@ def test_read_workspace_slide_svgs_matches_bundle_slice(tmp_path: Path):
     first_only = read_workspace_slide_svgs(d, "first_slide_only")
     assert len(first_only) == 1
     assert "#ff0000" in first_only[0]
+
+
+def test_bundle_slide_svgs_rejects_per_slide_mode(tmp_path: Path):
+    p = tmp_path / "slide_01.svg"
+    p.write_text(SVG_A, encoding="utf-8")
+    with pytest.raises(ValueError, match="per_slide"):
+        bundle_slide_svgs([p], "per_slide")  # type: ignore[arg-type]

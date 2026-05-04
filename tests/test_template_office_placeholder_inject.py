@@ -184,3 +184,33 @@ def test_workspace_inject_fallback_when_shapes_have_no_placeholders(tmp_path):
     result = (svg_dir / "slide_01.svg").read_text(encoding="utf-8")
     assert "{{PAGE_TITLE}}" in result, "Fallback should inject PAGE_TITLE when hint shapes lack placeholders"
     assert "{{CONTENT_AREA}}" in result, "Fallback should inject CONTENT_AREA when hint shapes lack placeholders"
+
+
+def test_workspace_inject_prefers_pptx_readable_when_layout_empty(tmp_path):
+    """pptx_readable geometry is used when python-pptx layout has no per-slide hints."""
+    svg_dir = tmp_path / "svg"
+    svg_dir.mkdir()
+    (svg_dir / "slide_01.svg").write_text(_BARE_SVG, encoding="utf-8")
+
+    layout = {"schema_version": 1, "slides": []}
+    readable = {
+        "slides": [
+            {
+                "elements": [
+                    {
+                        "type": "text",
+                        "left": 48,
+                        "top": 54,
+                        "width": 864,
+                        "height": 108,
+                        "isPlaceholder": True,
+                        "placeholderType": "ctrTitle",
+                    },
+                ],
+            },
+        ],
+        "size": {"width": 960, "height": 540},
+    }
+    inject_placeholders_into_workspace_svgs(svg_dir, layout, pptx_readable=readable)
+    result = (svg_dir / "slide_01.svg").read_text(encoding="utf-8")
+    assert "{{PAGE_TITLE}}" in result

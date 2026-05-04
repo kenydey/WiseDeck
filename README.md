@@ -327,10 +327,17 @@ UNSPLASH_ACCESS_KEY=your_unsplash_key_here    # Unsplash 图库
 SILICONFLOW_API_KEY=your_siliconflow_key_here # AI图像生成
 POLLINATIONS_API_KEY=your_pollinations_api_key_here # Pollinations AI (gen.pollinations.ai)
 
-# Office 模板导入（模板管理中导入 .ppt/.pptx → SVG/HTML；需本机安装 LibreOffice）
-WISEDECK_SOFFICE_PATH=                          # 可选：soffice 可执行文件完整路径
+# Office 模板导入（.ppt/.pptx：LibreOffice PDF→SVG/HTML + pptxtojson 结构化契约；Docker 镜像已含 Node）
+WISEDECK_SOFFICE_PATH=                          # 可选：soffice 可执行文件完整路径（import_mode=structured 时可不装）
+WISEDECK_NODE_BIN=                              # 可选：node 可执行文件路径（pptxtojson 解析用）
+WISEDECK_DISABLE_PPTX_READABLE_JSON=            # 可选：设为 1 则跳过 pptxtojson（不推荐）
 WISEDECK_TEMPLATE_IMPORT_CACHE=                 # 可选：转换缓存目录（默认项目下 temp/templates_cache/template_import）
 WISEDECK_TEMPLATE_IMPORT_SLIDE_WARN=40          # 可选：幻灯片达到该数量时在转换接口响应中加入体积警告
+# POST /api/global-master-templates/import/convert-office-template 请求体 import_mode：
+#   structured（仅 pptxtojson，export_engine_used=pptxtojson_only）
+#   structured_with_html（默认，LibreOffice HTML 优先）
+#   structured_with_svg（跳过 HTML，走 PDF→SVG）
+#   full（与 structured_with_html 相同）
 
 # 自动化鉴权
 WISEDECK_API_KEY=replace-with-strong-random-key

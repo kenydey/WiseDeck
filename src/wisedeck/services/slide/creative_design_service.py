@@ -101,8 +101,13 @@ class CreativeDesignService:
 
         return "\n".join(lines) if lines else "(未提供完整大纲摘要)"
 
-    @staticmethod
-    def _format_template_contract_hint(import_summary: Optional[Dict[str, Any]]) -> str:
+    def _format_template_contract_hint(
+        self,
+        import_summary: Optional[Dict[str, Any]],
+        *,
+        page_number: int = 1,
+        total_pages: int = 1,
+    ) -> str:
         """Structured PPTX import: steer HTML toward WiseDeck placeholder markers."""
         if not isinstance(import_summary, dict):
             return ""
@@ -127,9 +132,44 @@ class CreativeDesignService:
             fonts = summary.get("used_fonts") or []
             if fonts:
                 lines.append("【字体】" + ", ".join(str(x) for x in fonts[:12]))
-            colors = summary.get("theme_colors") or []
+            colors = summary.get("theme_colors") or summary.get("theme_palette") or []
             if colors:
                 lines.append("【主题色】" + ", ".join(str(x) for x in colors[:10]))
+
+        sigs = tc.get("per_slide_layout_signatures") if isinstance(tc, dict) else None
+        if not isinstance(sigs, list) and isinstance(summary, dict):
+            sigs = summary.get("per_slide_layout_signatures")
+        if isinstance(sigs, list) and sigs and page_number >= 1:
+            idx = page_number - 1
+            if idx < len(sigs) and isinstance(sigs[idx], dict):
+                cur = sigs[idx]
+                ph = cur.get("placeholder_markers") or []
+                kinds = cur.get("element_kinds") or {}
+                note = str(cur.get("note_excerpt") or "").strip()
+                parts = [
+                    f"【当前页结构（来自源 deck 第 {page_number}/{max(total_pages, 1)} 页）】",
+                ]
+                if isinstance(ph, list) and ph:
+                    parts.append("占位符：" + ", ".join(str(x) for x in ph[:24]))
+                if isinstance(kinds, dict) and kinds:
+                    kstr = ", ".join(f"{k}:{v}" for k, v in list(kinds.items())[:12])
+                    parts.append("元素：" + kstr)
+                parts.append(
+                    "含图表："
+                    + ("是" if cur.get("has_chart") else "否")
+                    + "；含表格："
+                    + ("是" if cur.get("has_table") else "否")
+                    + "；SmartArt："
+                    + ("是" if cur.get("has_diagram") else "否")
+                    + "；公式："
+                    + ("是" if cur.get("has_math") else "否")
+                )
+                if note:
+                    parts.append("原页备注摘要：" + note[:120])
+                slide_block = "\n".join(parts)
+                if len(slide_block) > 520:
+                    slide_block = slide_block[:517] + "…"
+                lines.append(slide_block)
 
         flat_markers = import_summary.get("placeholder_markers") or []
         if flat_markers and not lines:
@@ -159,27 +199,74 @@ class CreativeDesignService:
             imp = template.get("import_summary") if isinstance(template, dict) else None
             pi = page_number - 1
             picked_per_slide_visual = False
+            visual_source = "html_template_column"
             if isinstance(imp, dict):
                 xs = imp.get("svg_slide_xmls")
                 if isinstance(xs, list):
                     slides_xml = [x for x in xs if isinstance(x, str) and x.strip()]
-                    if slides_xml and 0 <= pi < len(slides_xml):
+                    if slides_xml:
+                        idx = pi if 0 <= pi < len(slides_xml) else len(slides_xml) - 1
+                        if idx != pi:
+                            logger.warning(
+                                "第%s页超出逐页 SVG 数量（共%s页），使用第%s页作为风格参考",
+                                page_number,
+                                len(slides_xml),
+                                idx + 1,
+                            )
                         template_html = wrap_single_slide_html(
-                            slides_xml[pi],
+                            slides_xml[idx],
                             template_name=f"{template.get('template_name', 'Slide')} {page_number}",
                         )
                         picked_per_slide_visual = True
+                        visual_source = "svg_slide_xmls"
                 if not picked_per_slide_visual:
                     fr = imp.get("html_slide_fragments")
                     if isinstance(fr, list):
                         fragments = [x for x in fr if isinstance(x, str) and x.strip()]
-                        if fragments and 0 <= pi < len(fragments):
+                        if fragments:
+                            idx = pi if 0 <= pi < len(fragments) else len(fragments) - 1
+                            if idx != pi:
+                                logger.warning(
+                                    "第%s页超出 html_slide_fragments 数量（共%s段），使用第%s段",
+                                    page_number,
+                                    len(fragments),
+                                    idx + 1,
+                                )
                             template_html = wrap_lo_slide_fragment_html(
-                                fragments[pi],
+                                fragments[idx],
                                 title=f"{template.get('template_name', 'Slide')} {page_number}",
                             )
+                            picked_per_slide_visual = True
+                            visual_source = "html_slide_fragments"
+            if not picked_per_slide_visual and isinstance(imp, dict):
+                try:
+                    slide_count_meta = int(imp.get("slide_count") or 0)
+                except (TypeError, ValueError):
+                    slide_count_meta = 0
+                xs0 = imp.get("svg_slide_xmls")
+                fr0 = imp.get("html_slide_fragments")
+                has_per_slide_arrays = (
+                    (isinstance(xs0, list) and any(isinstance(x, str) and x.strip() for x in xs0))
+                    or (isinstance(fr0, list) and any(isinstance(x, str) and x.strip() for x in fr0))
+                )
+                if slide_count_meta > 1 and not has_per_slide_arrays:
+                    logger.warning(
+                        "第%s页：slide_count=%s 但缺少逐页视觉数组，避免将整本合并 html_template 当作单页参考，改用降级布局",
+                        page_number,
+                        slide_count_meta,
+                    )
+                    template_html = self._generate_fallback_slide_html(
+                        slide_data, page_number, total_pages
+                    )
+                    visual_source = "fallback_missing_per_slide_visual"
             template_name = template.get("template_name", "未知模板")
-            logger.info("使用模板 %s 作为风格参考生成第%s页", template_name, page_number)
+            logger.info(
+                "使用模板 %s 作为风格参考生成第%s页（per_slide_visual=%s, source=%s）",
+                template_name,
+                page_number,
+                picked_per_slide_visual,
+                visual_source,
+            )
 
             context = await self._build_creative_template_context(
                 slide_data,
@@ -245,7 +332,11 @@ class CreativeDesignService:
 
         contract_hint = ""
         if isinstance(template_record, dict):
-            contract_hint = self._format_template_contract_hint(template_record.get("import_summary"))
+            contract_hint = self._format_template_contract_hint(
+                template_record.get("import_summary"),
+                page_number=page_number,
+                total_pages=total_pages,
+            )
 
         await self._ensure_slide_images_context(
             slide_data,

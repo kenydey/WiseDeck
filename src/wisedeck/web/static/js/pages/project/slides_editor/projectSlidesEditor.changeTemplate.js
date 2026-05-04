@@ -822,10 +822,107 @@ function _tplBuildPreviewUrl(template) {
     return URL.createObjectURL(blob);
 }
 
+function _tplSlideSignatureForIndex(sigs, slideIndexZero) {
+    if (!Array.isArray(sigs) || !sigs.length) {
+        return null;
+    }
+    const oneBased = slideIndexZero + 1;
+    const hit = sigs.find((s) => Number(s?.index) === oneBased);
+    return hit || sigs[slideIndexZero] || null;
+}
+
+function _tplBuildSingleSlideSvgPreviewDoc(template, svgXml) {
+    const title = _tplEscapePreviewText(template?.template_name || '模板预览');
+    const safeSvg = typeof svgXml === 'string' ? svgXml : '';
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    html, body { margin:0; padding:8px; background:#e8eaef; }
+    .tpl-ms-wrap { display:inline-block; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
+  </style>
+</head>
+<body>
+  <div class="tpl-ms-wrap">${safeSvg}</div>
+</body>
+</html>`;
+}
+
+function _tplBuildMultiSlideSvgDeckPreviewHtml(template, slideSvgs) {
+    const title = _tplEscapePreviewText(template?.template_name || '模板预览');
+    const imp = template?.import_summary && typeof template.import_summary === 'object'
+        ? template.import_summary
+        : {};
+    const tc = imp.template_contract && typeof imp.template_contract === 'object'
+        ? imp.template_contract
+        : {};
+    const sigs = Array.isArray(tc.per_slide_layout_signatures) ? tc.per_slide_layout_signatures : [];
+    const maxShow = Math.min(slideSvgs.length, 16);
+    const slidesHtml = slideSvgs.slice(0, maxShow).map((svgXml, idx) => {
+        const sig = _tplSlideSignatureForIndex(sigs, idx);
+        const markers = Array.isArray(sig?.placeholder_markers) ? sig.placeholder_markers : [];
+        const chips = markers.slice(0, 10).map((m) => {
+            const t = _escHtml(String(m || ''));
+            return `<span class="tpl-slide-chip">{{${t}}}</span>`;
+        }).join('');
+        const chipsRow = chips
+            ? `<div class="tpl-slide-marker-chips">${chips}</div>`
+            : '<div class="tpl-slide-marker-chips tpl-slide-marker-chips--empty">无占位符摘要</div>';
+        return `
+<div class="tpl-ms-card">
+  <div class="tpl-ms-card-head">第 ${idx + 1} 页</div>
+  ${chipsRow}
+  <div class="tpl-ms-card-svg">${svgXml}</div>
+</div>`;
+    }).join('');
+    const more = slideSvgs.length > maxShow
+        ? `<div class="tpl-ms-more">其余 ${slideSvgs.length - maxShow} 页已省略预览</div>`
+        : '';
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    html, body { margin:0; padding:8px; background:#e8eaef; font-family:system-ui,sans-serif; }
+    .tpl-ms-row { display:flex; flex-direction:row; gap:12px; overflow-x:auto; align-items:flex-start; padding-bottom:8px; }
+    .tpl-ms-card { flex:0 0 auto; width:min(360px, 92vw); background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
+    .tpl-ms-card-head { font-size:12px; font-weight:600; padding:8px 10px; border-bottom:1px solid #e5e7eb; color:#374151; }
+    .tpl-slide-marker-chips { padding:6px 10px; font-size:10px; color:#4b5563; display:flex; flex-wrap:wrap; gap:4px; min-height:22px; }
+    .tpl-slide-marker-chips--empty { color:#9ca3af; font-style:italic; }
+    .tpl-slide-chip { background:#eef2ff; color:#3730a3; border-radius:4px; padding:2px 6px; }
+    .tpl-ms-card-svg { padding:8px; overflow:auto; max-height:70vh; }
+    .tpl-ms-card-svg svg { max-width:100%; height:auto; display:block; }
+    .tpl-ms-more { font-size:11px; color:#6b7280; padding:8px 4px; }
+  </style>
+</head>
+<body>
+  <div class="tpl-ms-row">${slidesHtml}</div>
+  ${more}
+</body>
+</html>`;
+}
+
 // 模板预览不直接使用原始 HTML，而是先替换占位符并补足预览容器，
 // 这样即使模板没有生成 preview_image，也能稳定展示版式效果。
 function _tplBuildPreviewHtml(template) {
+    const imp = template?.import_summary && typeof template.import_summary === 'object'
+        ? template.import_summary
+        : null;
+    const slideSvgs = Array.isArray(imp?.svg_slide_xmls)
+        ? imp.svg_slide_xmls.filter((x) => typeof x === 'string' && x.trim())
+        : [];
+    if (slideSvgs.length > 1) {
+        return _tplBuildMultiSlideSvgDeckPreviewHtml(template, slideSvgs);
+    }
     const rawHtml = typeof template?.html_template === 'string' ? template.html_template.trim() : '';
+    if (!rawHtml && slideSvgs.length === 1) {
+        return _tplBuildSingleSlideSvgPreviewDoc(template, slideSvgs[0]);
+    }
     if (!rawHtml) {
         return '';
     }

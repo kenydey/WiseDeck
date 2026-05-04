@@ -671,7 +671,7 @@ async function handleTemplateImport(event) {
                     data: dataUrl,
                     prefer_libreoffice_html: true,
                     fallback_to_svg_stack: true,
-                    bundle_mode: 'vertical_stack',
+                    bundle_mode: 'per_slide',
                 }),
             });
             const convPayload = await convRes.json().catch(() => ({}));

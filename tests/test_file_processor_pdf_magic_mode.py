@@ -42,7 +42,7 @@ async def test_file_processor_pdf_magic_mode_uses_mineru_client(monkeypatch, tmp
 
     monkeypatch.setattr(mineru_mod, "MineruAPIClient", FakeMineruAPIClient, raising=True)
 
-    from wisedeck.auth.request_context import current_user_id
+    from wisedeck.core.request_context import current_user_id
 
     token = current_user_id.set(1)
     try:

@@ -27,29 +27,35 @@ def parse_pptx_to_readable_json(
     pptx_path: Path,
     *,
     timeout_sec: float = 180.0,
+    strict: bool = False,
 ) -> Dict[str, Any]:
     """
     Parse .pptx via Node runner. Returns dict suitable for pptx_readable_contract.wrap_and_cap_pptx_readable.
-    On failure returns {"error": "..."} only (caller wraps).
+    On failure returns {"error": "..."} only (caller wraps), unless strict=True then raises RuntimeError.
     """
+    def _fail(msg: str) -> Dict[str, Any]:
+        if strict:
+            raise RuntimeError(f"pptx_readable required but failed: {msg}")
+        return {"error": msg}
+
     flag = (os.getenv("WISEDECK_DISABLE_PPTX_READABLE_JSON") or "").strip().lower()
     if flag in {"1", "true", "yes", "on"}:
-        return {"error": "disabled_by_env"}
+        return _fail("disabled_by_env")
 
     node = _node_binary()
     if not node:
-        return {"error": "node_not_found"}
+        return _fail("node_not_found")
 
     run_script = _repo_root() / "scripts" / "pptxtojson-runner" / "run.mjs"
     bundle = _repo_root() / "scripts" / "pptxtojson-runner" / "bundle" / "wisedeck-pptx-parse.mjs"
     if not run_script.is_file():
-        return {"error": "runner_script_missing"}
+        return _fail("runner_script_missing")
     if not bundle.is_file():
-        return {"error": "runner_bundle_missing_run_npm_build"}
+        return _fail("runner_bundle_missing_run_npm_build")
 
     pptx_path = Path(pptx_path).resolve()
     if not pptx_path.is_file():
-        return {"error": "pptx_path_missing"}
+        return _fail("pptx_path_missing")
 
     cwd = str(run_script.parent)
     cmd = [node, str(run_script), str(pptx_path)]
@@ -64,26 +70,26 @@ def parse_pptx_to_readable_json(
             errors="replace",
         )
     except subprocess.TimeoutExpired:
-        return {"error": "pptx_readable_timeout"}
+        return _fail("pptx_readable_timeout")
     except Exception as e:
         logger.warning("pptx_readable subprocess failed: %s", e)
-        return {"error": str(e)[:300]}
+        return _fail(str(e)[:300])
 
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "").strip()[:800]
         logger.warning("pptx_readable node exit=%s err=%s", proc.returncode, err)
-        return {"error": err or f"node_exit_{proc.returncode}"}
+        return _fail(err or f"node_exit_{proc.returncode}")
 
     raw = (proc.stdout or "").strip()
     if not raw:
-        return {"error": "empty_stdout"}
+        return _fail("empty_stdout")
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        return {"error": f"json_decode:{e}"[:300]}
+        return _fail(f"json_decode:{e}"[:300])
 
     if not isinstance(data, dict):
-        return {"error": "parsed_non_object"}
+        return _fail("parsed_non_object")
 
     return data
