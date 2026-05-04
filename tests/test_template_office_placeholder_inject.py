@@ -1,5 +1,9 @@
+import re
+from pathlib import Path
+
 from wisedeck.services.template.template_office_svg_placeholder_inject import (
     inject_pptx_placeholders_into_slide_svg,
+    inject_placeholders_into_workspace_svgs,
 )
 
 
@@ -64,3 +68,76 @@ def test_inject_skips_when_no_placeholders():
     }
     out = inject_pptx_placeholders_into_slide_svg(svg, slide_layout=layout)
     assert out.count("{{PAGE_TITLE}}") == 1
+
+
+_BARE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720"></svg>'
+
+
+def test_workspace_inject_fallback_when_layout_has_error(tmp_path):
+    """When pptx_layout contains an error, fallback placeholders are injected."""
+    svg_dir = tmp_path / "svg"
+    svg_dir.mkdir()
+    (svg_dir / "slide_01.svg").write_text(_BARE_SVG, encoding="utf-8")
+
+    layout_with_error = {"schema_version": 1, "error": "'list' object has no attribute 'rId'", "slides": []}
+    inject_placeholders_into_workspace_svgs(svg_dir, layout_with_error)
+
+    result = (svg_dir / "slide_01.svg").read_text(encoding="utf-8")
+    assert "{{PAGE_TITLE}}" in result
+    assert "{{CONTENT_AREA}}" in result
+
+
+def test_workspace_inject_fallback_when_layout_is_none(tmp_path):
+    """When pptx_layout is None, fallback placeholders are injected."""
+    svg_dir = tmp_path / "svg"
+    svg_dir.mkdir()
+    (svg_dir / "slide_01.svg").write_text(_BARE_SVG, encoding="utf-8")
+
+    inject_placeholders_into_workspace_svgs(svg_dir, None)
+
+    result = (svg_dir / "slide_01.svg").read_text(encoding="utf-8")
+    assert "{{PAGE_TITLE}}" in result
+    assert "{{CONTENT_AREA}}" in result
+
+
+def test_workspace_inject_fallback_when_slides_empty(tmp_path):
+    """When pptx_layout has no slides[], fallback placeholders are injected."""
+    svg_dir = tmp_path / "svg"
+    svg_dir.mkdir()
+    (svg_dir / "slide_01.svg").write_text(_BARE_SVG, encoding="utf-8")
+    (svg_dir / "slide_02.svg").write_text(_BARE_SVG, encoding="utf-8")
+
+    inject_placeholders_into_workspace_svgs(svg_dir, {"schema_version": 1, "slides": []})
+
+    for i in (1, 2):
+        result = (svg_dir / f"slide_{i:02d}.svg").read_text(encoding="utf-8")
+        assert "{{PAGE_TITLE}}" in result
+        assert "{{CONTENT_AREA}}" in result
+
+
+def test_workspace_inject_uses_hints_when_available(tmp_path):
+    """When pptx_layout has valid slides, uses per-slide hints (not fallback)."""
+    svg_dir = tmp_path / "svg"
+    svg_dir.mkdir()
+    (svg_dir / "slide_01.svg").write_text(_BARE_SVG, encoding="utf-8")
+
+    layout = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "index": 1,
+                "shapes": [
+                    {
+                        "bbox": [0.1, 0.05, 0.8, 0.15],
+                        "placeholder_type": "TITLE",
+                        "is_placeholder": True,
+                        "shape_kind": "text",
+                    },
+                ],
+            }
+        ],
+    }
+    inject_placeholders_into_workspace_svgs(svg_dir, layout)
+
+    result = (svg_dir / "slide_01.svg").read_text(encoding="utf-8")
+    assert "{{PAGE_TITLE}}" in result

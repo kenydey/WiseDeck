@@ -102,31 +102,63 @@ def inject_pptx_placeholders_into_slide_svg(
     return svg_xml[:idx] + insert + svg_xml[idx:]
 
 
+_FALLBACK_LAYOUT: Dict[str, Any] = {
+    "shapes": [
+        {
+            "bbox": [0.05, 0.04, 0.9, 0.12],
+            "placeholder_type": "TITLE",
+            "is_placeholder": True,
+            "shape_kind": "text",
+        },
+        {
+            "bbox": [0.05, 0.22, 0.9, 0.65],
+            "placeholder_type": "BODY",
+            "is_placeholder": True,
+            "shape_kind": "text",
+        },
+    ],
+}
+
+
 def inject_placeholders_into_workspace_svgs(
     svg_dir: Any,
     pptx_layout: Optional[Dict[str, Any]],
 ) -> None:
-    """Mutate slide_*.svg files on disk when pptx_layout contains slides[]."""
+    """Mutate slide_*.svg files on disk.
+
+    When pptx_layout contains valid slides[], uses per-slide layout hints.
+    Otherwise falls back to injecting default PAGE_TITLE + CONTENT_AREA at
+    canonical positions so that downstream placeholder scanning always finds markers.
+    """
     from pathlib import Path
 
-    if not isinstance(pptx_layout, dict) or pptx_layout.get("error"):
-        return
-    slides = pptx_layout.get("slides") or []
-    if not isinstance(slides, list) or not slides:
-        return
     root = Path(svg_dir)
     if not root.is_dir():
         return
-    by_index = {int(s.get("index", -1)): s for s in slides if isinstance(s, dict) and int(s.get("index", -1)) > 0}
+
+    has_hints = (
+        isinstance(pptx_layout, dict)
+        and not pptx_layout.get("error")
+        and isinstance(pptx_layout.get("slides"), list)
+        and len(pptx_layout["slides"]) > 0
+    )
+
+    if has_hints:
+        slides = pptx_layout["slides"]
+        by_index = {
+            int(s.get("index", -1)): s
+            for s in slides
+            if isinstance(s, dict) and int(s.get("index", -1)) > 0
+        }
+    else:
+        by_index = {}
 
     for p in sorted(root.glob("slide_*.svg")):
         m = re.match(r"slide_(\d+)\.svg$", p.name, re.I)
         if not m:
             continue
         idx = int(m.group(1))
-        layout = by_index.get(idx)
-        if not layout:
-            continue
+        layout = by_index.get(idx, _FALLBACK_LAYOUT)
         try:
             raw = p.read_text(encoding="utf-8")
         except OSError:

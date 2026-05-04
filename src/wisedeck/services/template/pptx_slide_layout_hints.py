@@ -80,10 +80,26 @@ def extract_pptx_layout_hints(pptx_bytes: bytes) -> Dict[str, Any]:
 
     slides_out: List[Dict[str, Any]] = []
     slide_errors: List[Dict[str, Any]] = []
-    for si, slide in enumerate(prs.slides[:_MAX_SLIDES], start=1):
+
+    try:
+        slides_list = list(prs.slides[:_MAX_SLIDES])
+    except Exception as e:
+        slides_list = []
+        try:
+            slides_list = list(prs.slides)[:_MAX_SLIDES]
+        except Exception:
+            pass
+        if not slides_list:
+            slide_errors.append({"index": 0, "error": f"slides iteration failed: {str(e)[:200]}"})
+
+    for si, slide in enumerate(slides_list, start=1):
         try:
             shapes_out: List[Dict[str, Any]] = []
-            for shape in list(slide.shapes)[:_MAX_SHAPES_PER_SLIDE]:
+            try:
+                shapes = list(slide.shapes)[:_MAX_SHAPES_PER_SLIDE]
+            except Exception:
+                shapes = []
+            for shape in shapes:
                 try:
                     left = int(getattr(shape, "left", 0) or 0)
                     top = int(getattr(shape, "top", 0) or 0)
@@ -115,11 +131,17 @@ def extract_pptx_layout_hints(pptx_bytes: bytes) -> Dict[str, Any]:
             slide_errors.append({"index": si, "error": str(e)[:300]})
             continue
 
+    total_slide_count = len(slides_list)
+    try:
+        total_slide_count = len(prs.slides)
+    except Exception:
+        pass
+
     payload: Dict[str, Any] = {
         "schema_version": 1,
         "slide_width_emu": sw,
         "slide_height_emu": sh,
-        "slide_count": len(prs.slides),
+        "slide_count": total_slide_count,
         "slides": slides_out,
         "slide_errors": slide_errors,
     }
