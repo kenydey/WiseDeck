@@ -120,15 +120,27 @@ _FALLBACK_LAYOUT: Dict[str, Any] = {
 }
 
 
+_REQUIRED_MARKERS = {"PAGE_TITLE", "CONTENT_AREA"}
+
+
+def _svg_has_required_markers(svg_xml: str) -> bool:
+    """Return True when the SVG already contains all required placeholder tokens."""
+    for marker in _REQUIRED_MARKERS:
+        if ("{{" + marker + "}}") not in svg_xml:
+            return False
+    return True
+
+
 def inject_placeholders_into_workspace_svgs(
     svg_dir: Any,
     pptx_layout: Optional[Dict[str, Any]],
 ) -> None:
     """Mutate slide_*.svg files on disk.
 
-    When pptx_layout contains valid slides[], uses per-slide layout hints.
-    Otherwise falls back to injecting default PAGE_TITLE + CONTENT_AREA at
-    canonical positions so that downstream placeholder scanning always finds markers.
+    When pptx_layout contains valid slides[], uses per-slide layout hints first.
+    After each slide, if required markers (PAGE_TITLE, CONTENT_AREA) are still
+    missing, falls back to injecting them at canonical positions.
+    This guarantees downstream placeholder scanning always finds markers.
     """
     from pathlib import Path
 
@@ -158,11 +170,18 @@ def inject_placeholders_into_workspace_svgs(
         if not m:
             continue
         idx = int(m.group(1))
-        layout = by_index.get(idx, _FALLBACK_LAYOUT)
         try:
             raw = p.read_text(encoding="utf-8")
         except OSError:
             continue
-        new_xml = inject_pptx_placeholders_into_slide_svg(raw, slide_layout=layout)
-        if new_xml != raw:
-            p.write_text(new_xml, encoding="utf-8")
+
+        result = raw
+        hint_layout = by_index.get(idx)
+        if hint_layout:
+            result = inject_pptx_placeholders_into_slide_svg(result, slide_layout=hint_layout)
+
+        if not _svg_has_required_markers(result):
+            result = inject_pptx_placeholders_into_slide_svg(result, slide_layout=_FALLBACK_LAYOUT)
+
+        if result != raw:
+            p.write_text(result, encoding="utf-8")

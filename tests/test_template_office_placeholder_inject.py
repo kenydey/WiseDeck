@@ -133,6 +133,12 @@ def test_workspace_inject_uses_hints_when_available(tmp_path):
                         "is_placeholder": True,
                         "shape_kind": "text",
                     },
+                    {
+                        "bbox": [0.1, 0.25, 0.8, 0.5],
+                        "placeholder_type": "BODY",
+                        "is_placeholder": True,
+                        "shape_kind": "text",
+                    },
                 ],
             }
         ],
@@ -141,3 +147,40 @@ def test_workspace_inject_uses_hints_when_available(tmp_path):
 
     result = (svg_dir / "slide_01.svg").read_text(encoding="utf-8")
     assert "{{PAGE_TITLE}}" in result
+    assert "{{CONTENT_AREA}}" in result
+
+
+def test_workspace_inject_fallback_when_shapes_have_no_placeholders(tmp_path):
+    """When pptx_layout has slides but no shapes have is_placeholder=True,
+    the fallback layout is used to inject required markers."""
+    svg_dir = tmp_path / "svg"
+    svg_dir.mkdir()
+    (svg_dir / "slide_01.svg").write_text(_BARE_SVG, encoding="utf-8")
+
+    layout = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "index": 1,
+                "shapes": [
+                    {
+                        "bbox": [0.1, 0.05, 0.8, 0.15],
+                        "placeholder_type": None,
+                        "is_placeholder": False,
+                        "shape_kind": "text",
+                    },
+                    {
+                        "bbox": [0.1, 0.25, 0.8, 0.5],
+                        "placeholder_type": None,
+                        "is_placeholder": False,
+                        "shape_kind": "text",
+                    },
+                ],
+            }
+        ],
+    }
+    inject_placeholders_into_workspace_svgs(svg_dir, layout)
+
+    result = (svg_dir / "slide_01.svg").read_text(encoding="utf-8")
+    assert "{{PAGE_TITLE}}" in result, "Fallback should inject PAGE_TITLE when hint shapes lack placeholders"
+    assert "{{CONTENT_AREA}}" in result, "Fallback should inject CONTENT_AREA when hint shapes lack placeholders"
