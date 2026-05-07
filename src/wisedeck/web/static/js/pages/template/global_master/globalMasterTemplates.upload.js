@@ -253,6 +253,16 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
 
                 setImportButtonBusy(true, '结构化导入…');
                 const dataUrl = await readFileAsDataURL(file);
+                setImportButtonBusy(true, '提取风格基因…');
+                let extractedStyle = null;
+                try {
+                    extractedStyle = await apiClient.post('/api/template/extract', {
+                        filename: file.name,
+                        data: dataUrl,
+                    });
+                } catch (e) {
+                    console.warn('风格提取失败（不影响导入）', e);
+                }
                 const bundleMode =
                     document.getElementById('officeImportBundleMode')?.value || 'per_slide';
                 const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
@@ -269,8 +279,8 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 templateData = {
                     template_name: stem,
                     description:
-                        `从文件 ${file.name} 结构化导入（${conv.export_engine_used}）。` +
-                        '含 pptx_readable / layout_package 契约；生成时可对齐占位符；HTML/SVG 供预览与导出。',
+                        `从文件 ${file.name} 结构化导入（${conv.export_engine_used}），已保存为 1 条全局母版。` +
+                        '多页在 import_summary / template_contract；列表预览默认多为第 1 页；生成时可对齐占位符。',
                     html_template: conv.html_template,
                     tags: ['导入', '结构化母版'],
                     is_default: false,
@@ -287,6 +297,15 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 }
                 if (Object.keys(importSummary).length) {
                     templateData.import_summary = importSummary;
+                }
+                if (extractedStyle && extractedStyle.success !== false) {
+                    templateData.style_config = {
+                        style_id: extractedStyle.style_id,
+                        custom_style_url: extractedStyle.custom_style_url,
+                        asset_manifest_url: extractedStyle.asset_manifest_url,
+                        palette: extractedStyle.summary?.paletteTop5,
+                        typography: extractedStyle.summary?.fontPair,
+                    };
                 }
                 if (Array.isArray(conv.warnings) && conv.warnings.length) {
                     importWarnings = conv.warnings.slice();
@@ -373,7 +392,7 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 provenanceNote =
                     '引擎：' +
                     (engine || '未知') +
-                    '。已保存 import_summary（含契约 / pptx_layout 等）。libreoffice_html 无 svg_template；svg_stack 会注入 {{…}} 占位并可有 svg_slide_xmls。';
+                    '。仅 1 条模板：多页在 import_summary（如 svg_slide_xmls、html_slide_fragments）与契约中；预览多为第 1 页。请关注页数不一致类警告。';
             } else if (importKind === 'pdf') {
                 provenanceNote =
                     'PDF 导入已写入 import_summary（template_provenance=pdf_raster_svg_stack）；不含 PPTX 占位符映射。';

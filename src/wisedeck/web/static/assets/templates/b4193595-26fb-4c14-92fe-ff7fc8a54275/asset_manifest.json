@@ -1,0 +1,135 @@
+{
+  "style_id": "b4193595-26fb-4c14-92fe-ff7fc8a54275",
+  "assets": [
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_1_1",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_1_1.png",
+      "slide_index": 1,
+      "bbox_pct": [
+        0.05114566929133858,
+        0.028249343832020997,
+        0.23870398622047245,
+        0.6533652668416448
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_1_2",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_1_2.png",
+      "slide_index": 1,
+      "bbox_pct": [
+        -0.048832020997375325,
+        0.274862058909303,
+        0.43853797572178477,
+        0.5716051326917468
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_2_3",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_2_3.png",
+      "slide_index": 2,
+      "bbox_pct": [
+        0.2810428969816273,
+        0.5788805774278215,
+        0.4379142060367454,
+        0.4523904928550598
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_2_4",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_2_4.png",
+      "slide_index": 2,
+      "bbox_pct": [
+        0.2810428969816273,
+        0.5788805774278215,
+        0.4379142060367454,
+        0.3306102362204724
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_6_5",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_6_5.jpg",
+      "slide_index": 6,
+      "bbox_pct": [
+        0.06745882545931758,
+        0.6186089238845144,
+        0.4196616633858268,
+        0.2604938757655293
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_6_6",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_6_6.jpg",
+      "slide_index": 6,
+      "bbox_pct": [
+        0.06745882545931758,
+        0.2907952755905512,
+        0.42030273950131236,
+        0.2604938757655293
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_12_7",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_12_7.jpg",
+      "slide_index": 12,
+      "bbox_pct": [
+        0.06318585958005249,
+        0.3345453484981044,
+        0.32194931102362206,
+        0.3555715952172645
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_12_8",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_12_8.png",
+      "slide_index": 12,
+      "bbox_pct": [
+        0.01348244750656168,
+        0.2839851268591426,
+        0.41904765419947504,
+        0.5141364829396325
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_18_9",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_18_9.png",
+      "slide_index": 18,
+      "bbox_pct": [
+        0.2540844816272966,
+        0.5897016622922134,
+        0.05553740157480315,
+        0.0987331583552056
+      ]
+    },
+    {
+      "id": "img_b4193595-26fb-4c14-92fe-ff7fc8a54275_24_10",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/b4193595-26fb-4c14-92fe-ff7fc8a54275/assets/img_b4193595-26fb-4c14-92fe-ff7fc8a54275_24_10.jpg",
+      "slide_index": 24,
+      "bbox_pct": [
+        0.0,
+        0.21622717993584134,
+        1.0,
+        0.22156853310002916
+      ]
+    }
+  ]
+}

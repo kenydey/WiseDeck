@@ -376,19 +376,114 @@
         infoDiv.style.display = 'block';
     }
 
-    async function previewTemplate(templateId) {
+    function wrapSvgForPreview(svgXml, templateName) {
+        const safeTitle = String(templateName || '模板').replace(/</g, '').replace(/>/g, '');
+        const inner = typeof svgXml === 'string' ? svgXml : '';
+        return `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${safeTitle}</title>
+</head>
+<body style="margin:0;padding:16px;overflow:auto;background:#f0f0f0;">
+<div style="display:inline-block;background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.12);">
+${inner}
+</div>
+</body>
+</html>`;
+    }
+
+    const previewState = {
+        templateId: null,
+        templateName: '模板',
+        index: 1,
+        slideCount: 1,
+        warnedNoMulti: false,
+    };
+
+    function _setPreviewPagerUi(index, total) {
+        const prevBtn = document.getElementById('previewPrevBtn');
+        const nextBtn = document.getElementById('previewNextBtn');
+        const label = document.getElementById('previewPageIndicator');
+        if (label) label.textContent = `${index} / ${total}`;
+        if (prevBtn) prevBtn.disabled = index <= 1;
+        if (nextBtn) nextBtn.disabled = index >= total;
+    }
+
+    function _setPreviewNoticeVisible(visible) {
+        const el = document.getElementById('previewPageNotice');
+        if (!el) return;
+        el.style.display = visible ? 'block' : 'none';
+    }
+
+    async function _fetchPreviewDefault(templateId) {
+        const response = await fetch(`/api/global-master-templates/${templateId}/preview`);
+        if (!response.ok) throw new Error('Failed to load template preview');
+        const data = await response.json();
+        const name = data.template_name || '模板';
+        return {
+            name,
+            html: typeof data.svg_template === 'string' && data.svg_template.trim()
+                ? wrapSvgForPreview(data.svg_template, name)
+                : data.html_template,
+            slideCount: 1,
+        };
+    }
+
+    async function _fetchPreviewSlide(templateId, index) {
+        const response = await fetch(
+            `/api/global-master-templates/${templateId}/preview-slide?index=${encodeURIComponent(index)}`
+        );
+        if (!response.ok) throw new Error('Failed to load template preview slide');
+        const data = await response.json();
+        return {
+            name: data.template_name || '模板',
+            html: data.html_template,
+            slideCount: typeof data.slide_count === 'number' && data.slide_count > 0 ? data.slide_count : null,
+            source: typeof data.source === 'string' ? data.source : '',
+        };
+    }
+
+    async function _loadPreviewIndex(targetIndex) {
+        const templateId = previewState.templateId;
+        if (!templateId) return;
         try {
-            const response = await fetch(`/api/global-master-templates/${templateId}/preview`);
-            if (!response.ok) {
-                throw new Error('Failed to load template preview');
+            const res = await _fetchPreviewSlide(templateId, targetIndex);
+            previewState.templateName = res.name;
+            if (res.slideCount) previewState.slideCount = res.slideCount;
+
+            if (targetIndex !== 1 && res.source === 'default') {
+                if (!previewState.warnedNoMulti) {
+                    previewState.warnedNoMulti = true;
+                    _setPreviewNoticeVisible(true);
+                }
+                _setPreviewPagerUi(previewState.index, previewState.slideCount || 1);
+                return;
             }
 
-            const data = await response.json();
-            showPreview(data.html_template, data.template_name);
-        } catch (error) {
-            console.error('Error loading template preview:', error);
-            alert('加载预览失败: ' + error.message);
+            previewState.index = targetIndex;
+            _setPreviewNoticeVisible(false);
+            _setPreviewPagerUi(previewState.index, previewState.slideCount || 1);
+            showPreview(res.html, previewState.templateName);
+        } catch (e) {
+            const def = await _fetchPreviewDefault(templateId);
+            previewState.templateName = def.name;
+            previewState.index = 1;
+            previewState.slideCount = 1;
+            _setPreviewNoticeVisible(true);
+            _setPreviewPagerUi(1, 1);
+            showPreview(def.html, def.name);
         }
+    }
+
+    async function previewTemplate(templateId) {
+        previewState.templateId = templateId;
+        previewState.index = 1;
+        previewState.slideCount = 1;
+        previewState.warnedNoMulti = false;
+        _setPreviewNoticeVisible(false);
+        _setPreviewPagerUi(1, 1);
+        await _loadPreviewIndex(1);
     }
 
     function showPreview(htmlContent, templateName) {
@@ -415,6 +510,26 @@
         document.getElementById('previewModal').style.display = 'none';
     }
 
+    // Pager controls (multi-slide preview) - bind once even if scripts are duplicated.
+    const _prevBtn = document.getElementById('previewPrevBtn');
+    const _nextBtn = document.getElementById('previewNextBtn');
+    if (_prevBtn && _prevBtn.dataset.wdPagerBound !== '1') {
+        _prevBtn.dataset.wdPagerBound = '1';
+        _prevBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            _loadPreviewIndex(Math.max(1, (previewState.index || 1) - 1));
+        });
+    }
+    if (_nextBtn && _nextBtn.dataset.wdPagerBound !== '1') {
+        _nextBtn.dataset.wdPagerBound = '1';
+        _nextBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            _loadPreviewIndex((previewState.index || 1) + 1);
+        });
+    }
+
     function selectAndStart(templateId) {
         console.log('selectAndStart called with templateId:', templateId);
         selectTemplate(templateId);
@@ -425,6 +540,33 @@
 
     function getPPTGeneratorUrl() {
         return `/projects/${projectId}/todo-editor?auto_start=true`;
+    }
+
+    async function confirmApplyExtractedStyleOnce(templateId) {
+        try {
+            const key = `wd_style_confirmed_${templateId}`;
+            if (localStorage.getItem(key) === '1') return true;
+            const resp = await fetch(`/api/global-master-templates/${templateId}`);
+            if (!resp.ok) return true;
+            const tpl = await resp.json().catch(() => null);
+            const sc = tpl && tpl.style_config && typeof tpl.style_config === 'object' ? tpl.style_config : null;
+            const url = sc && typeof sc.custom_style_url === 'string' ? sc.custom_style_url : '';
+            const palette = Array.isArray(sc?.palette) ? sc.palette : [];
+            const titleFont = sc?.typography?.title || '';
+            const bodyFont = sc?.typography?.body || '';
+            if (!url) return true;
+            const msg =
+                '已从你上传的模板提取企业风格基因，将用于外推生成封面/目录/过渡/内容/图表/结束等全套页面。\n\n' +
+                (palette.length ? `主色：${palette[0]}\n调色板：${palette.join(', ')}\n\n` : '') +
+                (titleFont || bodyFont ? `字体：标题 ${titleFont || '未识别'}；正文 ${bodyFont || '未识别'}\n\n` : '') +
+                '是否应用该风格生成全套幻灯片？';
+            const ok = confirm(msg);
+            if (ok) localStorage.setItem(key, '1');
+            return ok;
+        } catch (e) {
+            console.warn('风格确认弹窗失败（不影响生成）', e);
+            return true;
+        }
     }
 
     async function startPPTGeneration() {
@@ -445,6 +587,10 @@
 
         try {
             console.log('Sending request to select template...');
+            if (selectedTemplateMode !== 'free' && selectedTemplateId) {
+                const ok = await confirmApplyExtractedStyleOnce(selectedTemplateId);
+                if (!ok) return;
+            }
 
             // Select template for project
             const response = await fetch(`/api/projects/${projectId}/select-template`, {

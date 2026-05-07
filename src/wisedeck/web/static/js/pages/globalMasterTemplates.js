@@ -577,10 +577,30 @@ async function adjustTemplate() {
 async function previewTemplateById(templateId) {
     try {
         const data = await apiClient.get(`/api/global-master-templates/${templateId}/preview`);
-        showPreview(data.html_template || data);
+        showPreview(
+            (data && typeof data.svg_template === 'string' && data.svg_template.trim()
+                ? wrapSvgForPreview(data.svg_template)
+                : data.html_template) || data
+        );
     } catch (error) {
         alert('预览加载失败: ' + error.message);
     }
+}
+
+function wrapSvgForPreview(svgXml) {
+    const inner = typeof svgXml === 'string' ? svgXml : '';
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SVG Preview</title>
+</head>
+<body style="margin:0;padding:16px;overflow:auto;background:#f0f0f0;">
+<div style="display:inline-block;background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.12);">
+${inner}
+</div>
+</body>
+</html>`;
 }
 
 function showPreview(htmlContent) {
@@ -805,6 +825,16 @@ async function handleTemplateImport(event) {
                 throw new Error('演示文稿过大，请控制在 50MB 以内');
             }
             const dataUrl = await readFileAsDataURL(file);
+            // Optional: extract user style DNA for extrapolated full-deck theme.
+            let extractedStyle = null;
+            try {
+                extractedStyle = await apiClient.post('/api/template/extract', {
+                    filename: file.name,
+                    data: dataUrl,
+                });
+            } catch (e) {
+                console.warn('风格提取失败（不影响导入）', e);
+            }
             const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
                 filename: file.name,
                 data: dataUrl,
@@ -818,8 +848,8 @@ async function handleTemplateImport(event) {
             templateData = {
                 template_name: stem,
                 description:
-                    `从文件 ${file.name} 结构化导入（${conv.export_engine_used}）。` +
-                    '含 pptx_readable / layout_package 契约。',
+                    `从文件 ${file.name} 结构化导入（${conv.export_engine_used}），已保存为 1 条全局母版。` +
+                    '多页内容在 import_summary（如 svg_slide_xmls、html_slide_fragments）与 template_contract 中；列表预览默认多为第 1 页。',
                 html_template: conv.html_template,
                 tags: ['导入', '结构化母版'],
                 is_default: false,
@@ -836,6 +866,15 @@ async function handleTemplateImport(event) {
             }
             if (Object.keys(importSummary).length) {
                 templateData.import_summary = importSummary;
+            }
+            if (extractedStyle && extractedStyle.success !== false) {
+                templateData.style_config = {
+                    style_id: extractedStyle.style_id,
+                    custom_style_url: extractedStyle.custom_style_url,
+                    asset_manifest_url: extractedStyle.asset_manifest_url,
+                    palette: extractedStyle.summary?.paletteTop5,
+                    typography: extractedStyle.summary?.fontPair,
+                };
             }
             if (Array.isArray(conv.warnings) && conv.warnings.length) {
                 importWarnings = conv.warnings.slice();
@@ -908,7 +947,7 @@ async function handleTemplateImport(event) {
         loadTemplates(1);
         const provenanceNote =
             importKind === 'office'
-                ? '已保存 import_summary（含 pptx_layout 等）。svg_stack 路径会在服务端尝试按 PPTX 占位符位置注入 {{PAGE_TITLE}} 等标记。'
+                ? '本次仅创建 1 条模板。完整幻灯片与占位/主题/布局见 import_summary 与 template_contract；若服务端报告页数不一致请查看警告。'
                 : importKind === 'pdf'
                   ? 'PDF 导入已写入 import_summary（template_provenance=pdf_raster_svg_stack）；不含 PPTX 占位符映射。'
                   : '';

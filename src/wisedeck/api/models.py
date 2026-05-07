@@ -234,6 +234,10 @@ class GlobalMasterTemplateCreate(BaseModel):
         None,
         description="Optional metadata from office import (placeholder_markers, slide_count, …)",
     )
+    style_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional style config / design_spec defaults (palette, typography, custom_style_url, ...)",
+    )
     tags: Optional[List[str]] = Field([], description="Template tags for categorization")
     is_default: Optional[bool] = Field(False, description="Whether this is the default template")
     created_by: Optional[str] = Field("user", description="Creator identifier")
@@ -254,6 +258,7 @@ class GlobalMasterTemplateUpdate(BaseModel):
     html_template: Optional[str] = Field(None, description="HTML template content")
     svg_template: Optional[str] = Field(None, description="SVG template content (ppt-master style)")
     import_summary: Optional[Dict[str, Any]] = Field(None, description="Import / SVG-native contract metadata")
+    style_config: Optional[Dict[str, Any]] = Field(None, description="Style config / design_spec defaults")
     tags: Optional[List[str]] = Field(None, description="Template tags for categorization")
     is_default: Optional[bool] = Field(None, description="Whether this is the default template")
     is_active: Optional[bool] = Field(None, description="Whether the template is active")
@@ -357,8 +362,9 @@ class TemplateOfficeConvertRequest(BaseModel):
     )
     bundle_mode: Literal["vertical_stack", "first_slide_only", "per_slide"] = Field(
         "per_slide",
-        description="svg_stack / pdf: per_slide (default) keeps every page in import_summary.svg_slide_xmls; "
-        "html_template/svg_template are first slide only. vertical_stack also stores merged_svg_template.",
+        description="svg_stack / pdf: per_slide (default) keeps every page as URL references in import_summary "
+        "(e.g. svg_slide_urls/png_slide_urls) for one GlobalMasterTemplate row; html_template/svg_template are the "
+        "default preview surface (usually slide 1). vertical_stack additionally provides merged_svg_url.",
     )
     fallback_to_svg_stack: bool = Field(
         True,
@@ -370,11 +376,14 @@ class TemplateOfficeConvertResponse(BaseModel):
     success: bool = True
     html_template: str = Field(
         ...,
-        description="Single-slide HTML document (first slide) for create_template; use import_summary for all pages",
+        description="Default HTML for one GlobalMasterTemplate record: usually slide 1 (list/detail preview). "
+        "Full deck: import_summary (e.g. html_slide_fragments, merged_libreoffice_html, svg_slide_urls/png_slide_urls) plus "
+        "template_contract for structured placeholders and layout.",
     )
     svg_template: Optional[str] = Field(
         None,
-        description="First slide raw SVG when export_engine_used is svg_stack/pdf_svg_stack; null for pure HTML path",
+        description="Default SVG for the same single template row: typically slide 1 when export_engine_used is "
+        "svg_stack/pdf_svg_stack or LO svg supplement; all pages remain in import_summary.svg_slide_urls when present.",
     )
     suggested_template_name: str = Field(..., description="Stem from filename for default naming")
     slide_count: int = Field(..., ge=0)
@@ -382,11 +391,13 @@ class TemplateOfficeConvertResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     import_summary: Optional[Dict[str, Any]] = Field(
         None,
-        description="Metadata for svg_native (placeholders, hash); pass through to create_template.import_summary",
+        description="Per-deck metadata for the single imported template: slide_count, svg_slide_urls/png_slide_urls, "
+        "html_slide_fragments, placeholders, etc. Pass through to create_template.import_summary.",
     )
     template_contract: Optional[Dict[str, Any]] = Field(
         None,
-        description="Structured import: pptx_readable, layout_package, summaries (persist under import_summary.template_contract)",
+        description="Full-deck structured contract (pptx_readable, layout_package, per_slide_layout_signatures, …). "
+        "Frontend should nest under import_summary.template_contract when persisting one row.",
     )
 
 
@@ -409,8 +420,25 @@ class TemplatePdfConvertRequest(BaseModel):
     )
     bundle_mode: Literal["vertical_stack", "first_slide_only", "per_slide"] = Field(
         "per_slide",
-        description="How to pack slide SVGs: per_slide (default) stores all pages in import_summary; vertical_stack adds merged_svg_template",
+        description="How to pack slide SVGs: per_slide (default) stores all pages as URL references in import_summary; "
+        "vertical_stack adds merged_svg_url",
     )
+
+
+class TemplateStyleExtractRequest(BaseModel):
+    """Extract a style pack (custom_style.json + assets) from an uploaded PPT/PPTX."""
+
+    filename: str = Field(..., description="Original filename (.ppt or .pptx)")
+    data: str = Field(..., description="Base64 encoded file bytes (raw base64 or data URL)")
+
+
+class TemplateStyleExtractResponse(BaseModel):
+    success: bool = True
+    style_id: str = Field(..., description="Generated style pack id")
+    custom_style_url: str = Field(..., description="URL to custom_style.json under /static")
+    asset_manifest_url: str = Field(..., description="URL to asset_manifest.json under /static")
+    summary: Dict[str, Any] = Field(default_factory=dict, description="Small extraction summary (palette/font/decoration)")
+    warnings: List[str] = Field(default_factory=list)
 
 
 class GlobalMasterTemplateGenerateRequest(BaseModel):

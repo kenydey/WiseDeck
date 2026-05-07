@@ -175,11 +175,6 @@ def infer_markers_from_html_placeholders(html_doc: Any) -> list[str]:
     return placeholder_markers_from_html(html_doc)
 
 
-def infer_markers_from_html_placeholders(html_doc: Any) -> list[str]:
-    """Backward-compatible alias for marker inference from HTML tokens."""
-    return placeholder_markers_from_html(html_doc)
-
-
 def merge_import_summary_with_template_contract(
     import_summary: Any,
     template_contract: Any,

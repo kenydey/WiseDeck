@@ -656,6 +656,8 @@ async function handleTemplateImport(event) {
             file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
         let templateData;
+        /** @type {string[]} */
+        let officeImportWarnings = [];
 
         if (isOffice) {
             if (file.size > 50 * 1024 * 1024) {
@@ -684,8 +686,8 @@ async function handleTemplateImport(event) {
             templateData = {
                 template_name: stem,
                 description:
-                    `从文件 ${file.name} 结构化导入（${convPayload.export_engine_used}）。` +
-                    '含 pptx_readable / layout_package 契约。',
+                    `从文件 ${file.name} 结构化导入（${convPayload.export_engine_used}），已保存为 1 条全局母版。` +
+                    '多页在 import_summary / template_contract；列表预览默认多为第 1 页。',
                 html_template: convPayload.html_template,
                 tags: ['导入', '结构化母版'],
                 is_default: false,
@@ -704,6 +706,7 @@ async function handleTemplateImport(event) {
                 templateData.import_summary = importSummaryLegacy;
             }
             if (convPayload.warnings && convPayload.warnings.length) {
+                officeImportWarnings = convPayload.warnings.slice();
                 console.warn('模板导入警告', convPayload.warnings);
             }
         } else {
@@ -753,7 +756,18 @@ async function handleTemplateImport(event) {
 
         event.target.value = '';
         loadTemplates(1);
-        alert('模板导入成功！');
+        const note =
+            '已保存为 1 条模板；多页与契约在 import_summary 中；若有页数不一致警告请留意。';
+        if (isOffice && officeImportWarnings.length) {
+            alert(
+                '模板导入成功（包含警告）：\n- ' +
+                    officeImportWarnings.join('\n- ') +
+                    '\n\n' +
+                    note
+            );
+        } else {
+            alert(isOffice ? '模板导入成功。\n\n' + note : '模板导入成功！');
+        }
     } catch (error) {
         console.error('Error importing template:', error);
         alert('导入模板失败: ' + error.message);

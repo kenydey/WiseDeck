@@ -16,7 +16,8 @@ from .models import (
     PPTScenario, PPTGenerationRequest, PPTGenerationResponse,
     PPTOutline, PPTProject, TodoBoard, ProjectListResponse,
     FileUploadResponse, SlideContent, FileOutlineGenerationRequest,
-    FileOutlineGenerationResponse, TemplateSelectionRequest, TemplateSelectionResponse
+    FileOutlineGenerationResponse, TemplateSelectionRequest, TemplateSelectionResponse,
+    TemplateStyleExtractRequest, TemplateStyleExtractResponse,
 )
 from ..services.service_instances import ppt_service, get_ppt_service_for_user
 from ..services.file_processor import FileProcessor
@@ -118,6 +119,92 @@ def get_report_generator():
         except Exception as e:
             logger.warning(f"Failed to initialize report generator: {e}")
     return _report_generator
+
+
+@router.post("/template/extract", response_model=TemplateStyleExtractResponse)
+async def extract_template_style(
+    request: TemplateStyleExtractRequest,
+    user: User = Depends(get_current_user_required),
+):
+    """Extract Visual DNA v1 and generate a style pack (custom_style.json)."""
+    del user
+    from pathlib import Path
+    import json as _json
+    import os as _os
+    import uuid as _uuid
+
+    from wisedeck.services.template.custom_style_builder import build_custom_style_v1
+    from wisedeck.services.template.docling_adapter import try_convert_pptx_with_docling
+    from wisedeck.services.template.template_import_service import materialize_office_upload_to_pptx
+    from wisedeck.services.template.visual_dna_v2 import extract_visual_dna_v2
+
+    style_id = str(_uuid.uuid4())
+    static_root = Path(_os.path.dirname(__file__)).parent / "web" / "static"
+    out_dir = static_root / "assets" / "templates" / style_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    pptx_path, _root, safe_name = materialize_office_upload_to_pptx(
+        filename=request.filename,
+        data=request.data,
+    )
+    dna2 = extract_visual_dna_v2(
+        pptx_bytes=pptx_path.read_bytes(),
+        style_id=style_id,
+        assets_out_dir=out_dir,
+    )
+    assets_base_url = f"/static/assets/templates/{style_id}"
+    custom_style = build_custom_style_v1(
+        theme_name=f"User_Uploaded_Style_{Path(safe_name).stem}",
+        primary_color=dna2.primary_color,
+        palette_top5=dna2.palette_top5,
+        font_title=dna2.fonts.get("title") if isinstance(dna2.fonts, dict) else None,
+        font_body=dna2.fonts.get("body") if isinstance(dna2.fonts, dict) else None,
+        bottom_bar=None,
+        assets_base_url=assets_base_url,
+    )
+
+    asset_manifest = {
+        "style_id": style_id,
+        "assets": dna2.exported_assets,
+    }
+
+    # Persist full DNA (v2) for debugging and later Phase1 mapping.
+    (out_dir / "visual_dna.json").write_text(
+        _json.dumps(dna2.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    # Optional semantic enhancement (Docling) - keep small.
+    if (_os.getenv("WISEDECK_ENABLE_DOCLING_STYLE_EXTRACT", "").strip().lower() in ("1", "true", "yes")):
+        payload, warn = try_convert_pptx_with_docling(pptx_path)
+        if payload:
+            (out_dir / "docling.md").write_text(str(payload.get("markdown") or ""), encoding="utf-8")
+            asset_manifest["docling_markdown_url"] = f"{assets_base_url}/docling.md"
+        if warn:
+            dna2.warnings.append(warn)
+
+    (out_dir / "custom_style.json").write_text(
+        _json.dumps(custom_style, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "asset_manifest.json").write_text(
+        _json.dumps(asset_manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return TemplateStyleExtractResponse(
+        style_id=style_id,
+        custom_style_url=f"{assets_base_url}/custom_style.json",
+        asset_manifest_url=f"{assets_base_url}/asset_manifest.json",
+        summary={
+            "primaryColor": dna2.primary_color,
+            "paletteTop5": dna2.palette_top5,
+            "fontPair": {"title": dna2.fonts.get("title"), "body": dna2.fonts.get("body"), "ratio": None},
+            "assets": dna2.exported_assets[:10],
+            "slide_count": dna2.slide_count,
+        },
+        warnings=list(dna2.warnings or []),
+    )
 
 
 def get_enhanced_research_service():

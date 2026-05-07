@@ -69,26 +69,37 @@ def _run_soffice_convert(soffice: str, src_path: Path, out_dir: Path, target_ext
     LibreOffice names output based on stem of src.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        soffice,
-        "--headless",
-        "--nologo",
-        "--nofirststartwizard",
-        "--norestore",
-        "--convert-to",
-        target_ext,
-        "--outdir",
-        str(out_dir),
-        str(src_path),
-    ]
-    logger.info("Running LibreOffice: %s", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    if proc.returncode != 0:
+    convs = [target_ext]
+    # For PPTX→PDF: try impress-specific export filter first; it may avoid tagged-structure issues
+    # that can break downstream PDF parsers.
+    if target_ext.lower() == "pdf":
+        convs = ["pdf:impress_pdf_Export", "pdf"]
+
+    last_err: str | None = None
+    for conv in convs:
+        cmd = [
+            soffice,
+            "--headless",
+            "--nologo",
+            "--nofirststartwizard",
+            "--norestore",
+            "--convert-to",
+            conv,
+            "--outdir",
+            str(out_dir),
+            str(src_path),
+        ]
+        logger.info("Running LibreOffice: %s", " ".join(cmd))
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if proc.returncode == 0:
+            last_err = None
+            break
         stderr = (proc.stderr or "").strip()
         stdout = (proc.stdout or "").strip()
-        raise RuntimeError(
-            f"LibreOffice 转换失败 (exit={proc.returncode}): {stderr or stdout or 'no output'}"
-        )
+        last_err = stderr or stdout or f"exit={proc.returncode}"
+        logger.warning("LibreOffice convert-to %s failed: %s", conv, last_err)
+    if last_err:
+        raise RuntimeError(f"LibreOffice 转换失败: {last_err}")
 
     expected = out_dir / f"{src_path.stem}.{target_ext}"
     if expected.is_file():
@@ -152,7 +163,14 @@ def materialize_office_upload_to_pptx(
     return pptx_path, root, safe_name
 
 
-def _pdf_to_page_assets(pdf_path: Path, svg_dir: Path, png_dir: Path, png_zoom: float = 2.0) -> Dict[str, Any]:
+def _pdf_to_page_assets(
+    pdf_path: Path,
+    svg_dir: Optional[Path],
+    png_dir: Path,
+    *,
+    png_zoom: float = 2.0,
+    generate_svg: bool = True,
+) -> Dict[str, Any]:
     try:
         import fitz  # PyMuPDF
     except ImportError as e:
@@ -160,23 +178,54 @@ def _pdf_to_page_assets(pdf_path: Path, svg_dir: Path, png_dir: Path, png_zoom: 
             "当前环境未安装 PyMuPDF（import 名 fitz）。请在依赖中加入 pymupdf。"
         ) from e
 
-    svg_dir.mkdir(parents=True, exist_ok=True)
+    # Reduce MuPDF stderr noise for malformed structure trees (best-effort).
+    try:
+        tools = getattr(fitz, "TOOLS", None)
+        if tools is not None:
+            fn = getattr(tools, "mupdf_display_errors", None)
+            if callable(fn):
+                fn(False)
+            fnw = getattr(tools, "mupdf_display_warnings", None)
+            if callable(fnw):
+                fnw(False)
+    except Exception:
+        pass
+
+    if generate_svg:
+        if svg_dir is None:
+            raise ValueError("svg_dir is required when generate_svg is True")
+        svg_dir.mkdir(parents=True, exist_ok=True)
     png_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        ver = getattr(fitz, "__doc__", "") or ""
+        logger.info("PyMuPDF open: pdf=%s size=%s bytes", str(pdf_path), pdf_path.stat().st_size)
+        if ver:
+            logger.info("PyMuPDF module doc: %s", str(ver)[:120].replace("\n", " "))
+    except Exception:
+        pass
 
     doc = fitz.open(str(pdf_path))
     page_count = doc.page_count
     svg_paths: List[str] = []
     png_paths: List[str] = []
 
+    svg_fail_pages: List[int] = []
     try:
         for i in range(page_count):
             page = doc.load_page(i)
             slide_no = i + 1
 
-            svg_text = page.get_svg_image()
-            svg_file = svg_dir / f"slide_{slide_no:02d}.svg"
-            svg_file.write_text(svg_text, encoding="utf-8")
-            svg_paths.append(str(svg_file.resolve()))
+            if generate_svg:
+                try:
+                    svg_text = page.get_svg_image()
+                    svg_file = svg_dir / f"slide_{slide_no:02d}.svg"  # type: ignore[operator]
+                    svg_file.write_text(svg_text, encoding="utf-8")
+                    svg_paths.append(str(svg_file.resolve()))
+                except Exception as e:
+                    # Soft-fail SVG generation for this page; keep PNG as fallback.
+                    svg_fail_pages.append(slide_no)
+                    logger.warning("PyMuPDF page.get_svg_image failed on page %s: %s", slide_no, e)
 
             mat = fitz.Matrix(png_zoom, png_zoom)
             pix = page.get_pixmap(matrix=mat, alpha=False)
@@ -191,6 +240,7 @@ def _pdf_to_page_assets(pdf_path: Path, svg_dir: Path, png_dir: Path, png_zoom: 
         "svg_paths": svg_paths,
         "png_paths": png_paths,
         "png_zoom": png_zoom,
+        "svg_fail_pages": svg_fail_pages,
     }
 
 
@@ -280,7 +330,7 @@ class TemplateImportService:
 
         svg_dir = root / "svg"
         png_dir = root / "png"
-        slide_assets = _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=png_zoom)
+        slide_assets = _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=png_zoom, generate_svg=True)
 
         manifest_path = root / "manifest.json"
         pptx_meta: Dict[str, Any] = {}
@@ -515,7 +565,7 @@ class TemplateImportService:
 
         svg_dir = root / "svg"
         png_dir = root / "png"
-        slide_assets = _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=png_zoom)
+        slide_assets = _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=png_zoom, generate_svg=True)
 
         manifest_path = root / "manifest.json"
 

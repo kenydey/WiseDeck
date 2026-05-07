@@ -3,7 +3,8 @@ Merge PyMuPDF-exported per-slide SVG files into one composite SVG (vertical_stac
 
 For template import, callers should prefer ``per_slide``: ``bundle_workspace_svgs`` returns the **first slide only**
 as ``svg_template`` / ``html_template`` while ``slide_xmls`` lists every page. ``vertical_stack`` additionally yields
-``merged_svg_template`` (full vertical composite) as the 5th return value for optional storage in import_summary.
+the merged deck SVG XML (full vertical composite) as the 5th return value; callers should persist it to disk and
+store a URL reference (e.g. ``import_summary.merged_svg_url``), rather than storing large XML blobs in DB.
 """
 
 from __future__ import annotations

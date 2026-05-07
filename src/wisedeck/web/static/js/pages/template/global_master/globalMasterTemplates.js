@@ -819,10 +819,30 @@ async function adjustTemplate() {
 async function previewTemplateById(templateId) {
     try {
         const data = await apiClient.get(`/api/global-master-templates/${templateId}/preview`);
-        showPreview(data.html_template || data);
+        showPreview(
+            (data && typeof data.svg_template === 'string' && data.svg_template.trim()
+                ? wrapSvgForPreview(data.svg_template)
+                : data.html_template) || data
+        );
     } catch (error) {
         alert('预览加载失败: ' + error.message);
     }
+}
+
+function wrapSvgForPreview(svgXml) {
+    const inner = typeof svgXml === 'string' ? svgXml : '';
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SVG Preview</title>
+</head>
+<body style="margin:0;padding:16px;overflow:auto;background:#f0f0f0;">
+<div style="display:inline-block;background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.12);">
+${inner}
+</div>
+</body>
+</html>`;
 }
 
 function showPreview(htmlContent) {

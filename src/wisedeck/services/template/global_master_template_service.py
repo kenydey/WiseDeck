@@ -181,6 +181,9 @@ class GlobalMasterTemplateService:
                         "aspect_ratio": "16:9",
                         "framework": "SVG + DrawingML",
                     }
+            elif not isinstance(template_data.get("style_config"), dict):
+                # Keep DB schema stable: style_config must be JSON object when provided.
+                raise ValueError("style_config must be an object")
 
             # Set default values
             template_data.setdefault('description', '')
@@ -599,8 +602,7 @@ class GlobalMasterTemplateService:
                 )
                 imp = merge_import_summary_with_template_contract(imp, template_contract)
                 imp["structured_contract"] = True
-                if merged_svg:
-                    imp["merged_svg_template"] = merged_svg
+                # merged_svg is only present for vertical_stack; we no longer persist huge XML blobs in DB.
                 svg_template_out = svg_t
                 import_summary = imp
             except Exception as e:

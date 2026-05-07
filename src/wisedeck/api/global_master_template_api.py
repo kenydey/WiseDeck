@@ -6,6 +6,7 @@ import asyncio
 import copy
 import logging
 import os
+import time
 import uuid
 from html import escape as html_escape
 from pathlib import Path
@@ -34,6 +35,7 @@ from ..services.template.libreoffice_html_exporter import (
 )
 from ..services.template.pptx_slide_layout_hints import extract_pptx_layout_hints
 from ..services.template.slide_svg_bundler import BundleMode, bundle_workspace_svgs
+from ..services.template.slide_svg_bundler import wrap_single_slide_html
 from ..services.template.svg_template_import_meta import (
     build_import_summary,
     merge_import_summary_with_template_contract,
@@ -41,6 +43,11 @@ from ..services.template.svg_template_import_meta import (
     placeholder_markers_from_template_contract,
     trim_svg_slide_xmls_for_persistence,
 )
+from ..services.template.office_import_alignment import (
+    collect_office_import_alignment_warnings,
+    merge_warnings_unique,
+)
+from ..services.template.docling_adapter import try_convert_pptx_with_docling
 from ..services.template.template_contract_build import build_template_contract_from_manifest
 from ..services.template.template_import_service import (
     TemplateImportService,
@@ -61,6 +68,23 @@ logger = logging.getLogger(__name__)
 _LIBREOFFICE_HTML_IMPORT_DISABLED = os.getenv(
     "WISEDECK_DISABLE_LIBREOFFICE_HTML_IMPORT", ""
 ).strip().lower() in ("1", "true", "yes")
+
+_DOCLING_IMPORT_ENABLED = os.getenv("WISEDECK_ENABLE_DOCLING_IMPORT", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+_LO_SVG_SUPPLEMENT_ENABLED = os.getenv("WISEDECK_ENABLE_LO_SVG_SUPPLEMENT", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+_LO_SVG_SUPPLEMENT_DISABLED = os.getenv("WISEDECK_DISABLE_LO_SVG_SUPPLEMENT", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 
 # Create router
@@ -116,18 +140,24 @@ def _convert_pdf_template_sync(body: TemplatePdfConvertRequest) -> TemplateOffic
         bm = "per_slide"
     else:
         bm = "vertical_stack"
-    svg_t, html_t, w_bundle, slide_xmls, merged_svg = bundle_workspace_svgs(ws.svg_dir, bm)
+    svg_t, html_t, w_bundle, _slide_xmls, merged_svg = bundle_workspace_svgs(ws.svg_dir, bm)
     slide_assets = ws.manifest.get("slide_assets") or {}
     try:
         slide_count = int(slide_assets.get("page_count") or 0)
     except (TypeError, ValueError):
         slide_count = 0
 
-    trimmed_slides, trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
-    w_bundle.extend(trim_warn)
+    _cleanup_import_previews()
+    preview_id = str(uuid.uuid4())
+    vis_fields, vis_warnings = _materialize_workspace_visual_urls(
+        preview_id=preview_id,
+        svg_dir=ws.svg_dir,
+        png_dir=ws.png_dir,
+        slide_count=slide_count,
+    )
+    w_bundle.extend(vis_warnings or [])
     imp_pdf = build_import_summary(
         svg_template=svg_t,
-        svg_slide_xmls=trimmed_slides,
         slide_count=slide_count,
         bundle_mode=bm,
         source_filename=suggested,
@@ -135,7 +165,25 @@ def _convert_pdf_template_sync(body: TemplatePdfConvertRequest) -> TemplateOffic
         template_provenance="pdf_raster_svg_stack",
     )
     if merged_svg:
-        imp_pdf["merged_svg_template"] = merged_svg
+        merged_url, merged_warn = _materialize_merged_svg_url(
+            preview_id=preview_id,
+            merged_svg_xml=merged_svg,
+        )
+        if merged_url:
+            imp_pdf["merged_svg_url"] = merged_url
+        if merged_warn:
+            w_bundle.append(merged_warn)
+    if isinstance(vis_fields, dict) and vis_fields:
+        imp_pdf.update(vis_fields)
+
+    merge_warnings_unique(
+        w_bundle,
+        collect_office_import_alignment_warnings(
+            declared_slide_count=slide_count,
+            template_contract=None,
+            svg_slide_xmls=None,
+        ),
+    )
 
     return TemplateOfficeConvertResponse(
         html_template=html_t,
@@ -172,7 +220,7 @@ def _supplement_svg_from_pptx(
 
     svg_dir = root / "svg_supplement_svg"
     png_dir = root / "svg_supplement_png"
-    _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=2.0)
+    _pdf_to_page_assets(pdf_path, svg_dir, png_dir, png_zoom=2.0, generate_svg=True)
 
     inject_placeholders_into_workspace_svgs(
         svg_dir,
@@ -184,6 +232,298 @@ def _supplement_svg_from_pptx(
         svg_dir, "vertical_stack"
     )
     return svg_t, slide_xmls, merged_svg
+
+
+def _static_import_preview_dir(*, preview_id: str) -> Path:
+    # src/wisedeck/api/ -> src/wisedeck/ -> web/static/
+    static_root = (Path(__file__).resolve().parents[1] / "web" / "static").resolve()
+    return (static_root / "assets" / "templates" / "import_previews" / preview_id).resolve()
+
+
+def _cleanup_import_previews(*, keep_days: int = 7, max_delete: int = 30) -> None:
+    """
+    Best-effort cleanup for /static/assets/templates/import_previews.
+    Deletes directories older than keep_days. Keeps workload bounded by max_delete.
+    """
+    try:
+        root = _static_import_preview_dir(preview_id="__probe__").parents[0]
+        if not root.is_dir():
+            return
+        now = time.time()
+        cutoff = now - (int(keep_days or 7) * 86400)
+        deleted = 0
+        for p in sorted(root.iterdir(), key=lambda x: x.name):
+            if deleted >= max_delete:
+                break
+            if not p.is_dir():
+                continue
+            try:
+                m = p.stat().st_mtime
+            except OSError:
+                continue
+            if m >= cutoff:
+                continue
+            # avoid deleting our probe dir name by accident
+            if p.name == "__probe__":
+                continue
+            try:
+                import shutil
+
+                shutil.rmtree(p, ignore_errors=True)
+                deleted += 1
+            except Exception:
+                continue
+    except Exception:
+        return
+
+
+def _static_preview_png_dir(*, preview_id: str) -> Path:
+    return _static_import_preview_dir(preview_id=preview_id)
+
+
+def _materialize_workspace_visual_urls(
+    *,
+    preview_id: str,
+    svg_dir: Path,
+    png_dir: Path,
+    slide_count: int,
+    max_pages: int = 60,
+) -> tuple[dict, list[str]]:
+    """
+    Copy slide_XX.svg/png from a workspace directory into /static import_previews and return URL lists.
+    """
+    warnings: List[str] = []
+    out: dict = {"visual_preview_id": preview_id}
+    n = int(slide_count or 0)
+    if n <= 0:
+        return out, warnings
+    if n > max_pages:
+        warnings.append(f"逐页预览落盘已跳过：页数 {n} 超过上限 {max_pages}")
+        return out, warnings
+
+    static_dir = _static_import_preview_dir(preview_id=preview_id)
+    static_dir.mkdir(parents=True, exist_ok=True)
+
+    svg_urls: List[str] = []
+    png_urls: List[str] = []
+    for i in range(1, n + 1):
+        svg_src = svg_dir / f"slide_{i:02d}.svg"
+        if svg_src.is_file():
+            dst = static_dir / svg_src.name
+            try:
+                dst.write_bytes(svg_src.read_bytes())
+                svg_urls.append(f"/static/assets/templates/import_previews/{preview_id}/{dst.name}")
+            except Exception as e:
+                warnings.append(f"逐页 SVG 写入失败：{svg_src.name}（{e}）")
+
+        png_src = png_dir / f"slide_{i:02d}.png"
+        if png_src.is_file():
+            dst = static_dir / png_src.name
+            try:
+                dst.write_bytes(png_src.read_bytes())
+                png_urls.append(f"/static/assets/templates/import_previews/{preview_id}/{dst.name}")
+            except Exception as e:
+                warnings.append(f"逐页 PNG 写入失败：{png_src.name}（{e}）")
+
+    if svg_urls:
+        out["svg_slide_urls"] = svg_urls
+        out["svg_preview_base_url"] = f"/static/assets/templates/import_previews/{preview_id}"
+    if png_urls:
+        out["png_slide_urls"] = png_urls
+        out["png_preview_base_url"] = f"/static/assets/templates/import_previews/{preview_id}"
+    if svg_urls or png_urls:
+        warnings.append("已将逐页预览素材落盘到 /static/assets/templates/import_previews/（URL 引用）")
+    return out, warnings
+
+
+def _materialize_merged_svg_url(
+    *,
+    preview_id: str,
+    merged_svg_xml: str,
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Persist merged deck SVG (vertical composite) under /static import_previews and return URL.
+    """
+    if not isinstance(merged_svg_xml, str) or not merged_svg_xml.strip():
+        return None, None
+    static_dir = _static_import_preview_dir(preview_id=preview_id)
+    static_dir.mkdir(parents=True, exist_ok=True)
+    p = static_dir / "merged.svg"
+    try:
+        p.write_text(merged_svg_xml, encoding="utf-8")
+    except Exception as e:
+        return None, f"merged_svg 写入失败（merged.svg）：{e}"
+    return f"/static/assets/templates/import_previews/{preview_id}/{p.name}", None
+
+
+def _supplement_svg_preview_from_pptx(
+    pptx_path: Path,
+    root: Path,
+    soffice: str,
+    *,
+    preview_id: str,
+    slide_count: int,
+    png_zoom: float,
+    max_pages: int = 60,
+) -> tuple[list[str], list[str]]:
+    """
+    Generate per-slide SVGs for preview (best-effort). Files are copied under /static and referenced by URL list.
+    Returns (svg_urls, warnings). SVG generation may be partial; callers should keep PNG as fallback.
+    """
+    warnings: List[str] = []
+    n = int(slide_count or 0)
+    if n <= 0:
+        return [], []
+    if n > max_pages:
+        warnings.append(f"逐页 SVG 预览已跳过：页数 {n} 超过上限 {max_pages}")
+        return [], warnings
+
+    pdf_dir = root / "svg_preview_pdf"
+    pdf_path = _run_soffice_convert(soffice, pptx_path, pdf_dir, "pdf")
+    svg_dir = root / "svg_preview_svg"
+    png_dir = root / "svg_preview_png"
+    _pdf_to_page_assets(
+        pdf_path,
+        svg_dir,
+        png_dir,
+        png_zoom=float(png_zoom or 2.0),
+        generate_svg=True,
+    )
+
+    static_dir = _static_import_preview_dir(preview_id=preview_id)
+    static_dir.mkdir(parents=True, exist_ok=True)
+    urls: List[str] = []
+    for i in range(1, n + 1):
+        src = svg_dir / f"slide_{i:02d}.svg"
+        if not src.is_file():
+            continue
+        dst = static_dir / src.name
+        try:
+            dst.write_bytes(src.read_bytes())
+        except Exception as e:
+            warnings.append(f"逐页 SVG 写入失败：{src.name}（{e}）")
+            continue
+        urls.append(f"/static/assets/templates/import_previews/{preview_id}/{dst.name}")
+
+    if urls:
+        warnings.append("已生成逐页 SVG 预览（/static/assets/templates/import_previews/...）")
+    else:
+        warnings.append("逐页 SVG 预览未生成（将使用 PNG/HTML 兜底）")
+    return urls, warnings
+
+
+
+def _supplement_png_preview_from_pptx(
+    pptx_path: Path,
+    root: Path,
+    soffice: str,
+    *,
+    preview_id: str,
+    slide_count: int,
+    png_zoom: float,
+    max_pages: int = 60,
+) -> tuple[list[str], list[str]]:
+    """
+    Generate per-slide PNGs for preview only (no SVG). Files are copied under /static and referenced by URL list.
+    Returns (png_urls, warnings).
+    """
+    warnings: List[str] = []
+    n = int(slide_count or 0)
+    if n <= 0:
+        return [], []
+    if n > max_pages:
+        warnings.append(f"逐页 PNG 预览已跳过：页数 {n} 超过上限 {max_pages}")
+        return [], warnings
+
+    pdf_dir = root / "png_preview_pdf"
+    pdf_path = _run_soffice_convert(soffice, pptx_path, pdf_dir, "pdf")
+    png_dir = root / "png_preview_png"
+    _pdf_to_page_assets(
+        pdf_path,
+        None,
+        png_dir,
+        png_zoom=float(png_zoom or 2.0),
+        generate_svg=False,
+    )
+
+    static_dir = _static_preview_png_dir(preview_id=preview_id)
+    static_dir.mkdir(parents=True, exist_ok=True)
+    urls: List[str] = []
+    for i in range(1, n + 1):
+        src = png_dir / f"slide_{i:02d}.png"
+        if not src.is_file():
+            warnings.append(f"逐页 PNG 缺失：slide_{i:02d}.png")
+            continue
+        dst = static_dir / src.name
+        try:
+            dst.write_bytes(src.read_bytes())
+        except Exception as e:
+            warnings.append(f"逐页 PNG 写入失败：{src.name}（{e}）")
+            continue
+        urls.append(f"/static/assets/templates/import_previews/{preview_id}/{dst.name}")
+
+    if urls:
+        warnings.append("已生成逐页 PNG 预览兜底（/static/assets/templates/import_previews/...）")
+    return urls, warnings
+
+
+def _supplement_visual_previews_from_pptx(
+    pptx_path: Path,
+    root: Path,
+    soffice: str,
+    *,
+    preview_id: str,
+    slide_count: int,
+    png_zoom: float,
+) -> tuple[dict, list[str]]:
+    """
+    Generate visual preview artifacts under /static and return import_summary fields + warnings.
+    Prefer SVG URLs, keep PNG URLs as baseline fallback.
+    """
+    warnings: List[str] = []
+    out: dict = {"visual_preview_id": preview_id}
+    _cleanup_import_previews()
+
+    try:
+        png_urls, png_warnings = _supplement_png_preview_from_pptx(
+            pptx_path,
+            root,
+            soffice,
+            preview_id=preview_id,
+            slide_count=slide_count,
+            png_zoom=float(png_zoom or 2.0),
+        )
+        if png_urls:
+            out["png_slide_urls"] = png_urls
+            out["png_preview_base_url"] = f"/static/assets/templates/import_previews/{preview_id}"
+        warnings.extend(png_warnings or [])
+    except Exception as e:
+        logger.warning("png preview supplement failed (non-fatal): %s", e)
+        warnings.append(f"逐页 PNG 预览兜底生成失败：{e}")
+
+    if _LO_SVG_SUPPLEMENT_DISABLED:
+        warnings.append("已跳过逐页 SVG 预览：设置了 WISEDECK_DISABLE_LO_SVG_SUPPLEMENT=1")
+        return out, warnings
+
+    try:
+        svg_urls, svg_warnings = _supplement_svg_preview_from_pptx(
+            pptx_path,
+            root,
+            soffice,
+            preview_id=preview_id,
+            slide_count=slide_count,
+            png_zoom=float(png_zoom or 2.0),
+        )
+        if svg_urls:
+            out["svg_slide_urls"] = svg_urls
+            out["svg_preview_base_url"] = f"/static/assets/templates/import_previews/{preview_id}"
+            warnings.append("已生成逐页 SVG 预览（svg_slide_urls）")
+        warnings.extend(svg_warnings or [])
+    except Exception as e:
+        logger.warning("svg preview supplement failed (non-fatal): %s", e)
+        warnings.append(f"逐页 SVG 预览生成失败（将使用 PNG/HTML 兜底）：{e}")
+
+    return out, warnings
 
 
 def _convert_office_structured_only_sync(
@@ -234,13 +574,17 @@ def _convert_office_structured_only_sync(
         f"<body><p>结构化导入模式（pptxtojson_only）：无 LibreOffice 视觉参考；"
         f"请依赖 template_contract / 生成流程填充幻灯片。</p></body></html>"
     )
+    struct_warnings = collect_office_import_alignment_warnings(
+        declared_slide_count=slide_count,
+        template_contract=template_contract,
+    )
     return TemplateOfficeConvertResponse(
         html_template=html_stub,
         svg_template=None,
         suggested_template_name=stem,
         slide_count=slide_count,
         export_engine_used="pptxtojson_only",
-        warnings=[],
+        warnings=struct_warnings,
         import_summary=imp,
         template_contract=template_contract,
     )
@@ -261,15 +605,22 @@ def _convert_office_svg_stack_sync(
     layout_hints = ws.manifest.get("pptx_layout")
     if not isinstance(layout_hints, dict):
         layout_hints = _layout_hints_from_pptx_path(ws.pptx_path)
-    svg_t, html_t, w_bundle, slide_xmls, merged_svg = bundle_workspace_svgs(
+    svg_t, html_t, w_bundle, _slide_xmls, merged_svg = bundle_workspace_svgs(
         ws.svg_dir, body.bundle_mode
     )
     warnings_acc.extend(w_bundle)
-
-    trimmed_slides, trim_warn = trim_svg_slide_xmls_for_persistence(slide_xmls)
-    warnings_acc.extend(trim_warn)
     slide_assets = ws.manifest.get("slide_assets") or {}
     slide_count = int(slide_assets.get("page_count") or 0)
+
+    _cleanup_import_previews()
+    preview_id = str(uuid.uuid4())
+    vis_fields, vis_warnings = _materialize_workspace_visual_urls(
+        preview_id=preview_id,
+        svg_dir=ws.svg_dir,
+        png_dir=ws.png_dir,
+        slide_count=slide_count,
+    )
+    warnings_acc.extend(vis_warnings or [])
 
     template_contract = build_template_contract_from_manifest(
         ws.manifest if isinstance(ws.manifest, dict) else {},
@@ -278,17 +629,40 @@ def _convert_office_svg_stack_sync(
     )
     imp = build_import_summary(
         svg_template=svg_t,
-        svg_slide_xmls=trimmed_slides,
         slide_count=slide_count,
         bundle_mode=body.bundle_mode,
         source_filename=suggested,
         pptx_layout=layout_hints if isinstance(layout_hints, dict) else None,
         template_provenance="office_svg_stack_injected",
     )
+    if _DOCLING_IMPORT_ENABLED:
+        docling_payload, docling_warn = try_convert_pptx_with_docling(ws.pptx_path)
+        if docling_payload:
+            imp["docling"] = docling_payload
+        if docling_warn:
+            warnings_acc.append(docling_warn)
     imp = merge_import_summary_with_template_contract(imp, template_contract)
     imp["structured_contract"] = True
     if merged_svg:
-        imp["merged_svg_template"] = merged_svg
+        merged_url, merged_warn = _materialize_merged_svg_url(
+            preview_id=preview_id,
+            merged_svg_xml=merged_svg,
+        )
+        if merged_url:
+            imp["merged_svg_url"] = merged_url
+        if merged_warn:
+            warnings_acc.append(merged_warn)
+    if isinstance(vis_fields, dict) and vis_fields:
+        imp.update(vis_fields)
+
+    merge_warnings_unique(
+        warnings_acc,
+        collect_office_import_alignment_warnings(
+            declared_slide_count=slide_count,
+            template_contract=template_contract,
+            svg_slide_xmls=None,
+        ),
+    )
 
     return TemplateOfficeConvertResponse(
         html_template=html_t,
@@ -342,6 +716,13 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
             )
             stem = Path(safe_name).stem or suggested
             hints = _layout_hints_from_pptx_path(pptx_path)
+
+            # LibreOffice may export a single merged HTML file. Split it early so the rest of the pipeline
+            # (structured manifest/contract + alignment warnings) uses the real per-slide count.
+            lo_fragments = split_lo_merged_html_slide_fragments(html_t)
+            if lo_fragments:
+                slide_count = len(lo_fragments)
+
             lw_wid = str(uuid.uuid4())
             importer = _template_import_service()
             lw_manifest = importer.build_lightweight_structured_manifest(
@@ -365,12 +746,17 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                 pptx_layout=hints,
                 template_provenance="office_libreoffice_html",
             )
+            if _DOCLING_IMPORT_ENABLED:
+                docling_payload, docling_warn = try_convert_pptx_with_docling(pptx_path)
+                if docling_payload:
+                    imp_lo["docling"] = docling_payload
+                if docling_warn:
+                    warnings_acc.append(docling_warn)
             imp_lo = merge_import_summary_with_template_contract(imp_lo, template_contract)
             if not (imp_lo.get("placeholder_markers") or []):
                 imp_lo["placeholder_markers"] = placeholder_markers_from_html(html_t)
             imp_lo["structured_contract"] = True
             imp_lo["html_engine"] = "libreoffice_html"
-            lo_fragments = split_lo_merged_html_slide_fragments(html_t)
             html_template_out = html_t
             if lo_fragments:
                 imp_lo["html_slide_fragments"] = lo_fragments
@@ -380,55 +766,37 @@ def _convert_office_template_sync(body: TemplateOfficeConvertRequest) -> Templat
                     lo_fragments[0],
                     title=f"{stem} · 第1页",
                 )
+                imp_lo["slide_count"] = slide_count
 
             svg_t_lo: Optional[str] = None
-            try:
-                svg_t_lo, svg_slide_xmls_lo, merged_sup_svg = _supplement_svg_from_pptx(
-                    pptx_path,
-                    root,
-                    soffice,
-                    hints,
-                    slide_count,
-                    pptx_readable=lw_manifest.get("pptx_readable")
-                    if isinstance(lw_manifest, dict)
-                    else None,
-                )
-                if svg_t_lo:
-                    from ..services.template.svg_template_import_meta import (
-                        trim_svg_slide_xmls_for_persistence as _trim_slides,
-                    )
-                    from ..svg_export.placeholder_adapter import scan_svg_placeholder_inner_names
-
-                    markers_union: set[str] = set()
-                    for xml in (svg_slide_xmls_lo or []):
-                        markers_union.update(scan_svg_placeholder_inner_names(xml))
-                    if svg_t_lo:
-                        markers_union.update(scan_svg_placeholder_inner_names(svg_t_lo))
-                    sorted_markers = sorted(markers_union)
-
-                    imp_lo["placeholder_markers"] = sorted_markers
-                    import hashlib as _hl
-                    joined = "|".join(sorted_markers)
-                    imp_lo["placeholder_hash"] = _hl.sha256(joined.encode("utf-8")).hexdigest() if joined else ""
-
-                    if svg_slide_xmls_lo:
-                        trimmed, trim_warnings = _trim_slides(svg_slide_xmls_lo)
-                        warnings_acc.extend(trim_warnings)
-                        if trimmed:
-                            imp_lo["svg_slide_xmls"] = trimmed
-                            imp_lo["visual_persistence_version"] = max(
-                                int(imp_lo.get("visual_persistence_version") or 0), 1
-                            )
-                            imp_lo["native_export_mode"] = "per_slide"
-                            imp_lo["visual_mode"] = "merged_and_pages"
-
+            preview_id = str(uuid.uuid4())
+            vis_fields, vis_warnings = _supplement_visual_previews_from_pptx(
+                pptx_path,
+                root,
+                soffice,
+                preview_id=preview_id,
+                slide_count=slide_count,
+                png_zoom=float(body.png_zoom or 2.0),
+            )
+            if isinstance(vis_fields, dict) and vis_fields:
+                imp_lo.update(vis_fields)
+                if vis_fields.get("png_slide_urls") or vis_fields.get("svg_slide_urls"):
+                    imp_lo["visual_persistence_version"] = max(int(imp_lo.get("visual_persistence_version") or 0), 1)
+                if vis_fields.get("svg_slide_urls"):
                     imp_lo["svg_supplement"] = True
-                    warnings_acc.append("LibreOffice HTML 管线已补充 SVG 母版和占位符标记（svg_supplement）")
-                    if merged_sup_svg:
-                        imp_lo["merged_svg_template"] = merged_sup_svg
-            except Exception as svg_err:
-                logger.warning("LO HTML svg supplement failed (non-fatal): %s", svg_err)
-                warnings_acc.append(f"SVG 补充失败（不影响 HTML 模板）：{svg_err}")
+            warnings_acc.extend(vis_warnings or [])
+
+            merge_warnings_unique(
+                warnings_acc,
+                collect_office_import_alignment_warnings(
+                    declared_slide_count=slide_count,
+                    template_contract=template_contract,
+                    html_slide_fragments=imp_lo.get("html_slide_fragments")
+                    if isinstance(imp_lo.get("html_slide_fragments"), list)
+                    else None,
+                    svg_slide_xmls=None,
+                ),
+            )
 
             return TemplateOfficeConvertResponse(
                 html_template=html_template_out,
@@ -1051,6 +1419,256 @@ async def get_template_preview(template_id: int, user=Depends(get_current_user_r
     except Exception as e:
         logger.error(f"Failed to get template preview {template_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get template preview")
+
+
+@router.get("/{template_id}/preview-slide", response_model=dict)
+async def get_template_preview_slide(
+    template_id: int,
+    index: int = Query(1, ge=1, description="1-based slide index"),
+    user=Depends(get_current_user_required),
+):
+    """
+    Optional: preview a specific slide for one imported template record.
+
+    Prefers import_summary.svg_slide_xmls / import_summary.html_slide_fragments when present; otherwise falls back
+    to template.svg_template/html_template.
+    """
+    try:
+        template_service = _template_service_for_user(user)
+        template = await template_service.get_template_by_id(template_id)
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+
+        name = template.get("template_name") or "模板"
+        imp = template.get("import_summary") if isinstance(template, dict) else None
+        if not isinstance(imp, dict):
+            imp = {}
+        slide_count = 0
+        try:
+            slide_count = int(imp.get("slide_count") or 0)
+        except Exception:
+            slide_count = 0
+        if slide_count <= 0:
+            tc = imp.get("template_contract")
+            if isinstance(tc, dict):
+                try:
+                    slide_count = int(tc.get("slide_count") or 0)
+                except Exception:
+                    slide_count = 0
+
+        # Try per-page SVG URLs first (best visual fidelity, loaded on demand).
+        svg_urls = imp.get("svg_slide_urls")
+        if isinstance(svg_urls, list) and 1 <= index <= len(svg_urls):
+            svg_url = svg_urls[index - 1]
+            if isinstance(svg_url, str) and svg_url.strip():
+                safe_title = html_escape((name or "模板").replace("<", "").replace(">", ""))
+                safe_badge = html_escape(f"{index} / {slide_count or len(svg_urls)}")
+                html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{safe_title} · 第{index}页</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {{
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      background: #f0f0f0;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    }}
+    .wd-stage {{
+      min-height: calc(100vh - 32px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .wd-card {{
+      position: relative;
+      display: inline-block;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      border-radius: 6px;
+      padding: 8px;
+    }}
+    .wd-card img {{
+      display: block;
+      max-width: min(100%, 1400px);
+      max-height: calc(100vh - 64px);
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }}
+    .wd-badge {{
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1;
+      user-select: none;
+    }}
+  </style>
+</head>
+<body>
+  <div class="wd-stage">
+    <div class="wd-card">
+      <div class="wd-badge">{safe_badge}</div>
+      <img src="{svg_url}" alt="slide {index}" />
+    </div>
+  </div>
+</body>
+</html>"""
+                return {
+                    "id": template["id"],
+                    "template_name": name,
+                    "index": index,
+                    "slide_count": slide_count,
+                    "source": "svg_slide_urls",
+                    "svg_url": svg_url,
+                    "merged_svg_url": imp.get("merged_svg_url"),
+                    "html_template": html,
+                    "svg_template": None,
+                }
+
+        # PNG fallback (visual-only, stable) — prefer this over LO HTML fragments for preview fidelity.
+        png_urls = imp.get("png_slide_urls")
+        if isinstance(png_urls, list) and 1 <= index <= len(png_urls):
+            png_url = png_urls[index - 1]
+            if isinstance(png_url, str) and png_url.strip():
+                safe_title = html_escape((name or "模板").replace("<", "").replace(">", ""))
+                safe_badge = html_escape(f"{index} / {slide_count or len(png_urls)}")
+                html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{safe_title} · 第{index}页</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {{
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      background: #f0f0f0;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    }}
+    .wd-stage {{
+      min-height: calc(100vh - 32px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .wd-card {{
+      position: relative;
+      display: inline-block;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      border-radius: 6px;
+      padding: 8px;
+    }}
+    .wd-card img {{
+      display: block;
+      max-width: min(100%, 1400px);
+      max-height: calc(100vh - 64px);
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }}
+    .wd-badge {{
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1;
+      user-select: none;
+    }}
+    .wd-hint {{
+      margin-top: 8px;
+      color: #666;
+      font-size: 12px;
+      text-align: center;
+    }}
+  </style>
+</head>
+<body>
+  <div class="wd-stage">
+    <div>
+      <div class="wd-card">
+        <div class="wd-badge">{safe_badge}</div>
+        <img src="{png_url}" alt="slide {index}" />
+      </div>
+      <div class="wd-hint">提示：可用浏览器缩放（Ctrl + 鼠标滚轮 / Ctrl + +/-）查看细节</div>
+    </div>
+  </div>
+</body>
+</html>"""
+                return {
+                    "id": template["id"],
+                    "template_name": name,
+                    "index": index,
+                    "slide_count": slide_count,
+                    "source": "png_slide_urls",
+                    "png_url": png_url,
+                    "html_template": html,
+                    "svg_template": None,
+                    "merged_svg_url": imp.get("merged_svg_url"),
+                }
+
+        # Try LO HTML fragments (structure reference; may be less visually accurate than PNG/SVG).
+        html_frags = imp.get("html_slide_fragments")
+        if isinstance(html_frags, list) and 1 <= index <= len(html_frags):
+            frag = html_frags[index - 1]
+            if isinstance(frag, str) and frag.strip():
+                return {
+                    "id": template["id"],
+                    "template_name": name,
+                    "index": index,
+                    "slide_count": slide_count,
+                    "source": "html_slide_fragments",
+                    "html_template": wrap_lo_slide_fragment_html(frag, title=f"{name} · 第{index}页"),
+                    "svg_template": None,
+                    "merged_svg_url": imp.get("merged_svg_url"),
+                }
+
+        # Try SVG per-page XML (legacy compatibility).
+        svg_pages = imp.get("svg_slide_xmls")
+        if isinstance(svg_pages, list) and 1 <= index <= len(svg_pages):
+            svg_xml = svg_pages[index - 1]
+            if isinstance(svg_xml, str) and svg_xml.strip():
+                return {
+                    "id": template["id"],
+                    "template_name": name,
+                    "index": index,
+                    "slide_count": slide_count,
+                    "source": "svg_slide_xmls",
+                    "html_template": wrap_single_slide_html(svg_xml, template_name=f"{name} · 第{index}页"),
+                    "svg_template": svg_xml,
+                    "merged_svg_url": imp.get("merged_svg_url"),
+                }
+
+        # Fallback to default preview surfaces.
+        return {
+            "id": template["id"],
+            "template_name": name,
+            "index": index,
+            "slide_count": slide_count,
+            "source": "default",
+            "html_template": template.get("html_template") or "",
+            "svg_template": template.get("svg_template"),
+            "merged_svg_url": imp.get("merged_svg_url"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get template preview slide {template_id}#{index}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get template preview slide")
 
 
 @router.get("/{template_id}/export-native-pptx")
