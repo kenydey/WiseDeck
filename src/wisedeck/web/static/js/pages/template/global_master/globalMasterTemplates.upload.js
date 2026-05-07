@@ -267,14 +267,15 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                         
                         const stem = lightweightResult.source_filename?.replace(/\.pptx$/i, '') || file.name.replace(/\.pptx$/i, '');
                         
-                        const previewHtml = generateLightweightPreviewHtml(lightweightResult);
+                        const htmlTemplate = lightweightResult.html_template || generateFallbackPreviewHtml(lightweightResult);
                         
                         const colors = lightweightResult.theme_colors || {};
                         const fonts = lightweightResult.fonts || {};
                         const layoutCount = lightweightResult.layouts?.length || 0;
                         const markers = lightweightResult.template_contract?.placeholder_markers || [];
                         
-                        const tags = ['导入', 'PPTX', '轻量级'];
+                        const tags = ['导入', 'PPTX'];
+                        if (lightweightResult.html_template) tags.push('完整模板');
                         if (layoutCount >= 5) tags.push('多布局');
                         if (markers.includes('PAGE_TITLE')) tags.push('标题页');
                         if (markers.includes('CONTENT_AREA')) tags.push('内容页');
@@ -282,8 +283,8 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                         
                         templateData = {
                             template_name: stem,
-                            description: `从 PPTX 文件 ${file.name} 轻量级导入，包含 ${layoutCount} 个布局。提取的占位符类型：${markers.join('、')}。使用字体：标题「${fonts.title || '默认'}」、正文「${fonts.body || '默认'}」。纯 python-pptx 解析，无需外部依赖。`,
-                            html_template: previewHtml,
+                            description: `从 PPTX 文件 ${file.name} 轻量级导入，包含 ${layoutCount} 个布局。提取的占位符类型：${markers.join('、')}。${lightweightResult.html_template ? '已生成完整 HTML 模板。' : '使用默认模板样式。'}纯 python-pptx 解析，无需外部依赖。`,
+                            html_template: htmlTemplate,
                             tags: tags,
                             is_default: false,
                             import_summary: {
@@ -291,15 +292,20 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                                 layout_count: layoutCount,
                                 placeholder_markers: markers,
                                 slide_dimensions: lightweightResult.slide_dimensions,
+                                background: lightweightResult.background,
+                                font_styles: lightweightResult.font_styles,
                             },
                             style_config: {
                                 colors: colors,
                                 fonts: fonts,
                                 layouts: lightweightResult.layouts,
+                                background: lightweightResult.background,
+                                font_styles: lightweightResult.font_styles,
+                                responsive_config: lightweightResult.responsive_config,
                             },
                         };
                         
-                        importConvertResult = { export_engine_used: 'python-pptx-lightweight' };
+                        importConvertResult = { export_engine_used: 'python-pptx-lightweight-v2' };
                     } catch (lightweightErr) {
                         console.warn('轻量级导入失败，回退到 LibreOffice:', lightweightErr);
                         setImportButtonBusy(true, '检查转换引擎…');
@@ -510,7 +516,7 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
         });
     }
 
-    function generateLightweightPreviewHtml(templateConfig) {
+    function generateFallbackPreviewHtml(templateConfig) {
         const themeColors = templateConfig.theme_colors || {};
         const fonts = templateConfig.fonts || {};
         const layouts = templateConfig.layouts || [];

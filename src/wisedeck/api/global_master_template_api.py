@@ -911,7 +911,8 @@ async def import_pptx_lightweight(
     轻量级 PPTX 导入 - 纯 python-pptx 流程，不依赖 LibreOffice。
     
     使用 PPTXStyleExtractor 提取颜色、字体、占位符坐标，
-    使用 LayoutAutoSplitter 自动切分双栏布局。
+    使用 LayoutAutoSplitter 自动切分双栏布局，
+    使用 HtmlTemplateGenerator 生成完整 HTML 模板。
     
     返回完整的模板配置 JSON，可直接用于创建 GlobalMasterTemplate。
     """
@@ -922,6 +923,10 @@ async def import_pptx_lightweight(
             filename=request.filename,
             data=request.data,
         )
+        
+        from wisedeck.services.template.html_template_generator import generate_html_template_from_config
+        template_config["html_template"] = generate_html_template_from_config(template_config)
+        
         return template_config
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

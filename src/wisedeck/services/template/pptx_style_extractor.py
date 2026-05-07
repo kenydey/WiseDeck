@@ -249,6 +249,139 @@ class PPTXStyleExtractor:
         
         return fonts
     
+    def extract_background_style(self) -> Dict[str, Any]:
+        """提取背景样式（纯色/渐变）"""
+        bg = {"type": "solid", "value": "#FFFFFF"}
+        
+        if not self._prs:
+            return bg
+        
+        try:
+            for slide in list(self._prs.slides)[:1]:
+                try:
+                    bg_fill = slide.background.fill
+                    fill_type = getattr(bg_fill, "type", None)
+                    
+                    if fill_type is None:
+                        continue
+                    
+                    fill_type_str = str(fill_type)
+                    
+                    if "SOLID" in fill_type_str:
+                        try:
+                            fore_color = bg_fill.fore_color
+                            if fore_color:
+                                color_rgb = getattr(fore_color, "rgb", None)
+                                if color_rgb:
+                                    bg["value"] = _rgb_to_hex(color_rgb)
+                                else:
+                                    theme_color = getattr(fore_color, "theme_color", None)
+                                    if theme_color is not None:
+                                        colors = self.extract_theme_colors()
+                                        bg["value"] = colors.get("background", "#FFFFFF")
+                        except Exception:
+                            pass
+                    elif "GRADIENT" in fill_type_str:
+                        try:
+                            gradient_format = bg_fill
+                            angle = getattr(gradient_format, "angle", 0) or 0
+                            stops = getattr(gradient_format, "gradient_stops", [])
+                            
+                            if len(stops) >= 2:
+                                color1 = "#FFFFFF"
+                                color2 = "#4472C4"
+                                
+                                try:
+                                    stop1_color = getattr(stops[0], "color", None)
+                                    if stop1_color and hasattr(stop1_color, "rgb"):
+                                        color1 = _rgb_to_hex(stop1_color.rgb)
+                                except Exception:
+                                    pass
+                                
+                                try:
+                                    stop2_color = getattr(stops[-1], "color", None)
+                                    if stop2_color and hasattr(stop2_color, "rgb"):
+                                        color2 = _rgb_to_hex(stop2_color.rgb)
+                                except Exception:
+                                    pass
+                                
+                                bg["type"] = "gradient"
+                                bg["value"] = f"linear-gradient({angle}deg, {color1} 0%, {color2} 100%)"
+                        except Exception:
+                            pass
+                except (AttributeError, TypeError) as e:
+                    logger.debug(f"提取背景样式失败: {e}")
+                    continue
+        except Exception as e:
+            logger.warning(f"提取背景时发生错误: {e}")
+        
+        return bg
+    
+    def extract_font_styles(self) -> Dict[str, Any]:
+        """提取字体样式（大小、粗细）"""
+        styles = {
+            "title": {"font_size": 44, "font_weight": "bold"},
+            "body": {"font_size": 18, "font_weight": "normal"},
+        }
+        
+        if not self._prs:
+            return styles
+        
+        try:
+            for slide_master in self._prs.slide_masters:
+                try:
+                    for shape in slide_master.shapes:
+                        ph_type = _get_placeholder_type(shape)
+                        
+                        if ph_type == "PAGE_TITLE":
+                            try:
+                                tf = shape.text_frame
+                                if tf and tf.paragraphs:
+                                    font = tf.paragraphs[0].font
+                                    if font:
+                                        if font.size:
+                                            styles["title"]["font_size"] = int(font.size.pt)
+                                        if font.bold:
+                                            styles["title"]["font_weight"] = "bold"
+                                        elif font.bold is False:
+                                            styles["title"]["font_weight"] = "normal"
+                            except (AttributeError, TypeError):
+                                pass
+                        elif ph_type == "CONTENT_AREA":
+                            try:
+                                tf = shape.text_frame
+                                if tf and tf.paragraphs:
+                                    font = tf.paragraphs[0].font
+                                    if font:
+                                        if font.size:
+                                            styles["body"]["font_size"] = int(font.size.pt)
+                                        if font.bold:
+                                            styles["body"]["font_weight"] = "bold"
+                                        elif font.bold is False:
+                                            styles["body"]["font_weight"] = "normal"
+                            except (AttributeError, TypeError):
+                                pass
+                    
+                    break
+                except (AttributeError, TypeError) as e:
+                    logger.debug(f"提取字体样式失败: {e}")
+                    continue
+        except Exception as e:
+            logger.warning(f"提取字体样式时发生错误: {e}")
+        
+        return styles
+    
+    def extract_responsive_config(self) -> Dict[str, Any]:
+        """提取响应式配置"""
+        font_styles = self.extract_font_styles()
+        title_size = font_styles.get("title", {}).get("font_size", 44)
+        
+        return {
+            "min_font_size": 14,
+            "preferred_font_size": "4vw",
+            "max_font_size": max(title_size * 1.5, 48),
+        }
+    
     def extract_layout_placeholders(self) -> List[Dict[str, Any]]:
         """提取所有版式的占位符坐标（规格化为 0.0~1.0）"""
         layouts: List[Dict[str, Any]] = []
@@ -310,6 +443,9 @@ class PPTXStyleExtractor:
         theme_colors = self.extract_theme_colors()
         fonts = self.extract_fonts()
         layouts = self.extract_layout_placeholders()
+        background = self.extract_background_style()
+        font_styles = self.extract_font_styles()
+        responsive_config = self.extract_responsive_config()
         
         placeholder_markers = set()
         for layout in layouts:
@@ -329,6 +465,9 @@ class PPTXStyleExtractor:
             },
             "theme_colors": theme_colors,
             "fonts": fonts,
+            "background": background,
+            "font_styles": font_styles,
+            "responsive_config": responsive_config,
             "layouts": layouts,
             "template_contract": {
                 "placeholder_markers": sorted(list(placeholder_markers)),
