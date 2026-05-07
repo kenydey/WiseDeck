@@ -98,7 +98,8 @@ def _safe_get_font_name(shape: Any, default: str = "Arial") -> str:
 
 def _get_placeholder_type(shape: Any) -> Optional[str]:
     try:
-        if not hasattr(shape, "placeholder_format"):
+        # 先检查是否为占位符，非占位符形状访问 placeholder_format 会失败
+        if not getattr(shape, "is_placeholder", False):
             return None
         ph_format = shape.placeholder_format
         if ph_format is None:
