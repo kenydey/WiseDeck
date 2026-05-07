@@ -1,0 +1,18 @@
+{
+ "template_name": "极简纯白模板",
+ "description": "极致简约的纯白商务模板，采用白色背景和灰色层次，适合咨询报告、学术研究、正式会议等需要专业感的场景。",
+ "html_template": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n <meta charset=\"UTF-8\">\n <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n <title>{{ page_title }}</title>\n <style>\n html {\n height: 100%;\n display: flex;\n align-items: center;\n justify-content: center;\n background-color: #f8f9fa; \n }\n\n body {\n width: 1280px;\n height: 720px;\n margin: 0;\n padding: 0;\n position: relative;\n overflow: hidden;\n background: #ffffff;\n font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;\n flex-shrink: 0;\n }\n \n .slide-container {\n width: 100%;\n height: 100%;\n display: flex;\n flex-direction: column;\n color: #1a1a1a;\n position: relative;\n padding: 0;\n box-sizing: border-box;\n }\n \n .slide-header {\n padding: 50px 60px 25px 60px;\n border-bottom: 1px solid #e9ecef;\n background: #ffffff;\n }\n \n .slide-title {\n font-size: clamp(2rem, 4vw, 3.2rem);\n font-weight: 600;\n color: #1a1a1a;\n margin: 0;\n line-height: 1.25;\n max-height: 80px;\n overflow: hidden;\n letter-spacing: -0.5px;\n }\n \n .slide-content {\n flex: 1;\n padding: 35px 60px;\n display: flex;\n flex-direction: column;\n justify-content: center;\n max-height: 580px;\n overflow: hidden;\n }\n \n .content-main {\n font-size: clamp(1rem, 2.5vw, 1.35rem);\n line-height: 1.8;\n color: #495057;\n text-align: justify;\n }\n \n .content-points {\n list-style: none;\n padding: 0;\n margin: 0;\n }\n \n .content-points li {\n margin: 14px 0;\n padding-left: 32px;\n position: relative;\n font-size: clamp(1rem, 2.3vw, 1.25rem);\n color: #343a40;\n line-height: 1.6;\n }\n \n .content-points li::before {\n content: '';\n position: absolute;\n left: 8px;\n top: 50%;\n transform: translateY(-50%);\n width: 12px;\n height: 12px;\n background: #1a1a1a;\n border-radius: 2px;\n }\n \n .slide-footer {\n position: absolute;\n bottom: 25px;\n right: 60px;\n font-size: 0.8rem;\n color: #868e96;\n font-weight: 500;\n letter-spacing: 0.5px;\n }\n \n .slide-footer::before {\n content: '';\n display: inline-block;\n width: 30px;\n height: 1px;\n background: #dee2e6;\n margin-right: 10px;\n vertical-align: middle;\n }\n \n /* 装饰元素 */\n .decoration {\n position: absolute;\n pointer-events: none;\n }\n \n .decoration-line {\n top: 0;\n left: 0;\n width: 4px;\n height: 100%;\n background: linear-gradient(to bottom, #1a1a1a 0%, #495057 100%);\n }\n \n /* 引用样式 */\n blockquote {\n margin: 20px 0;\n padding: 20px 25px;\n border-left: 4px solid #1a1a1a;\n background: #f8f9fa;\n color: #495057;\n font-style: italic;\n }\n </style>\n</head>\n<body>\n <div class=\"decoration decoration-line\"></div>\n \n <div class=\"slide-container\">\n <div class=\"slide-header\">\n <h1 class=\"slide-title\">{{ page_title }}</h1>\n </div>\n \n <div class=\"slide-content\">\n {{#if is_list}}\n <ul class=\"content-points\">\n {{#each points}}\n <li>{{this}}</li>\n {{/each}}\n </ul>\n {{else}}\n <div class=\"content-main\">{{ content }}</div>\n {{/if}}\n </div>\n \n <div class=\"slide-footer\">{{ page_number }}</div>\n </div>\n</body>\n</html>",
+ "tags": [
+ "极简",
+ "白色",
+ "专业",
+ "正式",
+ "学术"
+ ],
+ "is_default": false,
+ "export_info": {
+ "exported_at": "2026-05-07T12:00:00.000Z",
+ "original_id": 1,
+ "original_created_at": 1749553414.0671556
+ }
+}

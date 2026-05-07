@@ -1,4 +1,7 @@
 export function createGlobalMasterTemplatesUpload({ state, apiClient, formatBytes, loadTemplates }) {
+
+    const USE_LIGHTWEIGHT_IMPORT = true;
+
     function initImageUpload() {
         const imageUploadArea = document.getElementById('imageUploadArea');
         const pptxUploadArea = document.getElementById('pptxUploadArea');
@@ -247,69 +250,141 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 if (file.size > 50 * 1024 * 1024) {
                     throw new Error('演示文稿过大，请控制在 50MB 以内');
                 }
-                setImportButtonBusy(true, '检查转换引擎…');
-                busy = true;
-                await checkOfficeEngineAvailable();
 
-                setImportButtonBusy(true, '结构化导入…');
-                const dataUrl = await readFileAsDataURL(file);
-                setImportButtonBusy(true, '提取风格基因…');
-                let extractedStyle = null;
-                try {
-                    extractedStyle = await apiClient.post('/api/template/extract', {
+                const lower = String(file.name || '').toLowerCase();
+                const isPptx = lower.endsWith('.pptx');
+
+                if (USE_LIGHTWEIGHT_IMPORT && isPptx) {
+                    setImportButtonBusy(true, '轻量级导入…');
+                    busy = true;
+                    const dataUrl = await readFileAsDataURL(file);
+                    
+                    try {
+                        const lightweightResult = await apiClient.post('/api/global-master-templates/import/lightweight-pptx', {
+                            filename: file.name,
+                            data: dataUrl,
+                        });
+                        
+                        const stem = lightweightResult.source_filename?.replace(/\.pptx$/i, '') || file.name.replace(/\.pptx$/i, '');
+                        
+                        const previewHtml = generateLightweightPreviewHtml(lightweightResult);
+                        
+                        templateData = {
+                            template_name: stem,
+                            description: `从 PPTX ${file.name} 轻量级导入 - ${lightweightResult.layouts?.length || 0} 个布局，纯 python-pptx 提取`,
+                            html_template: previewHtml,
+                            tags: ['导入', 'PPTX', '轻量级'],
+                            is_default: false,
+                            import_summary: {
+                                source: 'lightweight_pptx_import',
+                                layout_count: lightweightResult.layouts?.length || 0,
+                                placeholder_markers: lightweightResult.template_contract?.placeholder_markers || [],
+                                slide_dimensions: lightweightResult.slide_dimensions,
+                            },
+                            style_config: {
+                                colors: lightweightResult.theme_colors,
+                                fonts: lightweightResult.fonts,
+                                layouts: lightweightResult.layouts,
+                            },
+                        };
+                        
+                        importConvertResult = { export_engine_used: 'python-pptx-lightweight' };
+                    } catch (lightweightErr) {
+                        console.warn('轻量级导入失败，回退到 LibreOffice:', lightweightErr);
+                        setImportButtonBusy(true, '检查转换引擎…');
+                        await checkOfficeEngineAvailable();
+                        setImportButtonBusy(true, '结构化导入…');
+                        const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
+                            filename: file.name,
+                            data: dataUrl,
+                            prefer_libreoffice_html: true,
+                            fallback_to_svg_stack: true,
+                            bundle_mode: document.getElementById('officeImportBundleMode')?.value || 'per_slide',
+                        });
+                        importConvertResult = conv;
+                        const stem = conv.suggested_template_name || file.name.replace(/\.(pptx|ppt)$/i, '');
+                        templateData = {
+                            template_name: stem,
+                            description: `从文件 ${file.name} 结构化导入（${conv.export_engine_used}）`,
+                            html_template: conv.html_template,
+                            tags: ['导入', '结构化母版'],
+                            is_default: false,
+                        };
+                        if (conv.svg_template) templateData.svg_template = conv.svg_template;
+                        if (conv.import_summary) templateData.import_summary = conv.import_summary;
+                        if (conv.template_contract) {
+                            templateData.import_summary = templateData.import_summary || {};
+                            templateData.import_summary.template_contract = conv.template_contract;
+                        }
+                        if (Array.isArray(conv.warnings) && conv.warnings.length) {
+                            importWarnings = conv.warnings.slice();
+                        }
+                    }
+                } else {
+                    setImportButtonBusy(true, '检查转换引擎…');
+                    busy = true;
+                    await checkOfficeEngineAvailable();
+
+                    setImportButtonBusy(true, '结构化导入…');
+                    const dataUrl = await readFileAsDataURL(file);
+                    setImportButtonBusy(true, '提取风格基因…');
+                    let extractedStyle = null;
+                    try {
+                        extractedStyle = await apiClient.post('/api/template/extract', {
+                            filename: file.name,
+                            data: dataUrl,
+                        });
+                    } catch (e) {
+                        console.warn('风格提取失败（不影响导入）', e);
+                    }
+                    const bundleMode =
+                        document.getElementById('officeImportBundleMode')?.value || 'per_slide';
+                    const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
                         filename: file.name,
                         data: dataUrl,
+                        prefer_libreoffice_html: true,
+                        fallback_to_svg_stack: true,
+                        bundle_mode: bundleMode,
                     });
-                } catch (e) {
-                    console.warn('风格提取失败（不影响导入）', e);
-                }
-                const bundleMode =
-                    document.getElementById('officeImportBundleMode')?.value || 'per_slide';
-                const conv = await apiClient.post('/api/global-master-templates/import/convert-office-template', {
-                    filename: file.name,
-                    data: dataUrl,
-                    prefer_libreoffice_html: true,
-                    fallback_to_svg_stack: true,
-                    bundle_mode: bundleMode,
-                });
-                importConvertResult = conv;
-                const stem =
-                    conv.suggested_template_name ||
-                    file.name.replace(/\.(pptx|ppt)$/i, '');
-                templateData = {
-                    template_name: stem,
-                    description:
-                        `从文件 ${file.name} 结构化导入（${conv.export_engine_used}），已保存为 1 条全局母版。` +
-                        '多页在 import_summary / template_contract；列表预览默认多为第 1 页；生成时可对齐占位符。',
-                    html_template: conv.html_template,
-                    tags: ['导入', '结构化母版'],
-                    is_default: false,
-                };
-                if (conv.svg_template) {
-                    templateData.svg_template = conv.svg_template;
-                }
-                const importSummary = {};
-                if (conv.import_summary && typeof conv.import_summary === 'object') {
-                    Object.assign(importSummary, conv.import_summary);
-                }
-                if (conv.template_contract && typeof conv.template_contract === 'object') {
-                    importSummary.template_contract = conv.template_contract;
-                }
-                if (Object.keys(importSummary).length) {
-                    templateData.import_summary = importSummary;
-                }
-                if (extractedStyle && extractedStyle.success !== false) {
-                    templateData.style_config = {
-                        style_id: extractedStyle.style_id,
-                        custom_style_url: extractedStyle.custom_style_url,
-                        asset_manifest_url: extractedStyle.asset_manifest_url,
-                        palette: extractedStyle.summary?.paletteTop5,
-                        typography: extractedStyle.summary?.fontPair,
+                    importConvertResult = conv;
+                    const stem =
+                        conv.suggested_template_name ||
+                        file.name.replace(/\.(pptx|ppt)$/i, '');
+                    templateData = {
+                        template_name: stem,
+                        description:
+                            `从文件 ${file.name} 结构化导入（${conv.export_engine_used}），已保存为 1 条全局母版。` +
+                            '多页在 import_summary / template_contract；列表预览默认多为第 1 页；生成时可对齐占位符。',
+                        html_template: conv.html_template,
+                        tags: ['导入', '结构化母版'],
+                        is_default: false,
                     };
-                }
-                if (Array.isArray(conv.warnings) && conv.warnings.length) {
-                    importWarnings = conv.warnings.slice();
-                    console.warn('模板导入警告', importWarnings);
+                    if (conv.svg_template) {
+                        templateData.svg_template = conv.svg_template;
+                    }
+                    const importSummary = {};
+                    if (conv.import_summary && typeof conv.import_summary === 'object') {
+                        Object.assign(importSummary, conv.import_summary);
+                    }
+                    if (conv.template_contract && typeof conv.template_contract === 'object') {
+                        importSummary.template_contract = conv.template_contract;
+                    }
+                    if (Object.keys(importSummary).length) {
+                        templateData.import_summary = importSummary;
+                    }
+                    if (extractedStyle && extractedStyle.success !== false) {
+                        templateData.style_config = {
+                            style_id: extractedStyle.style_id,
+                            custom_style_url: extractedStyle.custom_style_url,
+                            asset_manifest_url: extractedStyle.asset_manifest_url,
+                            palette: extractedStyle.summary?.paletteTop5,
+                            typography: extractedStyle.summary?.fontPair,
+                        };
+                    }
+                    if (Array.isArray(conv.warnings) && conv.warnings.length) {
+                        importWarnings = conv.warnings.slice();
+                        console.warn('模板导入警告', importWarnings);
+                    }
                 }
             } else if (isPdf) {
                 importKind = 'pdf';
@@ -422,6 +497,91 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
             reader.onerror = reject;
             reader.readAsText(file);
         });
+    }
+
+    function generateLightweightPreviewHtml(templateConfig) {
+        const themeColors = templateConfig.theme_colors || {};
+        const fonts = templateConfig.fonts || {};
+        const layouts = templateConfig.layouts || [];
+        const bgColor = themeColors.background || '#FFFFFF';
+        const titleColor = themeColors.primary || '#4472C4';
+        const titleFont = fonts.title || 'Arial';
+        const bodyFont = fonts.body || 'Calibri';
+
+        const layout = layouts[0] || { placeholders: [] };
+        const placeholders = layout.placeholders || [];
+
+        let placeholderHtml = '';
+        placeholders.forEach((ph) => {
+            const bbox = ph.bbox_ratio || [0, 0, 0, 0];
+            const left = Math.round((bbox[0] || 0) * 100);
+            const top = Math.round((bbox[1] || 0) * 100);
+            const width = Math.round((bbox[2] || 0) * 100);
+            const height = Math.round((bbox[3] || 0) * 100);
+            
+            const isTitle = ph.type === 'PAGE_TITLE';
+            const isSubtitle = ph.type === 'SUBTITLE';
+            const phBgColor = isTitle || isSubtitle ? 'transparent' : 'rgba(68, 114, 196, 0.1)';
+            const phBorderColor = isTitle || isSubtitle ? 'transparent' : 'rgba(68, 114, 196, 0.3)';
+            const phTextColor = isTitle ? titleColor : isSubtitle ? '#666666' : '#333333';
+            const phFontFamily = isTitle || isSubtitle ? titleFont : bodyFont;
+            const phFontSize = isTitle ? '18px' : isSubtitle ? '14px' : '12px';
+            const phLabel = isTitle ? '标题' : isSubtitle ? '副标题' : '内容';
+
+            placeholderHtml += `
+                <div style="
+                    position:absolute;
+                    left:${left}%;
+                    top:${top}%;
+                    width:${width}%;
+                    height:${height}%;
+                    background:${phBgColor};
+                    border:1px dashed ${phBorderColor};
+                    border-radius:4px;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    font-family:${phFontFamily}, sans-serif;
+                    font-size:${phFontSize};
+                    color:${phTextColor};
+                    overflow:hidden;
+                    box-sizing:border-box;
+                ">
+                    <span style="opacity:0.5;">${phLabel}</span>
+                </div>
+            `;
+        });
+
+        return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>模板预览</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            margin: 0; 
+            padding: 0; 
+            width: 100%; 
+            height: 100%; 
+            overflow: hidden;
+            background: ${bgColor};
+            font-family: ${bodyFont}, sans-serif;
+        }
+        .slide-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            aspect-ratio: 16/9;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        ${placeholderHtml}
+    </div>
+</body>
+</html>`;
     }
 
     return {

@@ -696,3 +696,90 @@ class TemplateImportService:
             png_dir=png_dir,
             manifest=manifest,
         )
+
+    def import_pptx_lightweight(
+        self,
+        *,
+        filename: str,
+        data: str,
+    ) -> Dict[str, Any]:
+        """
+        轻量级 PPTX 导入 - 纯 python-pptx 流程，不依赖 LibreOffice。
+        
+        使用 PPTXStyleExtractor 提取颜色、字体、占位符坐标，
+        使用 LayoutAutoSplitter 自动切分双栏布局。
+        
+        Args:
+            filename: 文件名
+            data: Base64 编码的文件数据
+        
+        Returns:
+            完整的模板配置字典
+        """
+        from wisedeck.services.template.pptx_style_extractor import PPTXStyleExtractor
+        from wisedeck.services.template.layout_auto_splitter import generate_layout_variants
+        
+        raw_bytes = _decode_uploaded_base64_file(data)
+        if not raw_bytes:
+            raise ValueError("上传文件为空")
+
+        lower = (filename or "").lower()
+        if not lower.endswith(".pptx"):
+            raise ValueError("轻量级导入仅支持 .pptx 文件")
+
+        if len(raw_bytes) > 50 * 1024 * 1024:
+            raise ValueError("演示文稿过大，请控制在 50MB 以内")
+
+        safe_name = Path(filename or "upload.pptx").name.replace("\x00", "")
+
+        try:
+            extractor = PPTXStyleExtractor(raw_bytes)
+            template_config = extractor.extract_complete_template_config()
+        except Exception as e:
+            logger.error("PPTXStyleExtractor 提取失败: %s", e)
+            raise ValueError(f"PPTX 解析失败: {e}")
+
+        template_config = generate_layout_variants(template_config)
+
+        template_config["source_filename"] = safe_name
+        template_config["import_timestamp"] = __import__("time").time()
+
+        return template_config
+
+    def import_pptx_lightweight_from_path(
+        self,
+        pptx_path: Path,
+        *,
+        source_filename: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        从文件路径进行轻量级 PPTX 导入。
+        
+        Args:
+            pptx_path: PPTX 文件路径
+            source_filename: 源文件名（可选）
+        
+        Returns:
+            完整的模板配置字典
+        """
+        from wisedeck.services.template.pptx_style_extractor import PPTXStyleExtractor
+        from wisedeck.services.template.layout_auto_splitter import generate_layout_variants
+        
+        if not pptx_path.is_file():
+            raise FileNotFoundError(f"PPTX 文件不存在: {pptx_path}")
+
+        safe_name = source_filename or pptx_path.name
+
+        try:
+            extractor = PPTXStyleExtractor(pptx_path)
+            template_config = extractor.extract_complete_template_config()
+        except Exception as e:
+            logger.error("PPTXStyleExtractor 提取失败: %s", e)
+            raise ValueError(f"PPTX 解析失败: {e}")
+
+        template_config = generate_layout_variants(template_config)
+
+        template_config["source_filename"] = safe_name
+        template_config["import_timestamp"] = __import__("time").time()
+
+        return template_config

@@ -1,0 +1,18 @@
+{
+ "template_name": "清新绿能模板",
+ "description": "清新自然的商务模板，采用白色背景配绿色点缀，适合可持续发展、环保能源、医疗健康、教育培训等场景。",
+ "html_template": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n <meta charset=\"UTF-8\">\n <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n <title>{{ page_title }}</title>\n <style>\n html {\n height: 100%;\n display: flex;\n align-items: center;\n justify-content: center;\n background-color: #f0fdf4; \n }\n\n body {\n width: 1280px;\n height: 720px;\n margin: 0;\n padding: 0;\n position: relative;\n overflow: hidden;\n background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 50%, #ecfdf5 100%);\n font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;\n flex-shrink: 0;\n color: #1f2937;\n }\n \n .slide-container {\n width: 100%;\n height: 100%;\n display: flex;\n flex-direction: column;\n position: relative;\n }\n \n .slide-header {\n padding: 40px 60px 20px 60px;\n border-bottom: 3px solid #10b981;\n background: linear-gradient(to right, rgba(16, 185, 129, 0.05), transparent);\n }\n \n .slide-title {\n font-size: clamp(2rem, 4vw, 3.5rem);\n font-weight: bold;\n color: #059669;\n margin: 0;\n line-height: 1.2;\n max-height: 80px;\n overflow: hidden;\n }\n \n .slide-content {\n flex: 1;\n padding: 30px 60px;\n display: flex;\n flex-direction: column;\n justify-content: center;\n max-height: 580px;\n overflow: hidden;\n }\n \n .content-main {\n font-size: clamp(1rem, 2.5vw, 1.4rem);\n line-height: 1.7;\n color: #374151;\n }\n \n .content-points {\n list-style: none;\n padding: 0;\n margin: 0;\n }\n \n .content-points li {\n margin: 15px 0;\n padding-left: 28px;\n position: relative;\n font-size: clamp(1rem, 2.3vw, 1.3rem);\n color: #1f2937;\n }\n \n .content-points li::before {\n content: '✓';\n position: absolute;\n left: 0;\n color: #10b981;\n font-weight: bold;\n font-size: 1.1em;\n }\n \n .slide-footer {\n position: absolute;\n bottom: 20px;\n right: 40px;\n font-size: 0.85rem;\n color: #6b7280;\n background: #f3f4f6;\n padding: 5px 15px;\n border-radius: 20px;\n }\n \n /* 装饰元素 */\n .decoration {\n position: absolute;\n pointer-events: none;\n }\n \n .decoration-leaf {\n top: 20px;\n right: 40px;\n width: 80px;\n height: 80px;\n opacity: 0.1;\n }\n \n .decoration-leaf::before {\n content: '🌿';\n font-size: 60px;\n }\n \n .decoration-wave {\n bottom: 0;\n left: 0;\n width: 100%;\n height: 10px;\n background: linear-gradient(90deg, #10b981 0%, #34d399 50%, #10b981 100%);\n opacity: 0.3;\n }\n </style>\n</head>\n<body>\n <div class=\"decoration decoration-leaf\"></div>\n <div class=\"decoration decoration-wave\"></div>\n \n <div class=\"slide-container\">\n <div class=\"slide-header\">\n <h1 class=\"slide-title\">{{ page_title }}</h1>\n </div>\n \n <div class=\"slide-content\">\n {{#if is_list}}\n <ul class=\"content-points\">\n {{#each points}}\n <li>{{this}}</li>\n {{/each}}\n </ul>\n {{else}}\n <div class=\"content-main\">{{ content }}</div>\n {{/if}}\n </div>\n \n <div class=\"slide-footer\">{{ page_number }}</div>\n </div>\n</body>\n</html>",
+ "tags": [
+ "清新",
+ "绿色",
+ "环保",
+ "医疗",
+ "教育"
+ ],
+ "is_default": false,
+ "export_info": {
+ "exported_at": "2026-05-07T12:00:00.000Z",
+ "original_id": 1,
+ "original_created_at": 1749553414.0671556
+ }
+}

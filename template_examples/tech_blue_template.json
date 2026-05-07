@@ -1,0 +1,18 @@
+{
+ "template_name": "科技蓝调模板",
+ "description": "科技感十足的商务模板，采用深蓝渐变和亮蓝色点缀，适合科技公司、数字化转型、IT 项目等演示场景。",
+ "html_template": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n <meta charset=\"UTF-8\">\n <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n <title>{{ page_title }}</title>\n <style>\n html {\n height: 100%;\n display: flex;\n align-items: center;\n justify-content: center;\n background-color: #0a0f1c; \n }\n\n body {\n width: 1280px;\n height: 720px;\n margin: 0;\n padding: 0;\n position: relative;\n overflow: hidden;\n background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0c1929 100%);\n font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;\n flex-shrink: 0;\n }\n \n .slide-container {\n width: 100%;\n height: 100%;\n display: flex;\n flex-direction: column;\n color: white;\n position: relative;\n }\n \n .slide-header {\n padding: 40px 60px 20px 60px;\n border-bottom: 2px solid rgba(59, 130, 246, 0.5);\n }\n \n .slide-title {\n font-size: clamp(2rem, 4vw, 3.5rem);\n font-weight: bold;\n color: #3b82f6;\n margin: 0;\n line-height: 1.2;\n max-height: 80px;\n overflow: hidden;\n text-shadow: 0 0 20px rgba(59, 130, 246, 0.5);\n }\n \n .slide-content {\n flex: 1;\n padding: 30px 60px;\n display: flex;\n flex-direction: column;\n justify-content: center;\n max-height: 580px;\n overflow: hidden;\n }\n \n .content-main {\n font-size: clamp(1rem, 2.5vw, 1.4rem);\n line-height: 1.6;\n color: #e0f2fe;\n }\n \n .content-points {\n list-style: none;\n padding: 0;\n margin: 0;\n }\n \n .content-points li {\n margin: 15px 0;\n padding-left: 25px;\n position: relative;\n font-size: clamp(1rem, 2.3vw, 1.3rem);\n color: #bae6fd;\n }\n \n .content-points li::before {\n content: '▸';\n position: absolute;\n left: 0;\n color: #3b82f6;\n font-weight: bold;\n }\n \n .slide-footer {\n position: absolute;\n bottom: 20px;\n right: 40px;\n font-size: 0.85rem;\n color: #94a3b8;\n }\n \n /* 装饰元素 */\n .decoration {\n position: absolute;\n pointer-events: none;\n }\n \n .decoration-top-right {\n top: -100px;\n right: -100px;\n width: 300px;\n height: 300px;\n background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);\n border-radius: 50%;\n }\n \n .decoration-bottom-left {\n bottom: -150px;\n left: -150px;\n width: 400px;\n height: 400px;\n background: radial-gradient(circle, rgba(147, 51, 234, 0.1) 0%, transparent 70%);\n border-radius: 50%;\n }\n </style>\n</head>\n<body>\n <div class=\"decoration decoration-top-right\"></div>\n <div class=\"decoration decoration-bottom-left\"></div>\n \n <div class=\"slide-container\">\n <div class=\"slide-header\">\n <h1 class=\"slide-title\">{{ page_title }}</h1>\n </div>\n \n <div class=\"slide-content\">\n {{#if is_list}}\n <ul class=\"content-points\">\n {{#each points}}\n <li>{{this}}</li>\n {{/each}}\n </ul>\n {{else}}\n <div class=\"content-main\">{{ content }}</div>\n {{/if}}\n </div>\n \n <div class=\"slide-footer\">{{ page_number }}</div>\n </div>\n</body>\n</html>",
+ "tags": [
+ "科技",
+ "蓝色",
+ "渐变",
+ "现代",
+ "IT"
+ ],
+ "is_default": false,
+ "export_info": {
+ "exported_at": "2026-05-07T12:00:00.000Z",
+ "original_id": 1,
+ "original_created_at": 1749553414.0671556
+ }
+}

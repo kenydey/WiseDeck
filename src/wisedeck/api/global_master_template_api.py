@@ -902,6 +902,34 @@ async def import_template_workspace(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/import/lightweight-pptx")
+async def import_pptx_lightweight(
+    request: TemplateImportUploadRequest,
+    user=Depends(get_current_user_required),
+):
+    """
+    轻量级 PPTX 导入 - 纯 python-pptx 流程，不依赖 LibreOffice。
+    
+    使用 PPTXStyleExtractor 提取颜色、字体、占位符坐标，
+    使用 LayoutAutoSplitter 自动切分双栏布局。
+    
+    返回完整的模板配置 JSON，可直接用于创建 GlobalMasterTemplate。
+    """
+    del user
+    try:
+        importer = _template_import_service()
+        template_config = importer.import_pptx_lightweight(
+            filename=request.filename,
+            data=request.data,
+        )
+        return template_config
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Lightweight PPTX import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/", response_model=GlobalMasterTemplateResponse)
 async def create_template(
     template_data: GlobalMasterTemplateCreate,

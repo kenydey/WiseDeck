@@ -1,0 +1,18 @@
+{
+ "template_name": "活力橙彩模板",
+ "description": "充满活力的商务模板，采用渐变橙色和暖色调，适合创意产业、营销活动、创业路演、产品展示等场景。",
+ "html_template": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n <meta charset=\"UTF-8\">\n <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n <title>{{ page_title }}</title>\n <style>\n html {\n height: 100%;\n display: flex;\n align-items: center;\n justify-content: center;\n background-color: #1a1a2e; \n }\n\n body {\n width: 1280px;\n height: 720px;\n margin: 0;\n padding: 0;\n position: relative;\n overflow: hidden;\n background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%);\n font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;\n flex-shrink: 0;\n }\n \n .slide-container {\n width: 100%;\n height: 100%;\n display: flex;\n flex-direction: column;\n color: white;\n position: relative;\n }\n \n .slide-header {\n padding: 40px 60px 20px 60px;\n border-bottom: 3px solid;\n border-image: linear-gradient(90deg, #ff6b35, #f7931e, #ffcd3c) 1;\n }\n \n .slide-title {\n font-size: clamp(2rem, 4vw, 3.5rem);\n font-weight: bold;\n background: linear-gradient(135deg, #ff6b35 0%, #f7931e 50%, #ffcd3c 100%);\n -webkit-background-clip: text;\n -webkit-text-fill-color: transparent;\n background-clip: text;\n margin: 0;\n line-height: 1.2;\n max-height: 80px;\n overflow: hidden;\n }\n \n .slide-content {\n flex: 1;\n padding: 30px 60px;\n display: flex;\n flex-direction: column;\n justify-content: center;\n max-height: 580px;\n overflow: hidden;\n }\n \n .content-main {\n font-size: clamp(1rem, 2.5vw, 1.4rem);\n line-height: 1.6;\n color: #fef3e2;\n }\n \n .content-points {\n list-style: none;\n padding: 0;\n margin: 0;\n }\n \n .content-points li {\n margin: 15px 0;\n padding-left: 26px;\n position: relative;\n font-size: clamp(1rem, 2.3vw, 1.3rem);\n color: #ffe4d1;\n }\n \n .content-points li::before {\n content: '🔥';\n position: absolute;\n left: 0;\n font-size: 0.9em;\n }\n \n .slide-footer {\n position: absolute;\n bottom: 20px;\n right: 40px;\n font-size: 0.85rem;\n color: #f7931e;\n background: rgba(255, 107, 53, 0.15);\n padding: 6px 18px;\n border-radius: 20px;\n border: 1px solid rgba(255, 107, 53, 0.3);\n }\n \n /* 装饰元素 */\n .decoration {\n position: absolute;\n pointer-events: none;\n }\n \n .decoration-circle-1 {\n top: -50px;\n right: -50px;\n width: 200px;\n height: 200px;\n background: radial-gradient(circle, rgba(255, 107, 53, 0.25) 0%, transparent 70%);\n border-radius: 50%;\n }\n \n .decoration-circle-2 {\n bottom: -100px;\n right: 100px;\n width: 250px;\n height: 250px;\n background: radial-gradient(circle, rgba(247, 147, 30, 0.2) 0%, transparent 70%);\n border-radius: 50%;\n }\n \n .decoration-circle-3 {\n bottom: 100px;\n left: -80px;\n width: 180px;\n height: 180px;\n background: radial-gradient(circle, rgba(255, 205, 60, 0.15) 0%, transparent 70%);\n border-radius: 50%;\n }\n </style>\n</head>\n<body>\n <div class=\"decoration decoration-circle-1\"></div>\n <div class=\"decoration decoration-circle-2\"></div>\n <div class=\"decoration decoration-circle-3\"></div>\n \n <div class=\"slide-container\">\n <div class=\"slide-header\">\n <h1 class=\"slide-title\">{{ page_title }}</h1>\n </div>\n \n <div class=\"slide-content\">\n {{#if is_list}}\n <ul class=\"content-points\">\n {{#each points}}\n <li>{{this}}</li>\n {{/each}}\n </ul>\n {{else}}\n <div class=\"content-main\">{{ content }}</div>\n {{/if}}\n </div>\n \n <div class=\"slide-footer\">{{ page_number }}</div>\n </div>\n</body>\n</html>",
+ "tags": [
+ "活力",
+ "橙色",
+ "创意",
+ "营销",
+ "创业"
+ ],
+ "is_default": false,
+ "export_info": {
+ "exported_at": "2026-05-07T12:00:00.000Z",
+ "original_id": 1,
+ "original_created_at": 1749553414.0671556
+ }
+}
