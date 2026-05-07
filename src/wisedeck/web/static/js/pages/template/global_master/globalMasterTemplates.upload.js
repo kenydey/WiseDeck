@@ -269,21 +269,32 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                         
                         const previewHtml = generateLightweightPreviewHtml(lightweightResult);
                         
+                        const colors = lightweightResult.theme_colors || {};
+                        const fonts = lightweightResult.fonts || {};
+                        const layoutCount = lightweightResult.layouts?.length || 0;
+                        const markers = lightweightResult.template_contract?.placeholder_markers || [];
+                        
+                        const tags = ['导入', 'PPTX', '轻量级'];
+                        if (layoutCount >= 5) tags.push('多布局');
+                        if (markers.includes('PAGE_TITLE')) tags.push('标题页');
+                        if (markers.includes('CONTENT_AREA')) tags.push('内容页');
+                        if (colors.primary) tags.push('自定义主题');
+                        
                         templateData = {
                             template_name: stem,
-                            description: `从 PPTX ${file.name} 轻量级导入 - ${lightweightResult.layouts?.length || 0} 个布局，纯 python-pptx 提取`,
+                            description: `从 PPTX 文件 ${file.name} 轻量级导入，包含 ${layoutCount} 个布局。提取的占位符类型：${markers.join('、')}。使用字体：标题「${fonts.title || '默认'}」、正文「${fonts.body || '默认'}」。纯 python-pptx 解析，无需外部依赖。`,
                             html_template: previewHtml,
-                            tags: ['导入', 'PPTX', '轻量级'],
+                            tags: tags,
                             is_default: false,
                             import_summary: {
                                 source: 'lightweight_pptx_import',
-                                layout_count: lightweightResult.layouts?.length || 0,
-                                placeholder_markers: lightweightResult.template_contract?.placeholder_markers || [],
+                                layout_count: layoutCount,
+                                placeholder_markers: markers,
                                 slide_dimensions: lightweightResult.slide_dimensions,
                             },
                             style_config: {
-                                colors: lightweightResult.theme_colors,
-                                fonts: lightweightResult.fonts,
+                                colors: colors,
+                                fonts: fonts,
                                 layouts: lightweightResult.layouts,
                             },
                         };
@@ -553,26 +564,32 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
         });
 
         return `<!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>模板预览</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { 
+        html, body { 
             margin: 0; 
             padding: 0; 
             width: 100%; 
             height: 100%; 
             overflow: hidden;
+        }
+        body {
             background: ${bgColor};
             font-family: ${bodyFont}, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .slide-container {
             position: relative;
-            width: 100%;
-            height: 100%;
-            aspect-ratio: 16/9;
+            width: 1280px;
+            height: 720px;
+            background: ${bgColor};
         }
     </style>
 </head>
