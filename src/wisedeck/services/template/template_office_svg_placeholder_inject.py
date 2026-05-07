@@ -6,12 +6,25 @@ Only runs when pptx_layout hints exist; best-effort coordinate mapping (normaliz
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Dict, List, Optional, Set
 
 from wisedeck.services.template.pptx_readable_placeholders import ooxml_placeholder_type_to_marker
 
 _MAX_DISTINCT_MARKERS = 12
+_INJECT_ENABLED = (os.getenv("WISEDECK_ENABLE_SVG_PLACEHOLDER_INJECTION") or "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+_FALLBACK_ENABLED = (os.getenv("WISEDECK_ENABLE_SVG_PLACEHOLDER_FALLBACK") or "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 
 def _svg_pixel_size(svg_xml: str) -> tuple[float, float]:
@@ -145,6 +158,8 @@ def inject_placeholders_into_workspace_svgs(
     missing, falls back to injecting them at canonical positions.
     This guarantees downstream placeholder scanning always finds markers.
     """
+    if not _INJECT_ENABLED:
+        return
     from pathlib import Path
 
     from wisedeck.services.template.pptx_readable_layout_bridge import (
@@ -196,7 +211,7 @@ def inject_placeholders_into_workspace_svgs(
         if hint_layout:
             result = inject_pptx_placeholders_into_slide_svg(result, slide_layout=hint_layout)
 
-        if not _svg_has_required_markers(result):
+        if _FALLBACK_ENABLED and (not _svg_has_required_markers(result)):
             result = inject_pptx_placeholders_into_slide_svg(result, slide_layout=_FALLBACK_LAYOUT)
 
         if result != raw:

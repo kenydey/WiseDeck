@@ -24,6 +24,7 @@ from ..services.file_processor import FileProcessor
 from ..services.deep_research_service import DEEPResearchService
 from ..services.research_report_generator import ResearchReportGenerator
 from ..core.config import ai_config, resolve_timeout_seconds
+from ..services.outline.page_count_limits import validate_custom_range_pages
 
 
 def filter_think_tags(content: str) -> str:
@@ -1010,6 +1011,12 @@ async def upload_file_and_generate_outline(
             # 解析多选字段
             focus_content_list = focus_content.split(',') if focus_content else []
             tech_highlights_list = tech_highlights.split(',') if tech_highlights else []
+
+            if page_count_mode == "custom_range":
+                try:
+                    validate_custom_range_pages(min_pages, max_pages)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
 
             # 创建请求对象，使用合并后的文件
             outline_request = FileOutlineGenerationRequest(

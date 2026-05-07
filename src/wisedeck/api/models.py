@@ -4,6 +4,8 @@ Pydantic models for API requests and responses
 
 from typing import List, Optional, Dict, Any, Union, Literal
 from pydantic import BaseModel, Field, model_validator
+
+from ..services.outline.page_count_limits import validate_custom_range_pages
 import time
 import uuid
 
@@ -211,6 +213,15 @@ class FileOutlineGenerationRequest(BaseModel):
     custom_style_prompt: Optional[str] = Field(None, description="Custom style prompt")
     file_processing_mode: str = Field("markitdown", description="File processing mode")
     content_analysis_depth: str = Field("standard", description="Content analysis depth")
+
+    @model_validator(mode="after")
+    def _validate_custom_range_page_bounds(self):
+        if self.page_count_mode != "custom_range":
+            return self
+        mn = self.min_pages if self.min_pages is not None else 8
+        mx = self.max_pages if self.max_pages is not None else 15
+        validate_custom_range_pages(mn, mx)
+        return self
 
 class FileOutlineGenerationResponse(BaseModel):
     """从文件生成PPT大纲的响应模型"""

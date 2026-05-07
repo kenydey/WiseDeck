@@ -1,0 +1,96 @@
+{
+  "style_id": "28cfcc9a-6884-4740-872b-25b3974ac0ff",
+  "assets": [
+    {
+      "id": "img_28cfcc9a-6884-4740-872b-25b3974ac0ff_6_1",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/28cfcc9a-6884-4740-872b-25b3974ac0ff/assets/img_28cfcc9a-6884-4740-872b-25b3974ac0ff_6_1.png",
+      "slide_index": 6,
+      "bbox_pct": [
+        0.5382479494750656,
+        0.4706453776611257,
+        0.3917033300524934,
+        0.45586555847185767
+      ]
+    },
+    {
+      "id": "img_28cfcc9a-6884-4740-872b-25b3974ac0ff_6_2",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/28cfcc9a-6884-4740-872b-25b3974ac0ff/assets/img_28cfcc9a-6884-4740-872b-25b3974ac0ff_6_2.png",
+      "slide_index": 6,
+      "bbox_pct": [
+        0.5,
+        0.0,
+        0.5,
+        1.0
+      ]
+    },
+    {
+      "id": "img_28cfcc9a-6884-4740-872b-25b3974ac0ff_6_3",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/28cfcc9a-6884-4740-872b-25b3974ac0ff/assets/img_28cfcc9a-6884-4740-872b-25b3974ac0ff_6_3.png",
+      "slide_index": 6,
+      "bbox_pct": [
+        0.5604323326771653,
+        0.0,
+        0.43956766732283464,
+        0.7259946048410615
+      ]
+    },
+    {
+      "id": "img_28cfcc9a-6884-4740-872b-25b3974ac0ff_7_4",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/28cfcc9a-6884-4740-872b-25b3974ac0ff/assets/img_28cfcc9a-6884-4740-872b-25b3974ac0ff_7_4.png",
+      "slide_index": 7,
+      "bbox_pct": [
+        0.5,
+        0.0,
+        0.5,
+        1.0
+      ]
+    },
+    {
+      "id": "img_28cfcc9a-6884-4740-872b-25b3974ac0ff_7_5",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/28cfcc9a-6884-4740-872b-25b3974ac0ff/assets/img_28cfcc9a-6884-4740-872b-25b3974ac0ff_7_5.png",
+      "slide_index": 7,
+      "bbox_pct": [
+        0.5700102526246719,
+        -0.040701662292213475,
+        0.4299897473753281,
+        0.7101755613881598
+      ]
+    },
+    {
+      "id": "img_28cfcc9a-6884-4740-872b-25b3974ac0ff_7_6",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/28cfcc9a-6884-4740-872b-25b3974ac0ff/assets/img_28cfcc9a-6884-4740-872b-25b3974ac0ff_7_6.png",
+      "slide_index": 7,
+      "bbox_pct": [
+        0.5493274278215223,
+        0.5161455234762321,
+        0.46496218832020997,
+        0.4037618839311753
+      ]
+    },
+    {
+      "id": "img_28cfcc9a-6884-4740-872b-25b3974ac0ff_8_7",
+      "kind": "image",
+      "role": "image",
+      "url": "/static/assets/templates/28cfcc9a-6884-4740-872b-25b3974ac0ff/assets/img_28cfcc9a-6884-4740-872b-25b3974ac0ff_8_7.png",
+      "slide_index": 8,
+      "bbox_pct": [
+        0.6841853674540682,
+        0.2900262467191601,
+        0.23622047244094488,
+        0.4199475065616798
+      ]
+    }
+  ]
+}

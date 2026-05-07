@@ -364,20 +364,16 @@ class TemplateImportService:
             logger.warning("extract_pptx_layout_hints failed: %s", e)
             pptx_layout_hints = {"schema_version": 1, "error": str(e)[:200], "slides": []}
 
-        inject_placeholders_into_workspace_svgs(
-            svg_dir,
-            pptx_layout_hints,
-            pptx_readable=manifest.get("pptx_readable"),
-        )
-
-        per_slide_markers = scan_svg_dir_placeholder_markers(svg_dir)
-        first_svg = ""
+        physical_structure: Dict[str, Any] = {}
         try:
-            paths0 = sorted(svg_dir.glob("slide_*.svg"))
-            if paths0:
-                first_svg = paths0[0].read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            first_svg = ""
+            from wisedeck.services.template.pptx_physical_structure import (
+                extract_pptx_physical_structure,
+            )
+
+            physical_structure = extract_pptx_physical_structure(pptx_path.read_bytes())
+        except Exception as e:
+            logger.warning("extract_pptx_physical_structure failed: %s", e)
+            physical_structure = {"schema_version": 1, "error": str(e)[:200], "slides": []}
 
         manifest: Dict[str, Any] = {
             "workspace_id": workspace_id,
@@ -394,9 +390,10 @@ class TemplateImportService:
             "slide_assets": slide_assets,
             "python_pptx": pptx_meta,
             "pptx_layout": pptx_layout_hints,
+            "physical_structure": physical_structure,
             "svg_native_meta": {
-                "placeholder_markers": per_slide_markers,
-                "canvas_format_guess": guess_canvas_format_from_svg(first_svg),
+                "placeholder_markers": [],
+                "canvas_format_guess": None,
             },
         }
 
@@ -415,6 +412,40 @@ class TemplateImportService:
             logger.warning("pptx_readable pipeline skipped: %s", readable_err)
             manifest["pptx_readable"] = {"schema_version": 1, "error": str(readable_err)[:300]}
             manifest["pptx_readable_summary"] = {}
+
+        # Best-effort placeholder visualization injection (mutates SVGs).
+        # Note: this is only for preview/debug and must not be treated as the source of truth.
+        inject_placeholders_into_workspace_svgs(
+            svg_dir,
+            pptx_layout_hints,
+            pptx_readable=manifest.get("pptx_readable"),
+        )
+
+        per_slide_markers = scan_svg_dir_placeholder_markers(svg_dir)
+        first_svg = ""
+        try:
+            paths0 = sorted(svg_dir.glob("slide_*.svg"))
+            if paths0:
+                first_svg = paths0[0].read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            first_svg = ""
+        manifest["svg_native_meta"] = {
+            "placeholder_markers": per_slide_markers,
+            "canvas_format_guess": guess_canvas_format_from_svg(first_svg),
+        }
+
+        # Step2: logical mapping rules (AI-consumable), derived from Step1 physical structure.
+        try:
+            from wisedeck.services.template.template_mapping_builder import (
+                build_mapping_rules_from_physical_structure,
+            )
+
+            manifest["mapping_rules"] = build_mapping_rules_from_physical_structure(
+                manifest.get("physical_structure") if isinstance(manifest.get("physical_structure"), dict) else {}
+            )
+        except Exception as e:
+            logger.warning("build_mapping_rules_from_physical_structure failed: %s", e)
+            manifest["mapping_rules"] = {"schema_version": 1, "error": str(e)[:200]}
 
         from wisedeck.services.layout_package.manifest import (
             enrich_template_manifest_with_layout_package,
@@ -490,14 +521,38 @@ class TemplateImportService:
             logger.warning("extract_pptx_layout_hints failed: %s", e)
             pptx_layout_hints = {"schema_version": 1, "error": str(e)[:200], "slides": []}
 
+        physical_structure: Dict[str, Any] = {}
+        try:
+            from wisedeck.services.template.pptx_physical_structure import (
+                extract_pptx_physical_structure,
+            )
+
+            physical_structure = extract_pptx_physical_structure(pptx_path.read_bytes())
+        except Exception as e:
+            logger.warning("extract_pptx_physical_structure failed: %s", e)
+            physical_structure = {"schema_version": 1, "error": str(e)[:200], "slides": []}
+
         manifest: Dict[str, Any] = {
             "workspace_id": workspace_id,
             "source_filename": source_filename,
             "slide_assets": {"page_count": int(slide_count or 0)},
             "python_pptx": pptx_meta,
             "pptx_layout": pptx_layout_hints,
+            "physical_structure": physical_structure,
             "svg_native_meta": {"placeholder_markers": [], "canvas_format_guess": None},
         }
+
+        try:
+            from wisedeck.services.template.template_mapping_builder import (
+                build_mapping_rules_from_physical_structure,
+            )
+
+            manifest["mapping_rules"] = build_mapping_rules_from_physical_structure(
+                physical_structure if isinstance(physical_structure, dict) else {}
+            )
+        except Exception as e:
+            logger.warning("build_mapping_rules_from_physical_structure failed: %s", e)
+            manifest["mapping_rules"] = {"schema_version": 1, "error": str(e)[:200]}
 
         try:
             from wisedeck.services.template.pptx_readable_contract import wrap_and_cap_pptx_readable

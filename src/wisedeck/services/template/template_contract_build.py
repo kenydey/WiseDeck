@@ -32,6 +32,11 @@ def build_template_contract_from_manifest(
         "layout_package": manifest.get("layout_package"),
         "pptx_layout": manifest.get("pptx_layout"),
     }
+    # Newer structured import layers (optional, backward-compatible)
+    for k in ("physical_structure", "mapping_rules", "layout_signatures", "static_elements"):
+        v = manifest.get(k)
+        if v is not None:
+            out[k] = v
     slim_py = slim_python_pptx_manifest(manifest.get("python_pptx"))
     if slim_py is not None:
         out["python_pptx_meta"] = slim_py

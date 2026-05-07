@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from ...auth.middleware import get_current_user_required
+from ...services.outline.page_count_limits import validate_custom_range_pages
 from ...database.models import User
 from .outline_support import (
     _is_billable_provider,
@@ -165,6 +166,12 @@ async def confirm_project_requirements(
                 topic = file_outline['title']
 
         # Credits/billing removed in local anonymous mode.
+
+        if page_count_mode == "custom_range":
+            try:
+                validate_custom_range_pages(min_pages, max_pages)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         # Process page count settings
         page_count_settings = {
