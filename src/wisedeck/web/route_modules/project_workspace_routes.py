@@ -188,6 +188,34 @@ async def edit_project_ppt(
         return templates.TemplateResponse("error.html", {"request": request, "error": str(exc)})
 
 
+@router.get("/project/{project_id}/full-editor", response_class=HTMLResponse)
+async def web_project_full_editor(
+    request: Request,
+    project_id: str,
+    user: User = Depends(get_current_user_required),
+):
+    """完整编辑器页面（新窗口）。"""
+    try:
+        project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        if not project.slides_data:
+            project.slides_data = []
+
+        response = templates.TemplateResponse(
+            "pages/project/project_full_editor.html",
+            {
+                "request": request,
+                "project": project,
+            },
+        )
+        return _apply_no_store_headers(response)
+    except Exception as exc:
+        logger.error("Error loading full editor for %s: %s", project_id, exc)
+        return templates.TemplateResponse("error.html", {"request": request, "error": str(exc)})
+
+
 @router.get("/projects/{project_id}/fullscreen", response_class=HTMLResponse)
 async def web_project_fullscreen(
     request: Request,

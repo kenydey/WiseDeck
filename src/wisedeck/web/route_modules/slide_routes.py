@@ -744,6 +744,69 @@ async def cleanup_excess_slides(
         return {"success": False, "error": str(e)}
 
 
+@router.put("/api/projects/{project_id}/slides")
+async def save_all_slides(
+    project_id: str,
+    request: Request,
+    user: User = Depends(get_current_user_required)
+):
+    """批量保存所有幻灯片数据（完整编辑器专用）"""
+    try:
+        logger.info(f"🔄 开始批量保存项目 {project_id} 的所有幻灯片")
+
+        data = await request.json()
+        slides = data.get('slides', [])
+
+        if not isinstance(slides, list):
+            logger.error("❌ 幻灯片数据格式错误")
+            raise HTTPException(status_code=400, detail="Slides must be a list")
+
+        project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+        if not project:
+            logger.error(f"❌ 项目 {project_id} 不存在")
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        from ...services.db_project_manager import DatabaseProjectManager
+        db_manager = DatabaseProjectManager()
+
+        saved_count = 0
+        for index, slide in enumerate(slides):
+            try:
+                slide_data = {
+                    "page_number": index + 1,
+                    "title": slide.get('title', f"Slide {index + 1}"),
+                    "html_content": slide.get('html_content', ''),
+                    "is_user_edited": True,
+                    "elements": slide.get('elements', []),
+                    "width": slide.get('width', 1280),
+                    "height": slide.get('height', 720),
+                    "background": slide.get('background', {}),
+                }
+                
+                success = await db_manager.save_single_slide(project_id, index, slide_data)
+                if success:
+                    saved_count += 1
+            except Exception as e:
+                logger.error(f"❌ 保存第 {index + 1} 页失败: {e}")
+
+        logger.info(f"✅ 批量保存完成，成功保存 {saved_count}/{len(slides)} 页")
+
+        return {
+            "success": True,
+            "message": f"Successfully saved {saved_count} slides",
+            "saved_count": saved_count,
+            "total_slides": len(slides)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 批量保存幻灯片失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
 class SlideInpaintRegionRequest(BaseModel):
     """幻灯片局部重绘 POC：bbox 为相对坐标 (x,y,w,h) ∈ [0,1]。"""
 

@@ -911,10 +911,12 @@ async def import_pptx_lightweight(
     轻量级 PPTX 导入 - 纯 python-pptx 流程，不依赖 LibreOffice。
     
     使用 PPTXStyleExtractor 提取颜色、字体、占位符坐标，
-    使用 LayoutAutoSplitter 自动切分双栏布局，
-    使用 HtmlTemplateGenerator 生成完整 HTML 模板。
+    使用 TemplateMetadataGenerator 生成模板名称、描述、标签，
+    使用 HtmlTemplateGenerator 生成完整 HTML 模板，
+    输出符合 WiseDeck 模板规范的完整 JSON。
     
-    返回完整的模板配置 JSON，可直接用于创建 GlobalMasterTemplate。
+    返回完整的模板 JSON，可直接用于创建 GlobalMasterTemplate。
+    返回格式：{ template: {...}, preview_html: "..." }
     """
     del user
     try:
@@ -924,14 +926,124 @@ async def import_pptx_lightweight(
             data=request.data,
         )
         
-        from wisedeck.services.template.html_template_generator import generate_html_template_from_config
-        template_config["html_template"] = generate_html_template_from_config(template_config)
+        from wisedeck.services.template.template_json_builder import TemplateJsonBuilder
+        source_filename = request.filename or "导入模板"
+        builder = TemplateJsonBuilder(template_config, source_filename)
+        template_json = builder.build_template_json()
         
-        return template_config
+        return {
+            "template": template_json,
+            "preview_html": template_json.get("html_template", ""),
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Lightweight PPTX import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/import/unified-pdf")
+async def import_pdf_unified(
+    request: TemplateImportUploadRequest,
+    user=Depends(get_current_user_required),
+):
+    """
+    统一 PDF 导入 - 输出与 PPTX 导入一致的模板 JSON 结构。
+    
+    使用 PDF 转换为 SVG/PNG，生成完整的模板 JSON：
+    - template_name: 从文件名自动生成
+    - description: 根据 PDF 特征自动生成
+    - html_template: 包含 SVG 占位符的完整 HTML
+    - tags: 根据 PDF 类型自动生成
+    - is_default: false
+    
+    返回格式：{ template: {...}, preview_html: "...", svg_template: "...", slide_count: N }
+    """
+    del user
+    try:
+        from wisedeck.services.template.pdf_template_metadata_generator import PDFTemplateMetadataGenerator
+        from wisedeck.services.template.pdf_html_template_generator import PDFHtmlTemplateGenerator
+        
+        suggested = Path(request.filename or "upload.pdf").stem.replace("\x00", "") or "imported_pdf_template"
+        
+        importer = _template_import_service()
+        ws = importer.import_pdf_from_upload(
+            filename=request.filename,
+            data=request.data,
+            png_zoom=float(request.png_zoom or 2.0),
+        )
+        
+        bundle_mode = request.bundle_mode if hasattr(request, 'bundle_mode') else None
+        if bundle_mode == "first_slide_only":
+            bm: BundleMode = "first_slide_only"
+        elif bundle_mode == "per_slide":
+            bm = "per_slide"
+        else:
+            bm = "per_slide"
+        
+        svg_t, html_t, w_bundle, _slide_xmls, merged_svg = bundle_workspace_svgs(ws.svg_dir, bm)
+        
+        slide_assets = ws.manifest.get("slide_assets") or {}
+        slide_count = 0
+        try:
+            slide_count = int(slide_assets.get("page_count") or 0)
+        except (TypeError, ValueError):
+            slide_count = 1
+        
+        page_width = 1280
+        page_height = 720
+        try:
+            svg_width = slide_assets.get("page_width") or 1280
+            svg_height = slide_assets.get("page_height") or 720
+            page_width = int(svg_width)
+            page_height = int(svg_height)
+        except (TypeError, ValueError):
+            pass
+        
+        metadata_gen = PDFTemplateMetadataGenerator(
+            source_filename=suggested,
+            slide_count=slide_count,
+            page_width=page_width,
+            page_height=page_height,
+            dominant_colors=[],
+        )
+        template_metadata = metadata_gen.generate_metadata()
+        
+        html_gen = PDFHtmlTemplateGenerator(
+            svg_template=svg_t or merged_svg,
+            page_width=page_width,
+            page_height=page_height,
+            slide_count=slide_count,
+        )
+        html_template = html_gen.generate_template()
+        preview_html = html_gen.generate_single_slide_html(
+            svg_content=merged_svg or svg_t,
+            preview_data={
+                "page_title": suggested,
+                "main_heading": template_metadata.get("template_name", suggested),
+                "page_content": "",
+                "current_page_number": 1,
+                "total_page_count": slide_count or 1,
+            }
+        )
+        
+        return {
+            "template": {
+                "template_name": template_metadata.get("template_name"),
+                "description": template_metadata.get("description"),
+                "html_template": html_template,
+                "tags": template_metadata.get("tags", ["PDF", "视觉模板"]),
+                "is_default": False,
+            },
+            "preview_html": preview_html,
+            "svg_template": svg_t or merged_svg or "",
+            "slide_count": slide_count or 1,
+            "warnings": w_bundle or [],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unified PDF import failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

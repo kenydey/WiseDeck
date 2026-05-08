@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>完整编辑 - {{ project.title }}</title>
+    <link href="/static/css/pages/project/full_editor.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <header class="editor-header">
+            <div class="editor-header-left">
+                <button id="backBtn" class="editor-btn" title="返回">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>返回</span>
+                </button>
+                <div id="projectTitle" class="project-title">{{ project.title }}</div>
+            </div>
+            
+            <div class="editor-header-center">
+                <button id="prevSlideBtn" class="editor-btn" title="上一页">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <span id="slideIndicator" class="slide-indicator">1 / {{ project.slides_data|length if project.slides_data else 1 }}</span>
+                <button id="nextSlideBtn" class="editor-btn" title="下一页">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                
+                <span class="zoom-controls">
+                    <button id="zoomOutBtn" class="editor-btn" title="缩小">
+                        <i class="fas fa-search-minus"></i>
+                    </button>
+                    <span id="zoomDisplay" class="zoom-display">100%</span>
+                    <button id="zoomInBtn" class="editor-btn" title="放大">
+                        <i class="fas fa-search-plus"></i>
+                    </button>
+                    <button id="zoomFitBtn" class="editor-btn" title="适应屏幕">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                </span>
+            </div>
+            
+            <div class="editor-header-right">
+                <button class="editor-btn" id="undoBtn" title="撤销 (Ctrl+Z)">
+                    <i class="fas fa-undo"></i>
+                    <span>撤销</span>
+                </button>
+                <button class="editor-btn" id="redoBtn" title="重做 (Ctrl+Y)">
+                    <i class="fas fa-redo"></i>
+                    <span>重做</span>
+                </button>
+                <div class="toolbar-divider"></div>
+                <button class="editor-btn" id="exportBtn" title="导出">
+                    <i class="fas fa-download"></i>
+                    <span>导出</span>
+                </button>
+                <button class="editor-btn" id="previewBtn" title="放映">
+                    <i class="fas fa-play"></i>
+                    <span>放映</span>
+                </button>
+                <button class="editor-btn primary" id="saveBtn" title="保存 (Ctrl+S)">
+                    <i class="fas fa-save"></i>
+                    <span>保存</span>
+                </button>
+            </div>
+        </header>
+        
+        <main class="editor-main">
+            <aside class="editor-left-panel">
+                <div class="slides-sidebar-header">
+                    <span class="slides-sidebar-title">幻灯片</span>
+                    <span class="slides-sidebar-hint">点击切换页面</span>
+                </div>
+                <div id="thumbnailContainer" class="slides-sidebar-list"></div>
+                <div class="slides-sidebar-footer">
+                    <button id="addSlideBtn" class="sidebar-action-btn" title="添加幻灯片">
+                        <i class="fas fa-plus"></i>
+                        <span>新建幻灯片</span>
+                    </button>
+                </div>
+            </aside>
+            
+            <section class="editor-center-panel">
+                <div class="slide-frame-container">
+                    <div class="slide-frame-wrapper" id="slideFrameWrapper">
+                        <button class="preview-nav-btn left" id="previewPrevBtn" title="上一页">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+
+                        <iframe class="slide-frame" id="slideFrame"
+                            srcdoc="{{ project.slides_data[0].html_content if project.slides_data and project.slides_data|length > 0 else '<html><body style=\"background:white;width:1280px;height:720px;margin:0;padding:0;\"></body></html>' }}"
+                            title="Slide Preview"></iframe>
+
+                        <button class="preview-nav-btn right" id="previewNextBtn" title="下一页">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="floating-toolbar" id="floatingToolbar" style="display: none;">
+                    <button class="floating-tool-btn" id="floatDeleteBtn" title="删除">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <button class="floating-tool-btn" id="floatCopyBtn" title="复制">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                    <span class="toolbar-divider"></span>
+                    <button class="floating-tool-btn" id="floatBoldBtn" title="粗体">
+                        <i class="fas fa-bold"></i>
+                    </button>
+                    <button class="floating-tool-btn" id="floatItalicBtn" title="斜体">
+                        <i class="fas fa-italic"></i>
+                    </button>
+                    <button class="floating-tool-btn" id="floatUnderlineBtn" title="下划线">
+                        <i class="fas fa-underline"></i>
+                    </button>
+                    <span class="toolbar-divider"></span>
+                    <button class="floating-tool-btn" id="floatAlignLeftBtn" title="左对齐">
+                        <i class="fas fa-align-left"></i>
+                    </button>
+                    <button class="floating-tool-btn" id="floatAlignCenterBtn" title="居中对齐">
+                        <i class="fas fa-align-center"></i>
+                    </button>
+                    <button class="floating-tool-btn" id="floatAlignRightBtn" title="右对齐">
+                        <i class="fas fa-align-right"></i>
+                    </button>
+                </div>
+            </section>
+            
+            <aside class="editor-right-panel">
+                <div class="toolbar-section">
+                    <button class="toolbar-btn active" data-tool="select" title="选择">
+                        <i class="fas fa-mouse-pointer"></i>
+                        <span>选择</span>
+                    </button>
+                    <button class="toolbar-btn" data-tool="text" title="文本">
+                        <i class="fas fa-font"></i>
+                        <span>文本</span>
+                    </button>
+                    <button class="toolbar-btn" data-tool="shape" id="shapeToolBtn" title="形状">
+                        <i class="fas fa-shapes"></i>
+                        <span>形状</span>
+                    </button>
+                    <button class="toolbar-btn" data-tool="image" title="图片">
+                        <i class="fas fa-image"></i>
+                        <span>图片</span>
+                    </button>
+                    <button class="toolbar-btn" data-tool="chart" title="图表">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>图表</span>
+                    </button>
+                    <button class="toolbar-btn" data-tool="table" title="表格">
+                        <i class="fas fa-table"></i>
+                        <span>表格</span>
+                    </button>
+                </div>
+                
+                <div class="toolbar-divider"></div>
+                
+                <div class="toolbar-section">
+                    <button class="toolbar-btn" data-action="delete" title="删除">
+                        <i class="fas fa-trash"></i>
+                        <span>删除</span>
+                    </button>
+                    <button class="toolbar-btn" data-action="duplicate" title="复制">
+                        <i class="fas fa-copy"></i>
+                        <span>复制</span>
+                    </button>
+                    <button class="toolbar-btn" data-action="lock" title="锁定">
+                        <i class="fas fa-lock"></i>
+                        <span>锁定</span>
+                    </button>
+                </div>
+                
+                <div class="toolbar-divider"></div>
+                
+                <div class="toolbar-section">
+                    <button class="toolbar-btn" data-action="bringFront" title="置于顶层">
+                        <i class="fas fa-angle-double-up"></i>
+                        <span>顶层</span>
+                    </button>
+                    <button class="toolbar-btn" data-action="sendBack" title="置于底层">
+                        <i class="fas fa-angle-double-down"></i>
+                        <span>底层</span>
+                    </button>
+                    <div></div>
+                </div>
+                
+                <div id="shapePanel" class="shape-panel">
+                    <div class="panel-header">
+                        <span class="panel-title">形状</span>
+                        <button id="closeShapePanel" class="panel-close">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="shape-grid">
+                        <div class="shape-item" data-shape="rect" title="矩形"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></div>
+                        <div class="shape-item" data-shape="roundedRect" title="圆角矩形"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="4"/></svg></div>
+                        <div class="shape-item" data-shape="circle" title="圆形"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg></div>
+                        <div class="shape-item" data-shape="ellipse" title="椭圆"><svg viewBox="0 0 24 24" fill="currentColor"><ellipse cx="12" cy="12" rx="10" ry="7"/></svg></div>
+                        <div class="shape-item" data-shape="triangle" title="三角形"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12,2 22,22 2,22"/></svg></div>
+                        <div class="shape-item" data-shape="arrowRight" title="右箭头"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,12 19,12 14,7 14,17"/></svg></div>
+                        <div class="shape-item" data-shape="arrowUp" title="上箭头"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12,5 17,19 7,19"/></svg></div>
+                        <div class="shape-item" data-shape="arrowDown" title="下箭头"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12,19 17,5 7,5"/></svg></div>
+                        <div class="shape-item" data-shape="line" title="直线"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="12" x2="22" y2="12"/></svg></div>
+                        <div class="shape-item" data-shape="diamond" title="菱形"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12,2 22,12 12,22 2,12"/></svg></div>
+                        <div class="shape-item" data-shape="star" title="星形"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12,2 15,9 22,9 16,14 18,22 12,18 6,22 8,14 2,9 9,9"/></svg></div>
+                        <div class="shape-item" data-shape="callout" title="标注"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4,4 L20,4 L20,16 L16,16 L12,20 L8,16 L4,16 Z"/></svg></div>
+                    </div>
+                </div>
+                
+                <div class="property-panel">
+                    <div class="property-tabs">
+                        <button id="propertyTab" class="property-tab active">属性</button>
+                        <button id="slideTab" class="property-tab">幻灯片</button>
+                    </div>
+                    
+                    <div id="propertyContent" class="property-content">
+                        <div class="property-group">
+                            <div class="property-group-title">位置与尺寸</div>
+                            <div class="property-row">
+                                <span class="property-label">X</span>
+                                <input type="number" class="property-input property-input-small" id="positionX" value="0">
+                                <span class="property-label">Y</span>
+                                <input type="number" class="property-input property-input-small" id="positionY" value="0">
+                            </div>
+                            <div class="property-row">
+                                <span class="property-label">W</span>
+                                <input type="number" class="property-input property-input-small" id="width" value="100">
+                                <span class="property-label">H</span>
+                                <input type="number" class="property-input property-input-small" id="height" value="100">
+                            </div>
+                        </div>
+                        
+                        <div class="property-group">
+                            <div class="property-group-title">旋转</div>
+                            <div class="property-row">
+                                <input type="range" class="property-input" id="rotate" value="0" min="0" max="360">
+                                <span class="property-value" id="rotateValue">0°</span>
+                            </div>
+                        </div>
+                        
+                        <div class="property-group" id="fillGroup">
+                            <div class="property-group-title">填充</div>
+                            <div class="property-row">
+                                <div class="color-input-wrapper">
+                                    <div class="color-preview" id="fillColorPreview" style="background: #ffffff;"></div>
+                                    <input type="text" class="property-input" id="fillColor" value="#ffffff">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="property-group" id="strokeGroup">
+                            <div class="property-group-title">边框</div>
+                            <div class="property-row">
+                                <div class="color-input-wrapper">
+                                    <div class="color-preview" id="strokeColorPreview" style="background: #333333;"></div>
+                                    <input type="text" class="property-input" id="strokeColor" value="#333333">
+                                </div>
+                            </div>
+                            <div class="property-row">
+                                <span class="property-label">宽度</span>
+                                <input type="number" class="property-input" id="strokeWidth" value="1" min="0">
+                            </div>
+                        </div>
+                        
+                        <div class="property-group" id="textGroup">
+                            <div class="property-group-title">文本</div>
+                            <div class="property-row">
+                                <span class="property-label">字体</span>
+                                <select class="property-input" id="fontFamily">
+                                    <option value="Microsoft YaHei">微软雅黑</option>
+                                    <option value="SimSun">宋体</option>
+                                    <option value="KaiTi">楷体</option>
+                                    <option value="Arial">Arial</option>
+                                    <option value="Times New Roman">Times New Roman</option>
+                                </select>
+                            </div>
+                            <div class="property-row">
+                                <span class="property-label">字号</span>
+                                <input type="number" class="property-input property-input-small" id="fontSize" value="24">
+                                <div class="color-input-wrapper">
+                                    <div class="color-preview" id="textColorPreview" style="background: #333333;"></div>
+                                    <input type="text" class="property-input" id="textColor" value="#333333">
+                                </div>
+                            </div>
+                            <div class="property-row">
+                                <button class="editor-btn-icon" id="boldBtn" title="粗体">
+                                    <i class="fas fa-bold"></i>
+                                </button>
+                                <button class="editor-btn-icon" id="italicBtn" title="斜体">
+                                    <i class="fas fa-italic"></i>
+                                </button>
+                                <button class="editor-btn-icon" id="underlineBtn" title="下划线">
+                                    <i class="fas fa-underline"></i>
+                                </button>
+                                <div style="flex: 1;"></div>
+                                <button class="editor-btn-icon" id="alignLeftBtn" title="左对齐">
+                                    <i class="fas fa-align-left"></i>
+                                </button>
+                                <button class="editor-btn-icon" id="alignCenterBtn" title="居中对齐">
+                                    <i class="fas fa-align-center"></i>
+                                </button>
+                                <button class="editor-btn-icon" id="alignRightBtn" title="右对齐">
+                                    <i class="fas fa-align-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="property-group">
+                            <div class="property-group-title">幻灯片背景</div>
+                            <div class="property-row">
+                                <div class="color-input-wrapper">
+                                    <div class="color-preview" id="bgColorPreview" style="background: #ffffff;"></div>
+                                    <input type="text" class="property-input" id="bgColor" value="#ffffff">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+    
+    <script>
+        window.projectData = {{ {'projectId': project.project_id, 'title': project.title}|tojson|safe }};
+        window.slidesData = {{ project.slides_data|tojson if project.slides_data else '[]'|safe }};
+        console.log('[HTML] Project data:', window.projectData);
+        console.log('[HTML] Slides data:', window.slidesData ? window.slidesData.length + ' slides' : 'empty');
+    </script>
+    <script src="/static/js/pages/project/full_editor/main.js"></script>
+</body>
+</html>

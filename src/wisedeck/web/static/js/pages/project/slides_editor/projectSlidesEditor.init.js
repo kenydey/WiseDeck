@@ -260,6 +260,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // 移除自动检查逻辑，只在页面加载时检查一次
     // setTimeout(checkForUpdates, 1000); - 已移除
     // setTimeout(startAutoCheck, 2000); - 已移除
+
+    // 初始化完整编辑器集成（消息监听器）
+    if (typeof initFullEditorIntegration === 'function') {
+        initFullEditorIntegration();
+    }
 });
 
 // 防抖函数，优化窗口大小变化时的性能

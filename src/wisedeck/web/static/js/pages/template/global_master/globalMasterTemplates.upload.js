@@ -265,43 +265,37 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                             data: dataUrl,
                         });
                         
-                        const stem = lightweightResult.source_filename?.replace(/\.pptx$/i, '') || file.name.replace(/\.pptx$/i, '');
+                        const template = lightweightResult.template || {};
+                        const stem = template.template_name || file.name.replace(/\.pptx$/i, '');
+                        const htmlTemplate = template.html_template || lightweightResult.preview_html || '';
                         
-                        const htmlTemplate = lightweightResult.html_template || generateFallbackPreviewHtml(lightweightResult);
-                        
-                        const colors = lightweightResult.theme_colors || {};
-                        const fonts = lightweightResult.fonts || {};
-                        const layoutCount = lightweightResult.layouts?.length || 0;
-                        const markers = lightweightResult.template_contract?.placeholder_markers || [];
-                        
-                        const tags = ['导入', 'PPTX'];
-                        if (lightweightResult.html_template) tags.push('完整模板');
+                        const tags = template.tags || ['导入', 'PPTX'];
+                        if (htmlTemplate) tags.push('完整模板');
+                        const layoutCount = template.layouts?.length || lightweightResult.config?.layouts?.length || 0;
                         if (layoutCount >= 5) tags.push('多布局');
-                        if (markers.includes('PAGE_TITLE')) tags.push('标题页');
-                        if (markers.includes('CONTENT_AREA')) tags.push('内容页');
-                        if (colors.primary) tags.push('自定义主题');
                         
                         templateData = {
-                            template_name: stem,
-                            description: `从 PPTX 文件 ${file.name} 轻量级导入，包含 ${layoutCount} 个布局。提取的占位符类型：${markers.join('、')}。${lightweightResult.html_template ? '已生成完整 HTML 模板。' : '使用默认模板样式。'}纯 python-pptx 解析，无需外部依赖。`,
+                            template_name: template.template_name || stem,
+                            description: template.description || `从 PPTX 文件 ${file.name} 轻量级导入。纯 python-pptx 解析，无需外部依赖。`,
                             html_template: htmlTemplate,
                             tags: tags,
                             is_default: false,
                             import_summary: {
                                 source: 'lightweight_pptx_import',
+                                schema_version: 2,
                                 layout_count: layoutCount,
-                                placeholder_markers: markers,
-                                slide_dimensions: lightweightResult.slide_dimensions,
-                                background: lightweightResult.background,
-                                font_styles: lightweightResult.font_styles,
+                                placeholder_markers: template.placeholder_markers || lightweightResult.config?.template_contract?.placeholder_markers || [],
+                                slide_dimensions: template.slide_dimensions || lightweightResult.config?.slide_dimensions,
+                                background: template.background || lightweightResult.config?.background,
+                                font_styles: lightweightResult.config?.font_styles,
                             },
                             style_config: {
-                                colors: colors,
-                                fonts: fonts,
-                                layouts: lightweightResult.layouts,
-                                background: lightweightResult.background,
-                                font_styles: lightweightResult.font_styles,
-                                responsive_config: lightweightResult.responsive_config,
+                                colors: template.theme_colors || lightweightResult.config?.theme_colors,
+                                fonts: template.fonts || lightweightResult.config?.fonts,
+                                layouts: template.layouts || lightweightResult.config?.layouts,
+                                background: template.background || lightweightResult.config?.background,
+                                font_styles: lightweightResult.config?.font_styles,
+                                responsive_config: lightweightResult.config?.responsive_config,
                             },
                         };
                         
@@ -411,27 +405,30 @@ export function createGlobalMasterTemplatesUpload({ state, apiClient, formatByte
                 setImportButtonBusy(true, '解析 PDF…');
                 busy = true;
                 const dataUrl = await readFileAsDataURL(file);
-                const conv = await apiClient.post('/api/global-master-templates/import/convert-pdf-template', {
+                const conv = await apiClient.post('/api/global-master-templates/import/unified-pdf', {
                     filename: file.name,
                     data: dataUrl,
                     png_zoom: 2.0,
                     bundle_mode: 'per_slide',
                 });
                 importConvertResult = conv;
-                const stem =
-                    conv.suggested_template_name ||
-                    file.name.replace(/\.pdf$/i, '');
+                
+                const tmpl = conv.template || {};
+                const stem = tmpl.template_name || file.name.replace(/\.pdf$/i, '');
+                const tags = tmpl.tags || ['导入', 'PDF', '视觉模板'];
+                
                 templateData = {
                     template_name: stem,
-                    description:
-                        `从 PDF ${file.name} 导入（引擎 ${conv.export_engine_used}）。` +
-                        '此为视觉母版：PDF 无原生幻灯片占位结构；精细替换区建议优先使用 PPTX 导入。',
-                    html_template: conv.html_template,
-                    tags: ['导入', 'PDF', '视觉母版'],
+                    description: tmpl.description || `从 PDF ${file.name} 导入。PDF 视觉模板，包含 ${conv.slide_count || 1} 页。`,
+                    html_template: tmpl.html_template || conv.preview_html || conv.html_template,
+                    tags: tags,
                     is_default: false,
                 };
                 if (conv.svg_template) {
                     templateData.svg_template = conv.svg_template;
+                }
+                if (conv.slide_count) {
+                    templateData.slide_count = conv.slide_count;
                 }
                 if (conv.import_summary && typeof conv.import_summary === 'object') {
                     templateData.import_summary = conv.import_summary;
