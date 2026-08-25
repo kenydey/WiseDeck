@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import secrets
 
+from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -24,6 +25,30 @@ def _extract_token(request: Request) -> str | None:
     return hdr or None
 
 
+async def _load_user_by_username(username: str):
+    """Resolve a User row without blocking the event loop.
+
+    Uses the async session factory; falls back to the sync session only if
+    the async driver is unavailable (degraded environments where every DB
+    call was blocking anyway).
+    """
+    from ..database.database import AsyncSessionLocal, SessionLocal
+    from ..database.models import User
+
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(User).where(User.username == username))
+            return result.scalar_one_or_none()
+    except Exception as exc:
+        logger.warning("Async user lookup unavailable (%s); falling back to sync session", exc)
+
+    db = SessionLocal()
+    try:
+        return db.query(User).filter(User.username == username).first()
+    finally:
+        db.close()
+
+
 class AppApiKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         existing = getattr(request.state, "user", None)
@@ -35,8 +60,6 @@ class AppApiKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         from ..core.config import app_config
-        from ..database.database import SessionLocal
-        from ..database.models import User
 
         bindings = app_config.get_api_key_bindings()
         username: str | None = None
@@ -55,14 +78,10 @@ class AppApiKeyMiddleware(BaseHTTPMiddleware):
         if not username:
             return await call_next(request)
 
-        db = SessionLocal()
-        try:
-            user = db.query(User).filter(User.username == username).first()
-            if user:
-                request.state.user = user
-            else:
-                logger.warning("WISEDECK API key matched user %r but no User row exists", username)
-        finally:
-            db.close()
+        user = await _load_user_by_username(username)
+        if user is not None:
+            request.state.user = user
+        else:
+            logger.warning("WISEDECK API key matched user %r but no User row exists", username)
 
         return await call_next(request)

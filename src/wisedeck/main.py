@@ -4,6 +4,7 @@ Main FastAPI application entry point
 
 import asyncio
 import sys
+from contextlib import asynccontextmanager
 
 # Windows: Playwright (and other subprocess-based features) require a Proactor loop.
 # Uvicorn workers import this module directly, so this must run before the event loop is created.
@@ -47,6 +48,33 @@ logging.getLogger('sqlalchemy.engine.Engine').setLevel(logging.WARNING)
 logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
 logging.getLogger('sqlalchemy.dialects').setLevel(logging.WARNING)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize database on startup, clean up on shutdown."""
+    try:
+        await run_startup_initialization()
+    except Exception as e:
+        logger.error(f"Failed to initialize application: {e}")
+        raise
+
+    logger.info("Application startup complete")
+    try:
+        yield
+    finally:
+        try:
+            logger.info("Shutting down application...")
+            # Close cache service if enabled
+            try:
+                from .services.cache_service import close_cache_service
+                await close_cache_service()
+            except Exception:
+                pass
+            logger.info("Application shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+
+
 # Create FastAPI app
 app = FastAPI(
     title="WiseDeck API",
@@ -55,43 +83,23 @@ app = FastAPI(
     docs_url="/docs" if app_config.enable_api_docs else None,
     redoc_url="/redoc" if app_config.enable_api_docs else None,
     openapi_url="/openapi.json" if app_config.enable_api_docs else None,
+    lifespan=lifespan,
 )
 
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup"""
-    try:
-        await run_startup_initialization()
-
-    except Exception as e:
-        logger.error(f"Failed to initialize application: {e}")
-        raise
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up database connections on shutdown"""
-    try:
-        logger.info("Shutting down application...")
-        # Close cache service if enabled
-        try:
-            from .services.cache_service import close_cache_service
-            await close_cache_service()
-        except Exception:
-            pass
-        logger.info("Application shutdown complete")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {e}")
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Add CORS middleware only when an explicit allow-list is configured.
+# Same-origin requests are not subject to CORS, so the server-rendered UI,
+# the embedded PPTist iframe and same-origin API calls work without it.
+_cors_origins = app_config.get_cors_origins()
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    logger.info("CORS middleware disabled (no WISEDECK_CORS_ALLOW_ORIGINS configured; same-origin only)")
 
 app.add_middleware(AppApiKeyMiddleware)
 

@@ -567,6 +567,12 @@ class AppConfig(BaseSettings):
     api_key_user: str = Field(default="admin", env="WISEDECK_API_KEY_USER")
     api_keys: Optional[str] = Field(default=None, env="WISEDECK_API_KEYS")
     allow_header_session_auth: bool = Field(default=False, env="WISEDECK_ALLOW_HEADER_SESSION_AUTH")
+
+    # CORS allow-list (comma-separated origins). Empty = same-origin only
+    # (the CORSMiddleware is not mounted; browsers do not enforce CORS on
+    # same-origin requests). Only set this when a cross-origin client needs
+    # credentialed access.
+    cors_allow_origins: str = Field(default="", env="WISEDECK_CORS_ALLOW_ORIGINS")
     
     # File Upload Configuration
     max_file_size: int = Field(default=10 * 1024 * 1024, env="MAX_FILE_SIZE")  # 10MB
@@ -697,6 +703,22 @@ class AppConfig(BaseSettings):
 
         _append_binding(default_user, self.api_key)
         return bindings
+
+    def get_cors_origins(self) -> List[str]:
+        """
+        Return the CORS allow-list from WISEDECK_CORS_ALLOW_ORIGINS
+        (comma-separated). Empty list means same-origin only and callers
+        should not mount CORSMiddleware at all.
+        """
+        raw = str(self.cors_allow_origins or "").strip()
+        if not raw:
+            return []
+        origins: List[str] = []
+        for item in raw.replace("\n", ",").replace(";", ",").split(","):
+            origin = item.strip().rstrip("/")
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
 
 # Global app configuration instance
 app_config = AppConfig()
