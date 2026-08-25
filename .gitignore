@@ -71,3 +71,12 @@ USER.md
 
 # pptxtojson npm deps (bundle is committed under scripts/pptxtojson-runner/bundle/)
 scripts/pptxtojson-runner/node_modules/
+
+# Local design docs (repo convention: docs are not tracked)
+/doc/
+
+# Runtime output (generated slide HTML hosting)
+/wisedeck/
+
+# Vendored package tarballs
+*.tgz
