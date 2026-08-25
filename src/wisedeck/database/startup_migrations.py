@@ -2,9 +2,19 @@
 Startup migration runner.
 
 Why:
-- WiseDeck uses a lightweight custom migration system in `wisedeck.database.migrations`.
-- `init_db()` creates tables but won't evolve existing schemas (except a few ad-hoc columns).
-- Running `migration_manager.migrate_up()` at startup keeps schema consistent without manual steps.
+- Schema evolution is owned by Alembic (`alembic/versions/`, tracked in
+  `alembic_version`). The legacy hand-written registry in
+  `wisedeck.database.migrations` (001-018, tracked in `schema_migrations`)
+  is frozen and only used to bring old databases up to the Alembic baseline.
+- `init_db()` creates tables idempotently and patches a few ad-hoc columns;
+  it runs before this module in `run_startup_initialization`.
+
+Flow (see `alembic_runner.DatabaseMigrationState`):
+- fresh           -> `alembic upgrade head`
+- alembic_managed -> `alembic upgrade head`
+- legacy_behind   -> legacy migrate_up() once, then `alembic stamp head`,
+                     then `alembic upgrade head`
+- legacy_current  -> `alembic stamp head`, then `alembic upgrade head`
 
 Safety:
 - Protected by a filesystem lock to prevent multiple workers in the same container/process group
@@ -15,6 +25,7 @@ Safety:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -129,9 +140,23 @@ def _file_lock(path: str, *, timeout_seconds: int = 300, stale_seconds: int = 90
             pass
 
 
+async def _alembic_upgrade_head_guarded(fail_fast: bool, database_url: str | None = None) -> bool:
+    """Run `alembic upgrade head` in a worker thread; honor fail_fast."""
+    from .alembic_runner import async_upgrade_head
+
+    try:
+        await async_upgrade_head(database_url)
+        return True
+    except Exception as e:
+        logger.error(f"Startup migrations: alembic upgrade head failed: {e}")
+        if fail_fast:
+            raise
+        return False
+
+
 async def run_startup_migrations() -> bool:
     """
-    Run pending migrations on startup if enabled.
+    Bring the database schema up to date on startup.
 
     Env:
     - WISEDECK_AUTO_MIGRATE_ON_STARTUP (default: true)
@@ -152,22 +177,48 @@ async def run_startup_migrations() -> bool:
     lock_path = os.path.join(tempfile.gettempdir(), "landppt_migration.lock")
     try:
         with _file_lock(lock_path, timeout_seconds=lock_timeout, stale_seconds=lock_stale):
+            from .database import engine
+            from .alembic_runner import (
+                async_stamp_head,
+                inspect_database_state,
+            )
+
+            # Derive the Alembic URL from the same engine used for detection so
+            # the two never diverge (also keeps tests patching `engine` honest).
+            migration_url = str(engine.url)
+
+            state = await asyncio.to_thread(inspect_database_state, engine)
+            logger.info("Startup migrations: detected database state=%s (%s)", state.state, state.detail)
+
+            if state.state in {"fresh", "alembic_managed"}:
+                return await _alembic_upgrade_head_guarded(fail_fast, migration_url)
+
             migration_manager = _get_migration_manager()
-            status = await migration_manager.get_migration_status()
-            pending = status.get("pending_migrations") or []
-            if not pending:
-                logger.info("Startup migrations: no pending migrations")
+
+            if state.state == "legacy_behind":
+                status = await migration_manager.get_migration_status()
+                pending = status.get("pending_migrations") or []
+                logger.info(f"Startup migrations: legacy catch-up, pending={pending}")
+                ok = await migration_manager.migrate_up()
+                if not ok:
+                    logger.error("Startup migrations: legacy migrate_up() returned False")
+                    if fail_fast:
+                        raise RuntimeError("Startup migrations failed (legacy migrate_up returned False)")
+                    return False
+
+            # legacy_current / legacy_behind (post-catch-up): register with Alembic.
+            try:
+                await async_stamp_head(migration_url)
+                logger.info("Startup migrations: stamped Alembic baseline onto existing database")
+            except Exception as stamp_error:
+                # Bookkeeping only; never brick startup because of it.
+                logger.warning(
+                    "Startup migrations: alembic stamp head failed (will retry next startup): %s",
+                    stamp_error,
+                )
                 return True
 
-            logger.info(f"Startup migrations: pending={pending}, running migrate_up()")
-            ok = await migration_manager.migrate_up()
-            if ok:
-                logger.info("Startup migrations: completed")
-            else:
-                logger.error("Startup migrations: migrate_up() returned False")
-                if fail_fast:
-                    raise RuntimeError("Startup migrations failed (migrate_up returned False)")
-            return bool(ok)
+            return await _alembic_upgrade_head_guarded(fail_fast, migration_url)
     except Exception as e:
         logger.error(f"Startup migrations: failed: {e}")
         if fail_fast:

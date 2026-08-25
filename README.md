@@ -180,6 +180,8 @@ WiseDeck 是一个基于大语言模型（LLM）的智能演示文稿生成平�
 ### 数据库迁移（自动）
 
 - 默认启动时会自动检测并执行数据库迁移（与用户无关），可通过环境变量关闭：`WISEDECK_AUTO_MIGRATE_ON_STARTUP=false`（另见 `WISEDECK_AUTO_MIGRATE_FAIL_FAST`、`WISEDECK_AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS` 等，参考 `src/wisedeck/database/startup_migrations.py`）
+- **Schema 演进由 Alembic 管理**（`alembic/versions/`，版本记录在 `alembic_version` 表）；旧库首次启动会自动 `stamp` 到基线，历史手写迁移（001-018）已冻结仅用于补齐
+- 手动执行迁移：`alembic upgrade head`；生成新迁移：`alembic revision --autogenerate -m "..."`；指向非默认数据库时设置 `WISEDECK_MIGRATION_DATABASE_URL`
 - 本地默认启动使用 SQLite；只有在显式设置 `DATABASE_URL` 时才切换到 PostgreSQL 等外部数据库
 - 多容器/多节点共享同一个数据库时，建议关闭自动迁移，改为单独运行一次迁移作业
 
