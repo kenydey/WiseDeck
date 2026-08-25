@@ -8,7 +8,8 @@ import time
 import base64
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-import aiohttp
+
+from ....utils.http_client import build_timeout, http_get, http_post
 import json
 
 from .base import ImageGenerationProvider
@@ -70,28 +71,27 @@ class StableDiffusionProvider(ImageGenerationProvider):
             api_request = self._prepare_api_request(request)
             
             # 调用Stable Diffusion API
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.api_base}/generation/{self.engine_id}/text-to-image",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
-                    },
-                    json=api_request,
-                    timeout=aiohttp.ClientTimeout(total=180)  # 3分钟超时
-                ) as response:
-                    
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Stable Diffusion API error {response.status}: {error_text}")
-                        return ImageOperationResult(
-                            success=False,
-                            message=f"Stable Diffusion API error: {response.status}",
-                            error_code="api_error"
-                        )
-                    
-                    result_data = await response.json()
+            async with http_post(
+                f"{self.api_base}/generation/{self.engine_id}/text-to-image",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                json=api_request,
+                timeout=build_timeout(180.0),  # 3分钟超时
+            ) as response:
+
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(f"Stable Diffusion API error {response.status_code}: {error_text}")
+                    return ImageOperationResult(
+                        success=False,
+                        message=f"Stable Diffusion API error: {response.status_code}",
+                        error_code="api_error"
+                    )
+
+                result_data = await response.json()  # type: ignore[json-data]
             
             # 处理API响应
             return await self._process_api_response(result_data, request)
@@ -323,27 +323,26 @@ class StableDiffusionProvider(ImageGenerationProvider):
         
         try:
             # 检查引擎列表
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.api_base}/engines/list",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
-                    
-                    if response.status == 200:
-                        return {
-                            'status': 'healthy',
-                            'message': 'API accessible',
-                            'provider': self.provider.value,
-                            'engine_id': self.engine_id,
-                            'rate_limit_remaining': self.rate_limit_requests - len(self._request_history)
-                        }
-                    else:
-                        return {
-                            'status': 'unhealthy',
-                            'message': f'API error: {response.status}',
-                            'provider': self.provider.value
-                        }
+            async with http_get(
+                f"{self.api_base}/engines/list",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=build_timeout(10.0),
+            ) as response:
+
+                if response.status_code == 200:
+                    return {
+                        'status': 'healthy',
+                        'message': 'API accessible',
+                        'provider': self.provider.value,
+                        'engine_id': self.engine_id,
+                        'rate_limit_remaining': self.rate_limit_requests - len(self._request_history)
+                    }
+                else:
+                    return {
+                        'status': 'unhealthy',
+                        'message': f'API error: {response.status_code}',
+                        'provider': self.provider.value
+                    }
         
         except Exception as e:
             return {

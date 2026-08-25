@@ -984,269 +984,268 @@ class NarrationService:
 
             template = load_workflow_template(workflow_path)
 
-            import aiohttp
+            from ..utils.http_client import get_async_client
 
-            timeout = aiohttp.ClientTimeout(total=max(30, timeout_s))
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                comfy_ref_name = await upload_input_file(session=session, base_url=base_url, file_path=ref_path)
+            client = get_async_client()
+            comfy_ref_name = await upload_input_file(client=client, base_url=base_url, file_path=ref_path)
 
-                for script in scripts:
-                    if wanted is not None and script.slide_index not in wanted:
-                        continue
+            for script in scripts:
+                if wanted is not None and script.slide_index not in wanted:
+                    continue
 
-                    text = (script.script_content or "").strip()
-                    if not text:
-                        continue
+                text = (script.script_content or "").strip()
+                if not text:
+                    continue
 
-                    # Chunk long text to reduce peak memory usage in ComfyUI Qwen3-TTS.
-                    chunk_chars = int(cfg.get("chunk_chars", 120) or 120)
-                    chunk_chars = max(40, min(500, chunk_chars))
-                    chunks = self._split_text_for_tts(text, max_chars=chunk_chars)
+                # Chunk long text to reduce peak memory usage in ComfyUI Qwen3-TTS.
+                chunk_chars = int(cfg.get("chunk_chars", 120) or 120)
+                chunk_chars = max(40, min(500, chunk_chars))
+                chunks = self._split_text_for_tts(text, max_chars=chunk_chars)
 
-                    extra = f"ref={ref_hash};wf={workflow_hash}"
-                    content_hash = _hash_for_tts(
-                        provider=provider,
-                        language=language,
-                        voice=voice_id,
-                        rate=rate,
-                        text=f"{extra}|{text}",
+                extra = f"ref={ref_hash};wf={workflow_hash}"
+                content_hash = _hash_for_tts(
+                    provider=provider,
+                    language=language,
+                    voice=voice_id,
+                    rate=rate,
+                    text=f"{extra}|{text}",
+                )
+
+                filename = f"slide_{script.slide_index}_{content_hash[:12]}.mp3"
+                out_path = os.path.join(base_dir, filename)
+
+                cached_row = await audio_repo.get_cached_audio(
+                    project_id=project_id,
+                    slide_index=script.slide_index,
+                    language=language,
+                    provider=provider,
+                    voice=voice_id,
+                    rate=rate,
+                    content_hash=content_hash,
+                )
+                if (
+                    not force_regenerate
+                    and cached_row
+                    and cached_row.file_path
+                    and os.path.exists(cached_row.file_path)
+                    and os.path.getsize(cached_row.file_path) > 0
+                ):
+                    cue_version = _extract_cue_payload_version(getattr(cached_row, "cues_json", None))
+                    if cue_version < CUE_PAYLOAD_VERSION:
+                        try:
+                            duration_ms = cached_row.duration_ms
+                            if duration_ms is None:
+                                duration_ms = await ffprobe_duration_ms(cached_row.file_path)
+                            cues_json = None
+                            if duration_ms is not None:
+                                cues_json = await build_cues_json_for_audio(
+                                    text=text,
+                                    audio_path=cached_row.file_path,
+                                    duration_ms=int(duration_ms),
+                                )
+                            await audio_repo.upsert_audio(
+                                project_id=project_id,
+                                slide_index=script.slide_index,
+                                language=language,
+                                provider=provider,
+                                voice=voice_id,
+                                rate=rate,
+                                audio_format=(getattr(cached_row, "audio_format", None) or "mp3"),
+                                content_hash=content_hash,
+                                file_path=cached_row.file_path,
+                                duration_ms=duration_ms,
+                                cues_json=cues_json,
+                            )
+                            cached_row.duration_ms = duration_ms
+                            cached_row.cues_json = cues_json
+                        except Exception:
+                            pass
+                    outputs.append(
+                        NarrationAudioResult(
+                            slide_index=script.slide_index,
+                            language=language,
+                            voice=voice_id,
+                            rate=rate,
+                            audio_path=cached_row.file_path,
+                            duration_ms=cached_row.duration_ms,
+                            cached=True,
+                        )
                     )
+                    continue
 
-                    filename = f"slide_{script.slide_index}_{content_hash[:12]}.mp3"
-                    out_path = os.path.join(base_dir, filename)
+                # Always write atomically via tmp dir.
+                tmp_dir = tempfile.mkdtemp(prefix="landppt_tts_", dir=base_dir)
+                try:
+                    segment_paths: List[str] = []
+                    segment_ext: Optional[str] = None
 
-                    cached_row = await audio_repo.get_cached_audio(
+                    forced_precision = (str(cfg.get("force_precision") or "")).strip() or None
+                    seg_counter = 0
+
+                    async def try_generate_segment(seg_text: str, *, precision: Optional[str]) -> str:
+                        nonlocal segment_ext, seg_counter
+                        workflow = build_qwen3_td_tts_workflow(
+                            template,
+                            text=seg_text,
+                            ref_audio_filename=comfy_ref_name,
+                            language=language,
+                            ref_text=reference_text,
+                            model_precision=precision,
+                        )
+                        prompt_id = await submit_prompt(client=client, base_url=base_url, workflow=workflow)
+                        entry = await wait_for_history(
+                            client=client, base_url=base_url, prompt_id=prompt_id, timeout_s=timeout_s
+                        )
+                        fn, subfolder, ftype = extract_first_audio_fileinfo(entry)
+                        audio_bytes = await download_file_via_view(
+                            client=client,
+                            base_url=base_url,
+                            filename=fn,
+                            subfolder=subfolder,
+                            file_type=ftype,
+                        )
+                        if not audio_bytes:
+                            raise RuntimeError("ComfyUI returned empty audio output")
+
+                        ext = os.path.splitext(fn)[1].lower() or ".wav"
+                        if segment_ext is None:
+                            segment_ext = ext
+                        out_idx = seg_counter
+                        seg_counter += 1
+                        out_seg_path = os.path.join(tmp_dir, f"seg_{script.slide_index}_{out_idx}{ext}")
+                        with open(out_seg_path, "wb") as f:
+                            f.write(audio_bytes)
+                        return out_seg_path
+
+                    async def generate_with_backoff(seg_text: str, *, depth: int = 0) -> List[str]:
+                        # 1) Try forced precision (if any) or default.
+                        try:
+                            p = forced_precision
+                            return [await try_generate_segment(seg_text, precision=p)]
+                        except Exception as e:
+                            if forced_precision:
+                                # User forced precision; don't auto split unless it's OOM and text is big.
+                                if self._is_oom_error(e) and depth < 6 and len(seg_text) > 80:
+                                    parts = self._split_chunk_in_half(seg_text)
+                                    out: List[str] = []
+                                    for part in parts:
+                                        out.extend(await generate_with_backoff(part, depth=depth + 1))
+                                    return out
+                                raise
+
+                            # 2) Retry with fp16 when it looks like OOM.
+                            if self._is_oom_error(e):
+                                try:
+                                    return [await try_generate_segment(seg_text, precision="fp16")]
+                                except Exception as e2:
+                                    # 3) If still OOM, split and recurse.
+                                    if self._is_oom_error(e2) and depth < 8 and len(seg_text) > 60:
+                                        parts = self._split_chunk_in_half(seg_text)
+                                        out: List[str] = []
+                                        for part in parts:
+                                            out.extend(await generate_with_backoff(part, depth=depth + 1))
+                                        return out
+                                    raise e2
+
+                            raise
+
+                    for chunk in chunks:
+                        seg_paths = await generate_with_backoff(chunk, depth=0)
+                        segment_paths.extend(seg_paths)
+
+                    final_path = out_path
+                    audio_format = "mp3"
+                    if is_ffmpeg_available():
+                        if len(segment_paths) == 1:
+                            ffmpeg_args = [
+                                "ffmpeg",
+                                "-y",
+                                "-i",
+                                segment_paths[0],
+                                "-vn",
+                                "-c:a",
+                                "libmp3lame",
+                                "-b:a",
+                                "192k",
+                                final_path,
+                            ]
+                            code, _, err = await _run_subprocess(ffmpeg_args)
+                            if code != 0 or (not os.path.exists(final_path)) or os.path.getsize(final_path) == 0:
+                                last = (err.splitlines()[-1] if err else "").strip()
+                                raise RuntimeError(f"ffmpeg mp3 transcode failed: {last or 'unknown error'}")
+                        else:
+                            list_path = os.path.join(tmp_dir, "concat_list.txt")
+                            with open(list_path, "w", encoding="utf-8") as f:
+                                for p in segment_paths:
+                                    f.write(f"file '{str(Path(p).resolve())}'\n")
+                            ffmpeg_args = [
+                                "ffmpeg",
+                                "-y",
+                                "-f",
+                                "concat",
+                                "-safe",
+                                "0",
+                                "-i",
+                                list_path,
+                                "-vn",
+                                "-c:a",
+                                "libmp3lame",
+                                "-b:a",
+                                "192k",
+                                final_path,
+                            ]
+                            code, _, err = await _run_subprocess(ffmpeg_args)
+                            if code != 0 or (not os.path.exists(final_path)) or os.path.getsize(final_path) == 0:
+                                last = (err.splitlines()[-1] if err else "").strip()
+                                raise RuntimeError(f"ffmpeg audio concat failed: {last or 'unknown error'}")
+                    else:
+                        if len(segment_paths) != 1:
+                            raise RuntimeError("ffmpeg not available; cannot merge multi-part ComfyUI TTS output")
+                        ext = segment_ext or ".wav"
+                        final_path = os.path.join(base_dir, f"slide_{script.slide_index}_{content_hash[:12]}{ext}")
+                        audio_format = ext.lstrip(".")
+                        shutil.copyfile(segment_paths[0], final_path)
+
+                    duration_ms = await ffprobe_duration_ms(final_path)
+                    cues_json = None
+                    try:
+                        if duration_ms is not None:
+                            cues_json = await build_cues_json_for_audio(
+                                text=text, audio_path=final_path, duration_ms=int(duration_ms)
+                            )
+                    except Exception:
+                        cues_json = None
+
+                    await audio_repo.upsert_audio(
                         project_id=project_id,
                         slide_index=script.slide_index,
                         language=language,
                         provider=provider,
                         voice=voice_id,
                         rate=rate,
+                        audio_format=audio_format,
                         content_hash=content_hash,
+                        file_path=final_path,
+                        duration_ms=duration_ms,
+                        cues_json=cues_json,
                     )
-                    if (
-                        not force_regenerate
-                        and cached_row
-                        and cached_row.file_path
-                        and os.path.exists(cached_row.file_path)
-                        and os.path.getsize(cached_row.file_path) > 0
-                    ):
-                        cue_version = _extract_cue_payload_version(getattr(cached_row, "cues_json", None))
-                        if cue_version < CUE_PAYLOAD_VERSION:
-                            try:
-                                duration_ms = cached_row.duration_ms
-                                if duration_ms is None:
-                                    duration_ms = await ffprobe_duration_ms(cached_row.file_path)
-                                cues_json = None
-                                if duration_ms is not None:
-                                    cues_json = await build_cues_json_for_audio(
-                                        text=text,
-                                        audio_path=cached_row.file_path,
-                                        duration_ms=int(duration_ms),
-                                    )
-                                await audio_repo.upsert_audio(
-                                    project_id=project_id,
-                                    slide_index=script.slide_index,
-                                    language=language,
-                                    provider=provider,
-                                    voice=voice_id,
-                                    rate=rate,
-                                    audio_format=(getattr(cached_row, "audio_format", None) or "mp3"),
-                                    content_hash=content_hash,
-                                    file_path=cached_row.file_path,
-                                    duration_ms=duration_ms,
-                                    cues_json=cues_json,
-                                )
-                                cached_row.duration_ms = duration_ms
-                                cached_row.cues_json = cues_json
-                            except Exception:
-                                pass
-                        outputs.append(
-                            NarrationAudioResult(
-                                slide_index=script.slide_index,
-                                language=language,
-                                voice=voice_id,
-                                rate=rate,
-                                audio_path=cached_row.file_path,
-                                duration_ms=cached_row.duration_ms,
-                                cached=True,
-                            )
-                        )
-                        continue
 
-                    # Always write atomically via tmp dir.
-                    tmp_dir = tempfile.mkdtemp(prefix="landppt_tts_", dir=base_dir)
-                    try:
-                        segment_paths: List[str] = []
-                        segment_ext: Optional[str] = None
-
-                        forced_precision = (str(cfg.get("force_precision") or "")).strip() or None
-                        seg_counter = 0
-
-                        async def try_generate_segment(seg_text: str, *, precision: Optional[str]) -> str:
-                            nonlocal segment_ext, seg_counter
-                            workflow = build_qwen3_td_tts_workflow(
-                                template,
-                                text=seg_text,
-                                ref_audio_filename=comfy_ref_name,
-                                language=language,
-                                ref_text=reference_text,
-                                model_precision=precision,
-                            )
-                            prompt_id = await submit_prompt(session=session, base_url=base_url, workflow=workflow)
-                            entry = await wait_for_history(
-                                session=session, base_url=base_url, prompt_id=prompt_id, timeout_s=timeout_s
-                            )
-                            fn, subfolder, ftype = extract_first_audio_fileinfo(entry)
-                            audio_bytes = await download_file_via_view(
-                                session=session,
-                                base_url=base_url,
-                                filename=fn,
-                                subfolder=subfolder,
-                                file_type=ftype,
-                            )
-                            if not audio_bytes:
-                                raise RuntimeError("ComfyUI returned empty audio output")
-
-                            ext = os.path.splitext(fn)[1].lower() or ".wav"
-                            if segment_ext is None:
-                                segment_ext = ext
-                            out_idx = seg_counter
-                            seg_counter += 1
-                            out_seg_path = os.path.join(tmp_dir, f"seg_{script.slide_index}_{out_idx}{ext}")
-                            with open(out_seg_path, "wb") as f:
-                                f.write(audio_bytes)
-                            return out_seg_path
-
-                        async def generate_with_backoff(seg_text: str, *, depth: int = 0) -> List[str]:
-                            # 1) Try forced precision (if any) or default.
-                            try:
-                                p = forced_precision
-                                return [await try_generate_segment(seg_text, precision=p)]
-                            except Exception as e:
-                                if forced_precision:
-                                    # User forced precision; don't auto split unless it's OOM and text is big.
-                                    if self._is_oom_error(e) and depth < 6 and len(seg_text) > 80:
-                                        parts = self._split_chunk_in_half(seg_text)
-                                        out: List[str] = []
-                                        for part in parts:
-                                            out.extend(await generate_with_backoff(part, depth=depth + 1))
-                                        return out
-                                    raise
-
-                                # 2) Retry with fp16 when it looks like OOM.
-                                if self._is_oom_error(e):
-                                    try:
-                                        return [await try_generate_segment(seg_text, precision="fp16")]
-                                    except Exception as e2:
-                                        # 3) If still OOM, split and recurse.
-                                        if self._is_oom_error(e2) and depth < 8 and len(seg_text) > 60:
-                                            parts = self._split_chunk_in_half(seg_text)
-                                            out: List[str] = []
-                                            for part in parts:
-                                                out.extend(await generate_with_backoff(part, depth=depth + 1))
-                                            return out
-                                        raise e2
-
-                                raise
-
-                        for chunk in chunks:
-                            seg_paths = await generate_with_backoff(chunk, depth=0)
-                            segment_paths.extend(seg_paths)
-
-                        final_path = out_path
-                        audio_format = "mp3"
-                        if is_ffmpeg_available():
-                            if len(segment_paths) == 1:
-                                ffmpeg_args = [
-                                    "ffmpeg",
-                                    "-y",
-                                    "-i",
-                                    segment_paths[0],
-                                    "-vn",
-                                    "-c:a",
-                                    "libmp3lame",
-                                    "-b:a",
-                                    "192k",
-                                    final_path,
-                                ]
-                                code, _, err = await _run_subprocess(ffmpeg_args)
-                                if code != 0 or (not os.path.exists(final_path)) or os.path.getsize(final_path) == 0:
-                                    last = (err.splitlines()[-1] if err else "").strip()
-                                    raise RuntimeError(f"ffmpeg mp3 transcode failed: {last or 'unknown error'}")
-                            else:
-                                list_path = os.path.join(tmp_dir, "concat_list.txt")
-                                with open(list_path, "w", encoding="utf-8") as f:
-                                    for p in segment_paths:
-                                        f.write(f"file '{str(Path(p).resolve())}'\n")
-                                ffmpeg_args = [
-                                    "ffmpeg",
-                                    "-y",
-                                    "-f",
-                                    "concat",
-                                    "-safe",
-                                    "0",
-                                    "-i",
-                                    list_path,
-                                    "-vn",
-                                    "-c:a",
-                                    "libmp3lame",
-                                    "-b:a",
-                                    "192k",
-                                    final_path,
-                                ]
-                                code, _, err = await _run_subprocess(ffmpeg_args)
-                                if code != 0 or (not os.path.exists(final_path)) or os.path.getsize(final_path) == 0:
-                                    last = (err.splitlines()[-1] if err else "").strip()
-                                    raise RuntimeError(f"ffmpeg audio concat failed: {last or 'unknown error'}")
-                        else:
-                            if len(segment_paths) != 1:
-                                raise RuntimeError("ffmpeg not available; cannot merge multi-part ComfyUI TTS output")
-                            ext = segment_ext or ".wav"
-                            final_path = os.path.join(base_dir, f"slide_{script.slide_index}_{content_hash[:12]}{ext}")
-                            audio_format = ext.lstrip(".")
-                            shutil.copyfile(segment_paths[0], final_path)
-
-                        duration_ms = await ffprobe_duration_ms(final_path)
-                        cues_json = None
-                        try:
-                            if duration_ms is not None:
-                                cues_json = await build_cues_json_for_audio(
-                                    text=text, audio_path=final_path, duration_ms=int(duration_ms)
-                                )
-                        except Exception:
-                            cues_json = None
-
-                        await audio_repo.upsert_audio(
-                            project_id=project_id,
+                    outputs.append(
+                        NarrationAudioResult(
                             slide_index=script.slide_index,
                             language=language,
-                            provider=provider,
                             voice=voice_id,
                             rate=rate,
-                            audio_format=audio_format,
-                            content_hash=content_hash,
-                            file_path=final_path,
+                            audio_path=final_path,
                             duration_ms=duration_ms,
-                            cues_json=cues_json,
+                            cached=False,
                         )
-
-                        outputs.append(
-                            NarrationAudioResult(
-                                slide_index=script.slide_index,
-                                language=language,
-                                voice=voice_id,
-                                rate=rate,
-                                audio_path=final_path,
-                                duration_ms=duration_ms,
-                                cached=False,
-                            )
-                        )
-                    finally:
-                        try:
-                            shutil.rmtree(tmp_dir, ignore_errors=True)
-                        except Exception:
-                            pass
+                    )
+                finally:
+                    try:
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                    except Exception:
+                        pass
 
             return outputs
         finally:

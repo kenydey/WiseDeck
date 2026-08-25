@@ -7,7 +7,8 @@ import logging
 import time
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-import aiohttp
+
+from ....utils.http_client import build_timeout, http_get, http_post
 import json
 
 from .base import ImageGenerationProvider
@@ -65,27 +66,26 @@ class DalleProvider(ImageGenerationProvider):
             api_request = self._prepare_api_request(request)
             
             # 调用DALL-E API
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.api_base}/images/generations",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json=api_request,
-                    timeout=aiohttp.ClientTimeout(total=120)  # 2分钟超时
-                ) as response:
-                    
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"DALL-E API error {response.status}: {error_text}")
-                        return ImageOperationResult(
-                            success=False,
-                            message=f"DALL-E API error: {response.status}",
-                            error_code="api_error"
-                        )
-                    
-                    result_data = await response.json()
+            async with http_post(
+                f"{self.api_base}/images/generations",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=api_request,
+                timeout=build_timeout(120.0),  # 2分钟超时
+            ) as response:
+
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(f"DALL-E API error {response.status_code}: {error_text}")
+                    return ImageOperationResult(
+                        success=False,
+                        message=f"DALL-E API error: {response.status_code}",
+                        error_code="api_error"
+                    )
+
+                result_data = await response.json()  # type: ignore[json-data]
             
             # 处理API响应
             return await self._process_api_response(result_data, request)
@@ -184,18 +184,17 @@ class DalleProvider(ImageGenerationProvider):
         image_path = save_dir / filename
         
         # 下载图片
-        async with aiohttp.ClientSession() as session:
-            async with session.get(image_url) as response:
-                if response.status != 200:
-                    raise Exception(f"Failed to download image: {response.status}")
-                
-                image_data = await response.read()
-                
-                # 保存图片
-                with open(image_path, 'wb') as f:
-                    f.write(image_data)
-                
-                return image_path, len(image_data)
+        async with http_get(image_url) as response:
+            if response.status_code != 200:
+                raise Exception(f"Failed to download image: {response.status_code}")
+
+            image_data = response.content
+
+            # 保存图片
+            with open(image_path, 'wb') as f:
+                f.write(image_data)
+
+            return image_path, len(image_data)
     
     def _create_image_info(self, 
                           image_path: Path, 
@@ -299,27 +298,26 @@ class DalleProvider(ImageGenerationProvider):
         
         try:
             # 简单的API连通性检查
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.api_base}/models",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
-                    
-                    if response.status == 200:
-                        return {
-                            'status': 'healthy',
-                            'message': 'API accessible',
-                            'provider': self.provider.value,
-                            'model': self.model,
-                            'rate_limit_remaining': self.rate_limit_requests - len(self._request_history)
-                        }
-                    else:
-                        return {
-                            'status': 'unhealthy',
-                            'message': f'API error: {response.status}',
-                            'provider': self.provider.value
-                        }
+            async with http_get(
+                f"{self.api_base}/models",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=build_timeout(10.0),
+            ) as response:
+
+                if response.status_code == 200:
+                    return {
+                        'status': 'healthy',
+                        'message': 'API accessible',
+                        'provider': self.provider.value,
+                        'model': self.model,
+                        'rate_limit_remaining': self.rate_limit_requests - len(self._request_history)
+                    }
+                else:
+                    return {
+                        'status': 'unhealthy',
+                        'message': f'API error: {response.status_code}',
+                        'provider': self.provider.value
+                    }
         
         except Exception as e:
             return {

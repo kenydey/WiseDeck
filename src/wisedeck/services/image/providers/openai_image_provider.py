@@ -8,7 +8,10 @@ import logging
 import time
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-import aiohttp
+
+import httpx
+
+from ....utils.http_client import build_timeout, http_get, http_post, http_stream
 import json
 import base64
 
@@ -90,27 +93,26 @@ class OpenAIImageProvider(ImageGenerationProvider):
         api_request = self._prepare_api_request(request)
         url = f"{self.api_base.rstrip('/')}/images/generations"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=api_request,
-                timeout=aiohttp.ClientTimeout(total=180)
-            ) as response:
+        async with http_post(
+            url,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            },
+            json=api_request,
+            timeout=build_timeout(180.0),
+        ) as response:
 
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"OpenAI Image API error {response.status}: {error_text}")
-                    return ImageOperationResult(
-                        success=False,
-                        message=f"OpenAI Image API error: {response.status}",
-                        error_code="api_error"
-                    )
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"OpenAI Image API error {response.status_code}: {error_text}")
+                return ImageOperationResult(
+                    success=False,
+                    message=f"OpenAI Image API error: {response.status_code}",
+                    error_code="api_error"
+                )
 
-                result_data = await response.json()
+            result_data = await response.json()  # type: ignore[json-data]
 
         return await self._process_api_response(result_data, request)
 
@@ -129,32 +131,33 @@ class OpenAIImageProvider(ImageGenerationProvider):
             "stream_options": {"include_usage": True}
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=180)
-            ) as response:
+        async with http_stream(
+            "POST",
+            url,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=build_timeout(180.0),
+        ) as response:
 
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"OpenAI chat completions error {response.status}: {error_text}")
-                    return ImageOperationResult(
-                        success=False,
-                        message=f"OpenAI chat completions error: {response.status}",
-                        error_code="api_error"
-                    )
+            if response.status_code != 200:
+                error_text = await response.aread()
+                error_text = error_text.decode("utf-8", errors="ignore")
+                logger.error(f"OpenAI chat completions error {response.status_code}: {error_text}")
+                return ImageOperationResult(
+                    success=False,
+                    message=f"OpenAI chat completions error: {response.status_code}",
+                    error_code="api_error"
+                )
 
-                content_type = (response.headers.get("Content-Type") or "").lower()
-                if "text/event-stream" in content_type:
-                    image_payload = await self._extract_image_from_stream(response)
-                else:
-                    result_data = await response.json()
-                    image_payload = self._extract_image_data_from_chat_response(result_data)
+            content_type = (response.headers.get("Content-Type") or "").lower()
+            if "text/event-stream" in content_type:
+                image_payload = await self._extract_image_from_stream(response)
+            else:
+                result_data = await response.json()  # type: ignore[json-data]
+                image_payload = self._extract_image_data_from_chat_response(result_data)
 
         if not image_payload:
             return ImageOperationResult(
@@ -172,13 +175,13 @@ class OpenAIImageProvider(ImageGenerationProvider):
             image_info=image_info
         )
 
-    async def _extract_image_from_stream(self, response: aiohttp.ClientResponse) -> Optional[str]:
-        buffer = ""
-        async for chunk in response.content.iter_chunked(1024):
-            buffer += chunk.decode("utf-8", errors="ignore")
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
-                line = line.strip()
+    async def _extract_image_from_stream(self, response: "httpx.Response") -> Optional[str]:
+        buffer = b""
+        async for chunk in response.aiter_bytes(1024):
+            buffer += chunk
+            while b"\n" in buffer:
+                raw_line, buffer = buffer.split(b"\n", 1)
+                line = raw_line.decode("utf-8", errors="ignore").strip()
                 if not line.startswith("data:"):
                     continue
                 data = line[5:].strip()
@@ -369,18 +372,17 @@ class OpenAIImageProvider(ImageGenerationProvider):
         image_path = save_dir / filename
 
         # 下载图片
-        async with aiohttp.ClientSession() as session:
-            async with session.get(image_url) as response:
-                if response.status != 200:
-                    raise Exception(f"Failed to download image: {response.status}")
+        async with http_get(image_url) as response:
+            if response.status_code != 200:
+                raise Exception(f"Failed to download image: {response.status_code}")
 
-                image_data = await response.read()
+            image_data = response.content
 
-                # 保存图片
-                with open(image_path, 'wb') as f:
-                    f.write(image_data)
+            # 保存图片
+            with open(image_path, 'wb') as f:
+                f.write(image_data)
 
-                return image_path, len(image_data)
+            return image_path, len(image_data)
 
     def _create_image_info(self,
                            image_path: Path,
@@ -482,27 +484,26 @@ class OpenAIImageProvider(ImageGenerationProvider):
                 if marker_index != -1:
                     base_url = base_url[:marker_index]
             url = f"{base_url}/models"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url,
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
+            async with http_get(
+                url,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=build_timeout(10.0),
+            ) as response:
 
-                    if response.status == 200:
-                        return {
-                            'status': 'healthy',
-                            'message': 'API accessible',
-                            'provider': self.provider.value,
-                            'model': self.model,
-                            'rate_limit_remaining': self.rate_limit_requests - len(self._request_history)
-                        }
-                    else:
-                        return {
-                            'status': 'unhealthy',
-                            'message': f'API error: {response.status}',
-                            'provider': self.provider.value
-                        }
+                if response.status_code == 200:
+                    return {
+                        'status': 'healthy',
+                        'message': 'API accessible',
+                        'provider': self.provider.value,
+                        'model': self.model,
+                        'rate_limit_remaining': self.rate_limit_requests - len(self._request_history)
+                    }
+                else:
+                    return {
+                        'status': 'unhealthy',
+                        'message': f'API error: {response.status_code}',
+                        'provider': self.provider.value
+                    }
 
         except Exception as e:
             return {

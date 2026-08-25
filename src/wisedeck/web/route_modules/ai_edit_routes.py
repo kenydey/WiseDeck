@@ -18,7 +18,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
-import aiohttp
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel

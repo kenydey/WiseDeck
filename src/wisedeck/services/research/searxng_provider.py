@@ -10,7 +10,8 @@ import logging
 import time
 from typing import Dict, List, Optional, Any
 from urllib.parse import urljoin, urlparse
-import aiohttp
+
+from ...utils.http_client import build_timeout, http_get
 
 from ...core.config import ai_config
 
@@ -179,16 +180,13 @@ class SearXNGContentProvider:
             self._request_times.append(time.time())
             
             logger.info(f"Searching SearXNG for: {query}")
-            
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout)
-            ) as session:
-                async with session.get(search_url, params=params) as response:
-                    if response.status != 200:
-                        logger.error(f"SearXNG search failed with status {response.status}")
-                        return None
-                        
-                    data = await response.json()
+
+            async with http_get(search_url, params=params, timeout=build_timeout(self.timeout)) as response:
+                if response.status_code != 200:
+                    logger.error(f"SearXNG search failed with status {response.status_code}")
+                    return None
+
+                data = await response.json()  # type: ignore[json-data]
                     
             # Create response object
             search_response = SearXNGSearchResponse(data)

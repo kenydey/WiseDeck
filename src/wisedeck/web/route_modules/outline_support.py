@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import aiohttp
+from ...utils.http_client import CompatAsyncClient, build_timeout, compat_session
 from fastapi import HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -799,13 +799,17 @@ def _build_download_filename_for_url(
     return sanitized or f"url_source_{index}{target_ext}"
 
 
-async def _url_likely_points_to_file(session: aiohttp.ClientSession, source_url: str) -> bool:
+async def _url_likely_points_to_file(
+    session: CompatAsyncClient,
+    source_url: str,
+    headers: Optional[Dict[str, str]] = None,
+) -> bool:
     if _is_supported_file_source_url(source_url):
         return True
 
     try:
-        async with session.head(source_url, allow_redirects=True) as response:
-            if response.status >= 400:
+        async with session.head(source_url, follow_redirects=True, headers=headers) as response:
+            if response.status_code >= 400:
                 return False
             return _is_supported_file_source_url(
                 str(response.url),
@@ -817,15 +821,16 @@ async def _url_likely_points_to_file(session: aiohttp.ClientSession, source_url:
 
 
 async def _download_supported_file_from_url(
-    session: aiohttp.ClientSession,
+    session: CompatAsyncClient,
     source_url: str,
     index: int,
     max_size_bytes: int = 100 * 1024 * 1024,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Optional[Dict[str, Any]]:
     try:
-        async with session.get(source_url, allow_redirects=True) as response:
-            if response.status != 200:
-                logger.warning(f"Skip URL file download (HTTP {response.status}): {source_url}")
+        async with session.stream("GET", source_url, follow_redirects=True, headers=headers) as response:
+            if response.status_code != 200:
+                logger.warning(f"Skip URL file download (HTTP {response.status_code}): {source_url}")
                 return None
 
             resolved_url = str(response.url)
@@ -860,7 +865,7 @@ async def _download_supported_file_from_url(
                     pass
 
             chunks = bytearray()
-            async for chunk in response.content.iter_chunked(64 * 1024):
+            async for chunk in response.aiter_bytes(64 * 1024):
                 chunks.extend(chunk)
                 if len(chunks) > max_size_bytes:
                     logger.warning(f"Skip oversized URL file while streaming (>100MB): {source_url}")
@@ -923,14 +928,14 @@ async def _process_url_sources_for_outline(
         downloaded_sources: List[Dict[str, Any]] = []
         web_source_urls: List[str] = []
 
-        timeout = aiohttp.ClientTimeout(total=60)
+        timeout = build_timeout(60.0)
         headers = {
             "User-Agent": "WiseDeck Research Bot 1.0",
             "Accept": "*/*",
         }
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        async with compat_session() as session:
             for idx, source_url in enumerate(source_urls, start=1):
-                likely_file_source = await _url_likely_points_to_file(session, source_url)
+                likely_file_source = await _url_likely_points_to_file(session, source_url, headers=headers)
                 if not likely_file_source:
                     web_source_urls.append(source_url)
                     continue
@@ -940,6 +945,7 @@ async def _process_url_sources_for_outline(
                     source_url=source_url,
                     index=idx,
                     max_size_bytes=100 * 1024 * 1024,
+                    headers=headers,
                 )
                 if downloaded:
                     downloaded_sources.append(downloaded)

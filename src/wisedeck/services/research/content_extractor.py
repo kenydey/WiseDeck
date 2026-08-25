@@ -11,7 +11,8 @@ import re
 import time
 from typing import Dict, List, Optional, Any, Set
 from urllib.parse import urljoin, urlparse
-import aiohttp
+
+from ...utils.http_client import build_timeout, http_get
 from bs4 import BeautifulSoup, Comment
 
 from ...core.config import ai_config
@@ -209,22 +210,18 @@ class WebContentExtractor:
                 'Connection': 'keep-alive',
             }
             
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout),
-                headers=headers
-            ) as session:
-                async with session.get(url) as response:
-                    if response.status != 200:
-                        logger.warning(f"Failed to fetch {url}: HTTP {response.status}")
-                        return None
-                    
-                    # Check content type
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'text/html' not in content_type:
-                        logger.warning(f"Skipping non-HTML content: {url}")
-                        return None
-                    
-                    html_content = await response.text()
+            async with http_get(url, headers=headers, timeout=build_timeout(self.timeout)) as response:
+                if response.status_code != 200:
+                    logger.warning(f"Failed to fetch {url}: HTTP {response.status_code}")
+                    return None
+
+                # Check content type
+                content_type = response.headers.get('content-type', '').lower()
+                if 'text/html' not in content_type:
+                    logger.warning(f"Skipping non-HTML content: {url}")
+                    return None
+
+                html_content = response.text
             
             # Parse HTML
             soup = BeautifulSoup(html_content, 'html.parser')

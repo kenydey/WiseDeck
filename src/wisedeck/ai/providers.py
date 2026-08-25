@@ -44,23 +44,13 @@ def _get_httpx_timeout_seconds(config: Dict[str, Any], *, default_seconds: float
     return _get_llm_timeout_seconds(config, default_seconds=default_seconds)
 
 
-def _build_aiohttp_timeout(config: Dict[str, Any], *, default_seconds: float = 600.0):
-    try:
-        import aiohttp
-    except Exception:
-        return None
-
-    total = _get_llm_timeout_seconds(config, default_seconds=default_seconds)
-    return aiohttp.ClientTimeout(total=total)
-
-
-def _build_httpx_timeout(config: Dict[str, Any]):
+def _build_httpx_timeout(config: Dict[str, Any], *, default_seconds: float = 600.0):
     try:
         import httpx
     except Exception:
         return None
 
-    total = _get_httpx_timeout_seconds(config, default_seconds=600.0)
+    total = _get_llm_timeout_seconds(config, default_seconds=default_seconds)
     connect = min(30.0, total)
     write = min(30.0, total)
     pool = min(30.0, total)
@@ -713,7 +703,7 @@ class AnthropicProvider(AIProvider):
                 claude_messages.append(self._convert_message_to_anthropic(msg))
 
         try:
-            import aiohttp
+            from ..utils.http_client import get_async_client
 
             # Build URL
             base_url = base_url.rstrip('/')
@@ -738,6 +728,7 @@ class AnthropicProvider(AIProvider):
                 ("Authorization", {"Authorization": f"Bearer {api_key}"})  # MiniMax/other compatible APIs
             ]
 
+            client = get_async_client()
             for auth_name, auth_header in auth_methods:
                 try:
                     headers = {
@@ -746,40 +737,42 @@ class AnthropicProvider(AIProvider):
                     }
                     headers.update(auth_header)
 
-                    async with aiohttp.ClientSession(timeout=_build_aiohttp_timeout(config)) as session:
-                        async with session.post(url, headers=headers, json=body) as response:
-                            if response.status == 401 and auth_name == "x-api-key":
-                                # x-api-key failed, try Authorization header
-                                logger.debug("x-api-key auth failed, trying Authorization header")
+                    async with client.stream(
+                        "POST", url, headers=headers, json=body,
+                        timeout=_build_httpx_timeout(config),
+                    ) as response:
+                        if response.status_code == 401 and auth_name == "x-api-key":
+                            # x-api-key failed, try Authorization header
+                            logger.debug("x-api-key auth failed, trying Authorization header")
+                            break  # Exit inner loop to try next auth method
+
+                        if response.status_code != 200:
+                            error_text = (await response.aread()).decode("utf-8", errors="ignore")
+                            if auth_name == "x-api-key":
+                                # Try next auth method
+                                logger.debug(f"x-api-key auth failed ({response.status_code}), trying Authorization")
                                 break  # Exit inner loop to try next auth method
+                            raise Exception(f"API error {response.status_code}: {error_text}")
 
-                            if response.status != 200:
-                                error_text = await response.text()
-                                if auth_name == "x-api-key":
-                                    # Try next auth method
-                                    logger.debug(f"x-api-key auth failed ({response.status}), trying Authorization")
-                                    break  # Exit inner loop to try next auth method
-                                raise Exception(f"API error {response.status}: {error_text}")
-
-                            # Parse streaming response (SSE format)
-                            async for line in response.content:
-                                line = line.decode('utf-8').strip()
-                                if line.startswith('data: '):
-                                    data = line[6:]
-                                    if data == '[DONE]':
-                                        break
-                                    try:
-                                        import json
-                                        event_data = json.loads(data)
-                                        if event_data.get('type') == 'content_block_delta':
-                                            delta = event_data.get('delta', {})
-                                            if delta.get('type') == 'text_delta':
-                                                text = delta.get('text', '')
-                                                if text:
-                                                    yield text
-                                    except json.JSONDecodeError:
-                                        pass
-                            return  # Success, exit the function
+                        # Parse streaming response (SSE format)
+                        async for line in response.aiter_lines():
+                            line = line.strip()
+                            if line.startswith('data: '):
+                                data = line[6:]
+                                if data == '[DONE]':
+                                    break
+                                try:
+                                    import json
+                                    event_data = json.loads(data)
+                                    if event_data.get('type') == 'content_block_delta':
+                                        delta = event_data.get('delta', {})
+                                        if delta.get('type') == 'text_delta':
+                                            text = delta.get('text', '')
+                                            if text:
+                                                yield text
+                                except json.JSONDecodeError:
+                                    pass
+                        return  # Success, exit the function
 
                 except Exception as auth_error:
                     logger.debug(f"Auth method {auth_name} failed: {auth_error}")
@@ -896,7 +889,9 @@ class GoogleProvider(AIProvider):
         generation_config: Dict[str, Any],
         timeout_seconds: float,
     ) -> Dict[str, Any]:
-        import aiohttp
+        import httpx
+
+        from ..utils.http_client import get_async_client
 
         base_url = self._normalize_gemini_base_url(base_url)
         url = f"{base_url}/v1beta/models/{model}:generateContent"
@@ -914,23 +909,29 @@ class GoogleProvider(AIProvider):
             "safetySettings": safety_settings,
         }
 
-        timeout = _build_aiohttp_timeout(
+        timeout = _build_httpx_timeout(
             {"llm_timeout_seconds": timeout_seconds},
             default_seconds=600.0,
         )
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            # Most mirrors and the official API support `?key=...`. Try that first.
-            async with session.post(url, params={"key": api_key}, json=payload) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                error_text = await resp.text()
+        client = get_async_client()
+        # Most mirrors and the official API support `?key=...`. Try that first.
+        resp = await client.post(url, params={"key": api_key}, json=payload, timeout=timeout)
+        try:
+            if resp.status_code == 200:
+                return await resp.json()  # type: ignore[json-data]
+            error_text = resp.text
+        finally:
+            await resp.aclose()
 
-            # Fallback: some proxies prefer header auth.
-            headers = {"x-goog-api-key": api_key}
-            async with session.post(url, headers=headers, json=payload) as resp2:
-                if resp2.status == 200:
-                    return await resp2.json()
-                error_text2 = await resp2.text()
+        # Fallback: some proxies prefer header auth.
+        headers = {"x-goog-api-key": api_key}
+        resp2 = await client.post(url, headers=headers, json=payload, timeout=timeout)
+        try:
+            if resp2.status_code == 200:
+                return await resp2.json()  # type: ignore[json-data]
+            error_text2 = resp2.text
+        finally:
+            await resp2.aclose()
 
         raise RuntimeError(f"Gemini REST API request failed: {error_text.strip() or error_text2.strip()}")
 

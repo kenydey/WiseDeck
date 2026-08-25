@@ -3,7 +3,7 @@
 """
 
 import os
-import requests
+import httpx
 from typing import Optional, Tuple
 from pathlib import Path
 import tempfile
@@ -16,14 +16,15 @@ logger = logging.getLogger(__name__)
 
 class FileHandler:
     """文件处理器，支持本地文件和网络URL"""
-    
+
     def __init__(self, timeout: int = 30, max_size: int = 100 * 1024 * 1024):  # 100MB
         self.timeout = timeout
         self.max_size = max_size
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'SummeryAnyFile/1.0 (Document Processing Tool)'
-        })
+        self.session = httpx.Client(
+            timeout=timeout,
+            headers={'User-Agent': 'SummeryAnyFile/1.0 (Document Processing Tool)'},
+            follow_redirects=True,
+        )
     
     def handle_input(self, input_path: str, temp_dir: Optional[str] = None) -> Tuple[str, bool]:
         """
@@ -71,17 +72,17 @@ class FileHandler:
         
         try:
             # 发送HEAD请求检查文件信息
-            head_response = self.session.head(url, timeout=self.timeout, allow_redirects=True)
+            head_response = self.session.head(url, timeout=self.timeout)
             head_response.raise_for_status()
-            
+
             # 检查文件大小
             content_length = head_response.headers.get('content-length')
             if content_length and int(content_length) > self.max_size:
                 raise ValueError(f"文件太大: {content_length} bytes (最大: {self.max_size} bytes)")
-            
+
             # 获取文件名
             filename = self._extract_filename_from_url(url, head_response.headers)
-            
+
             # 创建临时文件
             if temp_dir:
                 temp_path = Path(temp_dir)
@@ -89,34 +90,33 @@ class FileHandler:
                 file_path = temp_path / filename
             else:
                 temp_file = tempfile.NamedTemporaryFile(
-                    delete=False, 
+                    delete=False,
                     suffix=Path(filename).suffix,
                     prefix="summeryanyfile_"
                 )
                 file_path = Path(temp_file.name)
                 temp_file.close()
-            
-            # 下载文件
-            response = self.session.get(url, timeout=self.timeout, stream=True)
-            response.raise_for_status()
-            
+
+            # 下载文件（流式）
             downloaded_size = 0
-            with open(file_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-                        
-                        # 检查下载大小
-                        if downloaded_size > self.max_size:
-                            f.close()
-                            file_path.unlink()  # 删除部分下载的文件
-                            raise ValueError(f"下载文件太大: {downloaded_size} bytes")
-            
+            with self.session.stream("GET", url, timeout=self.timeout) as response:
+                response.raise_for_status()
+                with open(file_path, 'wb') as f:
+                    for chunk in response.iter_bytes(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+
+                            # 检查下载大小
+                            if downloaded_size > self.max_size:
+                                f.close()
+                                file_path.unlink()  # 删除部分下载的文件
+                                raise ValueError(f"下载文件太大: {downloaded_size} bytes")
+
             logger.info(f"下载完成: {file_path} ({downloaded_size} bytes)")
             return str(file_path)
-            
-        except requests.RequestException as e:
+
+        except httpx.HTTPError as e:
             logger.error(f"下载失败: {e}")
             raise
         except Exception as e:
@@ -161,10 +161,11 @@ class FileHandler:
         try:
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
-            
-            # 检测编码
-            response.encoding = response.apparent_encoding or 'utf-8'
-            
+
+            # httpx 已按响应头/内容自动检测编码；无法识别时回退 utf-8
+            if not response.encoding or response.encoding == "ascii":
+                response.encoding = "utf-8"
+
             # 解析HTML
             soup = BeautifulSoup(response.text, 'html.parser')
             

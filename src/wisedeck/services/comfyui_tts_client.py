@@ -17,7 +17,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-import aiohttp
+import httpx
+
+from ..utils.http_client import get_async_client
 
 
 def load_workflow_template(path: str) -> Dict[str, Any]:
@@ -91,7 +93,7 @@ def build_qwen3_td_tts_workflow(
 
 async def upload_input_file(
     *,
-    session: aiohttp.ClientSession,
+    client: Optional[httpx.AsyncClient] = None,
     base_url: str,
     file_path: str,
 ) -> str:
@@ -105,40 +107,38 @@ async def upload_input_file(
 
     endpoints = ["/upload/image", "/upload/audio", "/upload/file"]
     last_error: Optional[str] = None
+    client = client or get_async_client()
 
     for ep in endpoints:
         url = (base_url.rstrip("/") + ep)
         try:
             with open(file_path, "rb") as f:
-                form = aiohttp.FormData()
                 # Common ComfyUI API expects a multipart field named "image" even for non-images.
-                form.add_field(
-                    "image",
-                    f,
-                    filename=os.path.basename(file_path),
-                    content_type="application/octet-stream",
+                files = {"image": (os.path.basename(file_path), f, "application/octet-stream")}
+                data = {"type": "input"}
+                resp = await client.post(url, files=files, data=data)
+            try:
+                text = resp.text
+                if resp.status_code >= 400:
+                    last_error = f"{ep} -> HTTP {resp.status_code}: {text[:300]}"
+                    continue
+                try:
+                    payload = json.loads(text) if text else {}
+                except Exception:
+                    payload = {}
+                # ComfyUI typically returns {"name":"<filename>"}.
+                name = (
+                    (payload.get("name") if isinstance(payload, dict) else None)
+                    or (payload.get("filename") if isinstance(payload, dict) else None)
                 )
-                form.add_field("type", "input")
-                async with session.post(url, data=form) as resp:
-                    text = await resp.text()
-                    if resp.status >= 400:
-                        last_error = f"{ep} -> HTTP {resp.status}: {text[:300]}"
-                        continue
-                    try:
-                        payload = json.loads(text) if text else {}
-                    except Exception:
-                        payload = {}
-                    # ComfyUI typically returns {"name":"<filename>"}.
-                    name = (
-                        (payload.get("name") if isinstance(payload, dict) else None)
-                        or (payload.get("filename") if isinstance(payload, dict) else None)
-                    )
-                    if name:
-                        return str(name)
-                    # Some variants return raw filename as text.
-                    if text and text.strip() and "." in text.strip():
-                        return text.strip()
-                    last_error = f"{ep} -> unexpected response: {text[:300]}"
+                if name:
+                    return str(name)
+                # Some variants return raw filename as text.
+                if text and text.strip() and "." in text.strip():
+                    return text.strip()
+                last_error = f"{ep} -> unexpected response: {text[:300]}"
+            finally:
+                await resp.aclose()
         except Exception as e:
             last_error = f"{ep} -> {type(e).__name__}: {e}"
             continue
@@ -148,7 +148,7 @@ async def upload_input_file(
 
 async def submit_prompt(
     *,
-    session: aiohttp.ClientSession,
+    client: Optional[httpx.AsyncClient] = None,
     base_url: str,
     workflow: Dict[str, Any],
     client_id: Optional[str] = None,
@@ -158,19 +158,23 @@ async def submit_prompt(
         "prompt": workflow,
         "client_id": client_id or str(uuid.uuid4()),
     }
-    async with session.post(url, json=payload) as resp:
-        data = await resp.json(content_type=None)
-        if resp.status >= 400:
-            raise RuntimeError(f"ComfyUI /prompt failed: HTTP {resp.status}: {data}")
+    client = client or get_async_client()
+    resp = await client.post(url, json=payload)
+    try:
+        data = resp.json()
+        if resp.status_code >= 400:
+            raise RuntimeError(f"ComfyUI /prompt failed: HTTP {resp.status_code}: {data}")
         prompt_id = (data or {}).get("prompt_id")
         if not prompt_id:
             raise RuntimeError(f"ComfyUI /prompt missing prompt_id: {data}")
         return str(prompt_id)
+    finally:
+        await resp.aclose()
 
 
 async def wait_for_history(
     *,
-    session: aiohttp.ClientSession,
+    client: Optional[httpx.AsyncClient] = None,
     base_url: str,
     prompt_id: str,
     timeout_s: int = 600,
@@ -182,18 +186,53 @@ async def wait_for_history(
     deadline = asyncio.get_event_loop().time() + max(5, int(timeout_s))
     url_one = base_url.rstrip("/") + f"/history/{prompt_id}"
     url_all = base_url.rstrip("/") + "/history"
+    client = client or get_async_client()
 
     last_payload: Optional[Dict[str, Any]] = None
     while asyncio.get_event_loop().time() < deadline:
         try:
-            async with session.get(url_one) as resp:
-                data = await resp.json(content_type=None)
-                if isinstance(data, dict) and data:
-                    last_payload = data
-                    # /history/{id} may return entry directly OR {id: entry}
-                    entry = data.get(prompt_id) if prompt_id in data else data
-                    # If execution completed with error, surface it early.
-                    status = (entry or {}).get("status") if isinstance(entry, dict) else None
+            resp = await client.get(url_one)
+            try:
+                data = resp.json()
+            finally:
+                await resp.aclose()
+            if isinstance(data, dict) and data:
+                last_payload = data
+                # /history/{id} may return entry directly OR {id: entry}
+                entry = data.get(prompt_id) if prompt_id in data else data
+                # If execution completed with error, surface it early.
+                status = (entry or {}).get("status") if isinstance(entry, dict) else None
+                if isinstance(status, dict):
+                    status_str = str(status.get("status_str") or status.get("status") or "").lower()
+                    if status_str in {"error", "failed"}:
+                        messages = status.get("messages")
+                        raise RuntimeError(f"ComfyUI prompt failed: {messages or status}")
+                    completed = status.get("completed")
+                    if completed is True:
+                        outputs = (entry or {}).get("outputs")
+                        if isinstance(outputs, dict) and outputs:
+                            return entry
+                        messages = status.get("messages")
+                        raise RuntimeError(f"ComfyUI prompt completed without outputs: {messages or status}")
+
+                outputs = (entry or {}).get("outputs")
+                if isinstance(outputs, dict) and outputs:
+                    return entry
+        except Exception:
+            pass
+
+        # Fallback: some deployments only support /history returning a dict of all prompts.
+        try:
+            resp = await client.get(url_all)
+            try:
+                data = resp.json()
+            finally:
+                await resp.aclose()
+            if isinstance(data, dict) and data:
+                last_payload = data
+                entry = data.get(prompt_id)
+                if isinstance(entry, dict):
+                    status = entry.get("status")
                     if isinstance(status, dict):
                         status_str = str(status.get("status_str") or status.get("status") or "").lower()
                         if status_str in {"error", "failed"}:
@@ -201,43 +240,15 @@ async def wait_for_history(
                             raise RuntimeError(f"ComfyUI prompt failed: {messages or status}")
                         completed = status.get("completed")
                         if completed is True:
-                            outputs = (entry or {}).get("outputs")
+                            outputs = entry.get("outputs")
                             if isinstance(outputs, dict) and outputs:
                                 return entry
                             messages = status.get("messages")
                             raise RuntimeError(f"ComfyUI prompt completed without outputs: {messages or status}")
 
-                    outputs = (entry or {}).get("outputs")
+                    outputs = entry.get("outputs")
                     if isinstance(outputs, dict) and outputs:
                         return entry
-        except Exception:
-            pass
-
-        # Fallback: some deployments only support /history returning a dict of all prompts.
-        try:
-            async with session.get(url_all) as resp:
-                data = await resp.json(content_type=None)
-                if isinstance(data, dict) and data:
-                    last_payload = data
-                    entry = data.get(prompt_id)
-                    if isinstance(entry, dict):
-                        status = entry.get("status")
-                        if isinstance(status, dict):
-                            status_str = str(status.get("status_str") or status.get("status") or "").lower()
-                            if status_str in {"error", "failed"}:
-                                messages = status.get("messages")
-                                raise RuntimeError(f"ComfyUI prompt failed: {messages or status}")
-                            completed = status.get("completed")
-                            if completed is True:
-                                outputs = entry.get("outputs")
-                                if isinstance(outputs, dict) and outputs:
-                                    return entry
-                                messages = status.get("messages")
-                                raise RuntimeError(f"ComfyUI prompt completed without outputs: {messages or status}")
-
-                        outputs = entry.get("outputs")
-                        if isinstance(outputs, dict) and outputs:
-                            return entry
         except Exception:
             pass
 
@@ -287,7 +298,7 @@ def extract_first_audio_fileinfo(history_entry: Dict[str, Any]) -> Tuple[str, st
 
 async def download_file_via_view(
     *,
-    session: aiohttp.ClientSession,
+    client: Optional[httpx.AsyncClient] = None,
     base_url: str,
     filename: str,
     subfolder: str = "",
@@ -297,8 +308,12 @@ async def download_file_via_view(
 
     qs = urlencode({"filename": filename, "subfolder": subfolder or "", "type": file_type or "output"})
     url = base_url.rstrip("/") + f"/view?{qs}"
-    async with session.get(url) as resp:
-        data = await resp.read()
-        if resp.status >= 400:
-            raise RuntimeError(f"ComfyUI /view failed: HTTP {resp.status} ({len(data)} bytes)")
+    client = client or get_async_client()
+    resp = await client.get(url)
+    try:
+        data = await resp.aread()
+        if resp.status_code >= 400:
+            raise RuntimeError(f"ComfyUI /view failed: HTTP {resp.status_code} ({len(data)} bytes)")
         return data
+    finally:
+        await resp.aclose()

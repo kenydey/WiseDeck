@@ -270,8 +270,9 @@ async def test_ai_provider(provider_name: str, request: Request):
         )
 
     try:
-        import aiohttp
         import json
+
+        from ..utils.http_client import build_timeout, compat_session
 
         # Try to get configuration from request body (if provided by frontend)
         body = None
@@ -300,12 +301,12 @@ async def test_ai_provider(provider_name: str, request: Request):
                     ai_config.llm_timeout_seconds,
                 )
                 
-                async with aiohttp.ClientSession() as session:
+                async with compat_session() as session:
                     headers = {
                         'Authorization': f'Bearer {api_key}',
                         'Content-Type': 'application/json'
                     }
-                    
+
                     payload = {
                         "model": model,
                         "messages": [
@@ -316,15 +317,15 @@ async def test_ai_provider(provider_name: str, request: Request):
                         ],
                         "temperature": 0
                     }
-                    
+
                     async with session.post(
                         chat_url,
                         headers=headers,
                         json=payload,
-                        timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                        timeout=build_timeout(timeout_seconds),
                     ) as response:
-                        if response.status == 200:
-                            data = await response.json()
+                        if response.status_code == 200:
+                            data = await response.json()  # type: ignore[json-data]
                             # Apply think tag filtering to the response
                             raw_content = data['choices'][0]['message']['content']
                             filtered_content = filter_think_tags(raw_content)
@@ -336,8 +337,8 @@ async def test_ai_provider(provider_name: str, request: Request):
                                 "usage": data.get('usage', {})
                             }
                         else:
-                            error_text = await response.text()
-                            raise HTTPException(status_code=response.status, detail=f"API error: {error_text}")
+                            error_text = response.text
+                            raise HTTPException(status_code=response.status_code, detail=f"API error: {error_text}")
         
         # Fallback to backend config for other providers or when no frontend config
         from ..ai import AIProviderFactory, AIMessage, MessageRole

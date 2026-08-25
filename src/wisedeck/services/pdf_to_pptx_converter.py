@@ -11,10 +11,11 @@ import logging
 import platform
 import zipfile
 import tarfile
-import requests
 from pathlib import Path
 from typing import Optional, Tuple
 from dotenv import load_dotenv
+
+from ..utils.http_client import build_timeout, get_sync_client
 
 # Load environment variables
 load_dotenv()
@@ -93,34 +94,36 @@ class SDKDownloadManager:
             # Create lib directory if it doesn't exist
             self.lib_dir.mkdir(parents=True, exist_ok=True)
 
-            # Download the file
-            response = requests.get(url, stream=True, timeout=300)
-            response.raise_for_status()
+            # Download the file (streamed via the shared httpx client)
+            with get_sync_client().stream(
+                "GET", url, timeout=build_timeout(300.0)
+            ) as response:
+                response.raise_for_status()
 
-            # Determine file extension and create temporary file
-            if url.endswith('.zip'):
-                suffix = '.zip'
-            elif url.endswith('.tar.gz'):
-                suffix = '.tar.gz'
-            else:
-                suffix = '.zip'  # Default to zip
+                # Determine file extension and create temporary file
+                if url.endswith('.zip'):
+                    suffix = '.zip'
+                elif url.endswith('.tar.gz'):
+                    suffix = '.tar.gz'
+                else:
+                    suffix = '.zip'  # Default to zip
 
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
-                temp_path = temp_file.name
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
+                    temp_path = temp_file.name
 
-                # Download with progress logging
-                total_size = int(response.headers.get('content-length', 0))
-                downloaded = 0
+                    # Download with progress logging
+                    total_size = int(response.headers.get('content-length', 0))
+                    downloaded = 0
 
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        temp_file.write(chunk)
-                        downloaded += len(chunk)
+                    for chunk in response.iter_bytes(chunk_size=8192):
+                        if chunk:
+                            temp_file.write(chunk)
+                            downloaded += len(chunk)
 
-                        if total_size > 0:
-                            progress = (downloaded / total_size) * 100
-                            if downloaded % (1024 * 1024) == 0:  # Log every MB
-                                logger.info(f"Download progress: {progress:.1f}%")
+                            if total_size > 0:
+                                progress = (downloaded / total_size) * 100
+                                if downloaded % (1024 * 1024) == 0:  # Log every MB
+                                    logger.info(f"Download progress: {progress:.1f}%")
 
             logger.info(f"Download completed: {temp_path}")
 

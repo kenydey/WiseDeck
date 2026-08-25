@@ -9,35 +9,33 @@ async def test_google_provider_uses_configured_base_url_for_rest(monkeypatch):
     calls = []
 
     class FakeResponse:
-        def __init__(self, status, json_data=None, text_data=""):
-            self.status = status
+        def __init__(self, status_code, json_data=None, text_data=""):
+            self.status_code = status_code
             self._json_data = json_data or {}
             self._text_data = text_data
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
+            self.closed = False
 
         async def json(self):
             return self._json_data
 
-        async def text(self):
+        @property
+        def text(self):
             return self._text_data
 
-    class FakeSession:
-        def __init__(self, *args, **kwargs):
-            pass
+        async def aclose(self):
+            self.closed = True
 
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        def post(self, url, *, params=None, json=None, headers=None):
-            calls.append({"url": url, "params": params, "json": json, "headers": headers})
+    class FakeAsyncClient:
+        async def post(self, url, *, params=None, json=None, headers=None, timeout=None):
+            calls.append(
+                {
+                    "url": url,
+                    "params": params,
+                    "json": json,
+                    "headers": headers,
+                    "timeout": timeout,
+                }
+            )
             return FakeResponse(
                 200,
                 json_data={
@@ -46,9 +44,9 @@ async def test_google_provider_uses_configured_base_url_for_rest(monkeypatch):
                 },
             )
 
-    import aiohttp
+    import wisedeck.utils.http_client as http_client_module
 
-    monkeypatch.setattr(aiohttp, "ClientSession", FakeSession)
+    monkeypatch.setattr(http_client_module, "get_async_client", lambda: FakeAsyncClient())
 
     provider = GoogleProvider(
         {
@@ -66,4 +64,3 @@ async def test_google_provider_uses_configured_base_url_for_rest(monkeypatch):
     assert calls, "expected at least one HTTP call"
     assert calls[0]["url"] == "https://mirror.example.com/prefix/v1beta/models/gemini-1.5-flash:generateContent"
     assert calls[0]["params"] == {"key": "test-key"}
-

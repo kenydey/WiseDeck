@@ -7,9 +7,9 @@ import logging
 import time
 from typing import List, Optional, Dict, Any
 from pathlib import Path
-import aiohttp
 import hashlib
 
+from ....utils.http_client import build_timeout, http_get
 from ..models import (
     ImageInfo, ImageSearchRequest, ImageSearchResult, ImageOperationResult,
     ImageSourceType, ImageProvider, ImageFormat, ImageMetadata, ImageTag, ImageLicense
@@ -83,42 +83,41 @@ class UnsplashSearchProvider(ImageSearchProvider):
             
             # 发送请求
             logger.debug(f"Unsplash search: {url} with params: {params}")
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        logger.debug(f"Unsplash API returned {len(data.get('results', []))} results")
-                        images = await self._parse_search_results(data)
-                        logger.debug(f"Successfully parsed {len(images)} images")
+            async with http_get(url, params=params, timeout=build_timeout(self.timeout)) as response:
+                if response.status_code == 200:
+                    data = await response.json()  # type: ignore[json-data]
+                    logger.debug(f"Unsplash API returned {len(data.get('results', []))} results")
+                    images = await self._parse_search_results(data)
+                    logger.debug(f"Successfully parsed {len(images)} images")
 
-                        total_count = data.get('total', 0)
-                        total_pages = data.get('total_pages', 0)
-                        current_page = request.page
-                        
-                        return ImageSearchResult(
-                            images=images,
-                            total_count=total_count,
-                            page=current_page,
-                            per_page=request.per_page,
-                            has_next=current_page < total_pages,
-                            has_prev=current_page > 1,
-                            search_time=time.time() - start_time,
-                            provider=self.provider
-                        )
-                    else:
-                        error_msg = f"Unsplash API error: {response.status}"
-                        if response.status == 401:
-                            error_msg = "Invalid Unsplash API key"
-                        elif response.status == 403:
-                            error_msg = "Unsplash API rate limit exceeded"
-                        
-                        logger.error(f"Unsplash search failed: {error_msg}")
-                        return ImageSearchResult(
-                            images=[], total_count=0, page=request.page,
-                            per_page=request.per_page, has_next=False, has_prev=False,
-                            search_time=time.time() - start_time, provider=self.provider,
-                            error=error_msg
-                        )
+                    total_count = data.get('total', 0)
+                    total_pages = data.get('total_pages', 0)
+                    current_page = request.page
+
+                    return ImageSearchResult(
+                        images=images,
+                        total_count=total_count,
+                        page=current_page,
+                        per_page=request.per_page,
+                        has_next=current_page < total_pages,
+                        has_prev=current_page > 1,
+                        search_time=time.time() - start_time,
+                        provider=self.provider
+                    )
+                else:
+                    error_msg = f"Unsplash API error: {response.status_code}"
+                    if response.status_code == 401:
+                        error_msg = "Invalid Unsplash API key"
+                    elif response.status_code == 403:
+                        error_msg = "Unsplash API rate limit exceeded"
+
+                    logger.error(f"Unsplash search failed: {error_msg}")
+                    return ImageSearchResult(
+                        images=[], total_count=0, page=request.page,
+                        per_page=request.per_page, has_next=False, has_prev=False,
+                        search_time=time.time() - start_time, provider=self.provider,
+                        error=error_msg
+                    )
                         
         except Exception as e:
             logger.error(f"Unsplash search failed: {e}")
@@ -233,14 +232,13 @@ class UnsplashSearchProvider(ImageSearchProvider):
             url = f"{self.api_base}/photos/{unsplash_id}"
             params = {'client_id': self.api_key}
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return await self._create_image_info_from_unsplash(data)
-                    else:
-                        logger.error(f"Failed to get Unsplash image details: {response.status}")
-                        return None
+            async with http_get(url, params=params, timeout=build_timeout(self.timeout)) as response:
+                if response.status_code == 200:
+                    data = await response.json()  # type: ignore[json-data]
+                    return await self._create_image_info_from_unsplash(data)
+                else:
+                    logger.error(f"Failed to get Unsplash image details: {response.status_code}")
+                    return None
                         
         except Exception as e:
             logger.error(f"Failed to get Unsplash image details: {e}")
@@ -260,27 +258,26 @@ class UnsplashSearchProvider(ImageSearchProvider):
             save_path.parent.mkdir(parents=True, exist_ok=True)
             
             # 下载图片
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
-                async with session.get(image_info.original_url) as response:
-                    if response.status == 200:
-                        with open(save_path, 'wb') as f:
-                            async for chunk in response.content.iter_chunked(8192):
-                                f.write(chunk)
-                        
-                        # 更新本地路径
-                        image_info.local_path = str(save_path)
-                        
-                        return ImageOperationResult(
-                            success=True,
-                            message="Image downloaded successfully",
-                            image_info=image_info
-                        )
-                    else:
-                        return ImageOperationResult(
-                            success=False,
-                            message=f"Download failed: HTTP {response.status}",
-                            error_code="download_failed"
-                        )
+            async with http_get(image_info.original_url, timeout=build_timeout(60.0)) as response:
+                if response.status_code == 200:
+                    with open(save_path, 'wb') as f:
+                        async for chunk in response.aiter_bytes(8192):
+                            f.write(chunk)
+
+                    # 更新本地路径
+                    image_info.local_path = str(save_path)
+
+                    return ImageOperationResult(
+                        success=True,
+                        message="Image downloaded successfully",
+                        image_info=image_info
+                    )
+                else:
+                    return ImageOperationResult(
+                        success=False,
+                        message=f"Download failed: HTTP {response.status_code}",
+                        error_code="download_failed"
+                    )
                         
         except Exception as e:
             logger.error(f"Failed to download Unsplash image: {e}")

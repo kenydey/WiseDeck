@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import aiohttp
+from ...utils.http_client import build_timeout, compat_session
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -545,52 +545,51 @@ async def get_wisedeck_models(
     user: User = Depends(get_current_user_required)
 ):
     """Get WiseDeck OpenAI-compatible models - fetched server-side using system config (no credentials exposed)"""
-    import aiohttp
     from ...services.db_config_service import get_db_config_service
+    from ...utils.http_client import build_timeout, http_get
 
     try:
         config_service = get_db_config_service()
         # Get system config (user_id=None for system level)
         system_config = await config_service.get_all_config(user_id=None)
-        
+
         api_key = system_config.get("wisedeck_api_key", "")
         base_url = system_config.get("wisedeck_base_url", "")
-        
+
         if not api_key or not base_url:
             return {"success": False, "error": "WiseDeck 系统配置未设置", "models": []}
-        
+
         # Ensure base URL ends with /v1
         if not base_url.endswith('/v1'):
             base_url = base_url.rstrip('/') + '/v1'
-        
+
         models_url = f"{base_url}/models"
         logger.info(f"Fetching WiseDeck models from: {models_url}")
         timeout_seconds = await _get_llm_timeout_seconds_for_user(user.id)
-        
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json'
-            }
-            
-            async with session.get(
-                models_url,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds),
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    
-                    models = []
-                    if 'data' in data and isinstance(data['data'], list):
-                        models = sorted([m['id'] for m in data['data'] if m.get('id')])
-                    
-                    logger.info(f"Successfully fetched {len(models)} WiseDeck models")
-                    return {"success": True, "models": models}
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Failed to fetch WiseDeck models: {response.status} - {error_text}")
-                    return {"success": False, "error": f"请求失败: {response.status}", "models": []}
+
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        async with http_get(
+            models_url,
+            headers=headers,
+            timeout=build_timeout(timeout_seconds),
+        ) as response:
+            if response.status_code == 200:
+                data = await response.json()  # type: ignore[json-data]
+
+                models = []
+                if 'data' in data and isinstance(data['data'], list):
+                    models = sorted([m['id'] for m in data['data'] if m.get('id')])
+
+                logger.info(f"Successfully fetched {len(models)} WiseDeck models")
+                return {"success": True, "models": models}
+            else:
+                error_text = response.text
+                logger.error(f"Failed to fetch WiseDeck models: {response.status_code} - {error_text}")
+                return {"success": False, "error": f"请求失败: {response.status_code}", "models": []}
     except Exception as e:
         logger.error(f"Error fetching WiseDeck models: {e}")
         return {"success": False, "error": str(e), "models": []}
@@ -602,7 +601,7 @@ async def test_provider_connection(
     user: User = Depends(get_current_user_required)
 ):
     """按提供商协议测试连接，避免把非 OpenAI 服务误判为兼容接口。"""
-    import aiohttp
+    from ...utils.http_client import build_timeout, compat_session
     from ...services.db_config_service import get_db_config_service
 
     try:
@@ -670,9 +669,9 @@ async def test_provider_connection(
             config.get("llm_timeout_seconds"),
             ai_config.llm_timeout_seconds,
         )
-        timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        timeout = build_timeout(timeout_seconds)
 
-        async with aiohttp.ClientSession() as session:
+        async with compat_session() as session:
             # Google/Gemini 和 Anthropic 不是 OpenAI 兼容协议，必须按原生接口测试。
             if provider == "google":
                 request_url = build_google_generate_content_url(base_url, model)
@@ -687,7 +686,7 @@ async def test_provider_connection(
                     json=payload,
                     timeout=timeout,
                 ) as response:
-                    if response.status == 200:
+                    if response.status_code == 200:
                         response_data = await response.json()
                         response_preview, usage = extract_google_test_result(response_data)
                         logger.info("%s connection test successful", provider)
@@ -699,8 +698,8 @@ async def test_provider_connection(
                             "response_preview": response_preview or "连接成功，模型已响应",
                             "usage": usage,
                         }
-                    primary_status = response.status
-                    primary_error_text = await response.text()
+                    primary_status = response.status_code
+                    primary_error_text = response.text
 
                 fallback_status = None
                 fallback_error_text = ""
@@ -713,7 +712,7 @@ async def test_provider_connection(
                     json=payload,
                     timeout=timeout,
                 ) as response:
-                    if response.status == 200:
+                    if response.status_code == 200:
                         response_data = await response.json()
                         response_preview, usage = extract_google_test_result(response_data)
                         logger.info("%s connection test successful via x-goog-api-key fallback", provider)
@@ -725,8 +724,8 @@ async def test_provider_connection(
                             "response_preview": response_preview or "连接成功，模型已响应",
                             "usage": usage,
                         }
-                    fallback_status = response.status
-                    fallback_error_text = await response.text()
+                    fallback_status = response.status_code
+                    fallback_error_text = response.text
 
                 logger.error(
                     "%s connection test failed: primary=%s - %s; fallback=%s - %s",
@@ -754,7 +753,7 @@ async def test_provider_connection(
                     json=payload,
                     timeout=timeout,
                 ) as response:
-                    if response.status == 200:
+                    if response.status_code == 200:
                         response_data = await response.json()
                         response_preview, usage = extract_anthropic_test_result(response_data)
                         logger.info("%s connection test successful", provider)
@@ -767,9 +766,9 @@ async def test_provider_connection(
                             "usage": usage,
                         }
 
-                    error_text = await response.text()
-                    logger.error("%s connection test failed: %s - %s", provider, response.status, error_text)
-                    return {"success": False, "error": f"请求失败: {response.status}"}
+                    error_text = response.text
+                    logger.error("%s connection test failed: %s - %s", provider, response.status_code, error_text)
+                    return {"success": False, "error": f"请求失败: {response.status_code}"}
 
             # OpenAI、WiseDeck 等兼容服务继续沿用 OpenAI 协议。
             if not base_url.endswith('/v1'):
@@ -813,7 +812,7 @@ async def test_provider_connection(
                 json=payload,
                 timeout=timeout,
             ) as response:
-                if response.status == 200:
+                if response.status_code == 200:
                     response_data = await response.json()
                     response_preview, usage = extract_openai_compatible_test_result(
                         response_data,
@@ -829,9 +828,9 @@ async def test_provider_connection(
                         "usage": usage,
                     }
 
-                error_text = await response.text()
-                logger.error("%s connection test failed: %s - %s", provider, response.status, error_text)
-                return {"success": False, "error": f"请求失败: {response.status}"}
+                error_text = response.text
+                logger.error("%s connection test failed: %s - %s", provider, response.status_code, error_text)
+                return {"success": False, "error": f"请求失败: {response.status_code}"}
     except Exception as e:
         logger.error(f"Error testing provider connection: {e}")
         return {"success": False, "error": str(e)}
@@ -856,7 +855,7 @@ async def get_openai_models(
 ):
     """Proxy endpoint to get OpenAI models list, avoiding CORS issues - uses frontend provided config"""
     try:
-        import aiohttp
+        from ...utils.http_client import build_timeout, compat_session
         import json
         
         # Get configuration from frontend request
@@ -881,7 +880,7 @@ async def get_openai_models(
         )
         
         # Make request to OpenAI API using frontend provided credentials
-        async with aiohttp.ClientSession() as session:
+        async with compat_session() as session:
             headers = {
                 'Authorization': f'Bearer {api_key}',
                 'Content-Type': 'application/json'
@@ -890,9 +889,9 @@ async def get_openai_models(
             async with session.get(
                 models_url,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                timeout=build_timeout(timeout_seconds),
             ) as response:
-                if response.status == 200:
+                if response.status_code == 200:
                     data = await response.json()
                     
                     # Filter and sort models
@@ -919,9 +918,9 @@ async def get_openai_models(
                     logger.info(f"Successfully fetched {len(models)} models from {base_url}")
                     return {"success": True, "models": models}
                 else:
-                    error_text = await response.text()
-                    logger.error(f"Failed to fetch models from {base_url}: {response.status} - {error_text}")
-                    return {"success": False, "error": f"API returned status {response.status}: {error_text}"}
+                    error_text = response.text
+                    logger.error(f"Failed to fetch models from {base_url}: {response.status_code} - {error_text}")
+                    return {"success": False, "error": f"API returned status {response.status_code}: {error_text}"}
                     
     except Exception as e:
         logger.error(f"Error fetching OpenAI models from frontend config: {e}")
@@ -935,7 +934,7 @@ async def test_openai_provider_proxy(
 ):
     """Proxy endpoint to test OpenAI provider, avoiding CORS issues - uses frontend provided config"""
     try:
-        import aiohttp
+        from ...utils.http_client import build_timeout, compat_session
         import json
         
         # Get configuration from frontend request
@@ -967,7 +966,7 @@ async def test_openai_provider_proxy(
         )
         
         # Make test request to OpenAI API using frontend provided credentials
-        async with aiohttp.ClientSession() as session:
+        async with compat_session() as session:
             headers = {
                 'Authorization': f'Bearer {api_key}',
                 'Content-Type': 'application/json'
@@ -1001,9 +1000,9 @@ async def test_openai_provider_proxy(
                 request_url,
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                timeout=build_timeout(timeout_seconds),
             ) as response:
-                if response.status == 200:
+                if response.status_code == 200:
                     data = await response.json()
                     
                     logger.info(f"Test successful for {base_url} with model {model}")
@@ -1036,12 +1035,12 @@ async def test_openai_provider_proxy(
                         "usage": usage
                     }
                 else:
-                    error_text = await response.text()
+                    error_text = response.text
                     try:
                         error_data = json.loads(error_text)
-                        error_message = error_data.get('error', {}).get('message', f"API returned status {response.status}")
+                        error_message = error_data.get('error', {}).get('message', f"API returned status {response.status_code}")
                     except:
-                        error_message = f"API returned status {response.status}: {error_text}"
+                        error_message = f"API returned status {response.status_code}: {error_text}"
                     
                     logger.error(f"Test failed for {base_url}: {error_message}")
                     
@@ -1067,7 +1066,7 @@ async def test_anthropic_provider_proxy(
 ):
     """Proxy endpoint to test Anthropic provider, avoiding CORS issues - uses frontend provided config"""
     try:
-        import aiohttp
+        from ...utils.http_client import build_timeout, compat_session
 
         # Get configuration from frontend request
         data = await request.json()
@@ -1093,7 +1092,7 @@ async def test_anthropic_provider_proxy(
         )
 
         # Make test request to Anthropic API using frontend provided credentials
-        async with aiohttp.ClientSession() as session:
+        async with compat_session() as session:
             headers = {
                 'x-api-key': api_key,
                 'Content-Type': 'application/json',
@@ -1116,9 +1115,9 @@ async def test_anthropic_provider_proxy(
                 messages_url,
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                timeout=build_timeout(timeout_seconds),
             ) as response:
-                if response.status == 200:
+                if response.status_code == 200:
                     data = await response.json()
 
                     logger.info(f"Anthropic test successful for {base_url} with model {model}")
@@ -1146,12 +1145,12 @@ async def test_anthropic_provider_proxy(
                         "usage": usage
                     }
                 else:
-                    error_text = await response.text()
+                    error_text = response.text
                     try:
                         error_data = json.loads(error_text)
-                        error_message = error_data.get('error', {}).get('message', f"API returned status {response.status}")
+                        error_message = error_data.get('error', {}).get('message', f"API returned status {response.status_code}")
                     except:
-                        error_message = f"API returned status {response.status}: {error_text}"
+                        error_message = f"API returned status {response.status_code}: {error_text}"
 
                     logger.error(f"Anthropic test failed for {base_url}: {error_message}")
 

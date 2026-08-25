@@ -11,10 +11,10 @@ API 限制：
 
 import time
 import logging
-import aiohttp
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
+from ....utils.http_client import build_timeout, http_get
 from .base import ImageSearchProvider
 from ..models import (
     ImageProvider, ImageSearchRequest, ImageSearchResult,
@@ -128,53 +128,52 @@ class PixabaySearchProvider(ImageSearchProvider):
             
             # 发送请求
             logger.debug(f"Pixabay search: {url} with params: {params}")
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.get(url, params=params) as response:
-                    # 处理API响应头中的频率限制信息
-                    self._process_rate_limit_headers(response.headers)
+            async with http_get(url, params=params, timeout=build_timeout(self.timeout)) as response:
+                # 处理API响应头中的频率限制信息
+                self._process_rate_limit_headers(response.headers)
 
-                    if response.status == 200:
-                        data = await response.json()
-                        logger.debug(f"Pixabay API returned {len(data.get('hits', []))} results")
-                        images = await self._parse_search_results(data)
-                        logger.debug(f"Successfully parsed {len(images)} images")
+                if response.status_code == 200:
+                    data = await response.json()  # type: ignore[json-data]
+                    logger.debug(f"Pixabay API returned {len(data.get('hits', []))} results")
+                    images = await self._parse_search_results(data)
+                    logger.debug(f"Successfully parsed {len(images)} images")
 
-                        # 根据官方API响应格式解析
-                        total_count = data.get('totalHits', 0)  # 可通过API访问的图片数量
-                        total_available = data.get('total', 0)   # 总匹配数量
-                        current_page = request.page
-                        per_page = request.per_page
-                        total_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 0
+                    # 根据官方API响应格式解析
+                    total_count = data.get('totalHits', 0)  # 可通过API访问的图片数量
+                    total_available = data.get('total', 0)   # 总匹配数量
+                    current_page = request.page
+                    per_page = request.per_page
+                    total_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 0
 
-                        return ImageSearchResult(
-                            images=images,
-                            total_count=total_count,
-                            page=current_page,
-                            per_page=per_page,
-                            has_next=current_page < total_pages,
-                            has_prev=current_page > 1,
-                            search_time=time.time() - start_time,
-                            provider=self.provider
-                        )
-                    elif response.status == 429:
-                        # 频率限制超出
-                        error_msg = "API rate limit exceeded"
-                        logger.warning(f"Pixabay {error_msg}")
-                        return ImageSearchResult(
-                            images=[], total_count=0, page=request.page,
-                            per_page=request.per_page, has_next=False, has_prev=False,
-                            search_time=time.time() - start_time, provider=self.provider,
-                            error=error_msg
-                        )
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Pixabay API error: {response.status} - {error_text}")
-                        return ImageSearchResult(
-                            images=[], total_count=0, page=request.page,
-                            per_page=request.per_page, has_next=False, has_prev=False,
-                            search_time=time.time() - start_time, provider=self.provider,
-                            error=f"API error: {response.status}"
-                        )
+                    return ImageSearchResult(
+                        images=images,
+                        total_count=total_count,
+                        page=current_page,
+                        per_page=per_page,
+                        has_next=current_page < total_pages,
+                        has_prev=current_page > 1,
+                        search_time=time.time() - start_time,
+                        provider=self.provider
+                    )
+                elif response.status_code == 429:
+                    # 频率限制超出
+                    error_msg = "API rate limit exceeded"
+                    logger.warning(f"Pixabay {error_msg}")
+                    return ImageSearchResult(
+                        images=[], total_count=0, page=request.page,
+                        per_page=request.per_page, has_next=False, has_prev=False,
+                        search_time=time.time() - start_time, provider=self.provider,
+                        error=error_msg
+                    )
+                else:
+                    error_text = response.text
+                    logger.error(f"Pixabay API error: {response.status_code} - {error_text}")
+                    return ImageSearchResult(
+                        images=[], total_count=0, page=request.page,
+                        per_page=request.per_page, has_next=False, has_prev=False,
+                        search_time=time.time() - start_time, provider=self.provider,
+                        error=f"API error: {response.status_code}"
+                    )
                         
         except Exception as e:
             logger.error(f"Pixabay search failed: {e}")
@@ -400,27 +399,26 @@ class PixabaySearchProvider(ImageSearchProvider):
             save_path.parent.mkdir(parents=True, exist_ok=True)
 
             # 下载图片
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
-                async with session.get(image_info.original_url) as response:
-                    if response.status == 200:
-                        with open(save_path, 'wb') as f:
-                            async for chunk in response.content.iter_chunked(8192):
-                                f.write(chunk)
+            async with http_get(image_info.original_url, timeout=build_timeout(60.0)) as response:
+                if response.status_code == 200:
+                    with open(save_path, 'wb') as f:
+                        async for chunk in response.aiter_bytes(8192):
+                            f.write(chunk)
 
-                        # 更新本地路径
-                        image_info.local_path = str(save_path)
+                    # 更新本地路径
+                    image_info.local_path = str(save_path)
 
-                        return ImageOperationResult(
-                            success=True,
-                            message="Image downloaded successfully",
-                            image_info=image_info
-                        )
-                    else:
-                        return ImageOperationResult(
-                            success=False,
-                            message=f"Download failed: HTTP {response.status}",
-                            error_code="download_failed"
-                        )
+                    return ImageOperationResult(
+                        success=True,
+                        message="Image downloaded successfully",
+                        image_info=image_info
+                    )
+                else:
+                    return ImageOperationResult(
+                        success=False,
+                        message=f"Download failed: HTTP {response.status_code}",
+                        error_code="download_failed"
+                    )
 
         except Exception as e:
             logger.error(f"Failed to download Pixabay image: {e}")

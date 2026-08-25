@@ -523,43 +523,43 @@ async def get_wisedeck_models(
     Fetch available models for WiseDeck OpenAI-compatible endpoint using system-level config.
     The API key is used on the backend and never exposed to the frontend.
     """
-    import aiohttp
-    
+    from ..utils.http_client import build_timeout, compat_session
+
     try:
         config_service = get_db_config_service()
-        
+
         # Get system-level config (user_id=None)
         api_key = await config_service.get_config_value("wisedeck_api_key", user_id=None)
         base_url = await config_service.get_config_value("wisedeck_base_url", user_id=None)
-        
+
         if not api_key:
             return {
                 "success": False,
                 "error": "管理员尚未配置 WiseDeck API Key"
             }
-        
+
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        
+
         # Ensure base URL ends with /v1
         if not base_url.endswith('/v1'):
             base_url = base_url.rstrip('/') + '/v1'
-        
+
         # Fetch models from the API
         models_url = f"{base_url}/models"
         timeout_seconds = await get_user_llm_timeout_seconds(user.id)
-        
-        async with aiohttp.ClientSession() as session:
+
+        async with compat_session() as session:
             async with session.get(
                 models_url,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 },
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+                timeout=build_timeout(timeout_seconds)
             ) as response:
-                if response.status == 200:
-                    data = await response.json()
+                if response.status_code == 200:
+                    data = await response.json()  # type: ignore[json-data]
                     models = data.get("data", [])
                     # Filter and sort models
                     model_ids = sorted([m.get("id", "") for m in models if m.get("id")])
@@ -568,11 +568,11 @@ async def get_wisedeck_models(
                         "models": model_ids
                     }
                 else:
-                    error_text = await response.text()
-                    logger.error(f"Failed to fetch WiseDeck models: {response.status} - {error_text}")
+                    error_text = response.text
+                    logger.error(f"Failed to fetch WiseDeck models: {response.status_code} - {error_text}")
                     return {
                         "success": False,
-                        "error": f"获取模型列表失败: HTTP {response.status}"
+                        "error": f"获取模型列表失败: HTTP {response.status_code}"
                     }
                     
     except Exception as e:
@@ -592,37 +592,37 @@ async def test_wisedeck_provider(
     Test WiseDeck OpenAI-compatible provider using system-level config.
     The API key is used on the backend and never exposed to the frontend.
     """
-    import aiohttp
-    
+    from ..utils.http_client import build_timeout, compat_session
+
     try:
         config_service = get_db_config_service()
-        
+
         # Get system-level config (user_id=None)
         api_key = await config_service.get_config_value("wisedeck_api_key", user_id=None)
         base_url = await config_service.get_config_value("wisedeck_base_url", user_id=None)
         model = await config_service.get_config_value("wisedeck_model", user_id=user.id)
-        
+
         if not api_key:
             return {
                 "success": False,
                 "error": "管理员尚未配置 WiseDeck API Key"
             }
-        
+
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        
+
         if not model:
             model = "gpt-4o"
-        
+
         # Ensure base URL ends with /v1
         if not base_url.endswith('/v1'):
             base_url = base_url.rstrip('/') + '/v1'
-        
+
         # Test with a simple chat completion
         test_url = f"{base_url}/chat/completions"
         timeout_seconds = await get_user_llm_timeout_seconds(user.id)
-        
-        async with aiohttp.ClientSession() as session:
+
+        async with compat_session() as session:
             async with session.post(
                 test_url,
                 headers={
@@ -634,10 +634,10 @@ async def test_wisedeck_provider(
                     "messages": [{"role": "user", "content": "Hello"}],
                     "max_tokens": 5
                 },
-                timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+                timeout=build_timeout(timeout_seconds)
             ) as response:
-                if response.status == 200:
-                    data = await response.json()
+                if response.status_code == 200:
+                    data = await response.json()  # type: ignore[json-data]
                     return {
                         "success": True,
                         "message": "WiseDeck 提供者测试成功",
@@ -645,11 +645,11 @@ async def test_wisedeck_provider(
                         "response_preview": data.get("choices", [{}])[0].get("message", {}).get("content", "")[:50]
                     }
                 else:
-                    error_text = await response.text()
-                    logger.error(f"WiseDeck provider test failed: {response.status} - {error_text}")
+                    error_text = response.text
+                    logger.error(f"WiseDeck provider test failed: {response.status_code} - {error_text}")
                     return {
                         "success": False,
-                        "error": f"测试失败: HTTP {response.status}"
+                        "error": f"测试失败: HTTP {response.status_code}"
                     }
                     
     except Exception as e:

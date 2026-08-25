@@ -64,6 +64,12 @@ async def lifespan(app: FastAPI):
     finally:
         try:
             logger.info("Shutting down application...")
+            # Close shared HTTP clients
+            try:
+                from .utils.http_client import close_http_clients
+                await close_http_clients()
+            except Exception:
+                pass
             # Close cache service if enabled
             try:
                 from .services.cache_service import close_cache_service

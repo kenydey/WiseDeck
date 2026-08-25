@@ -7,7 +7,8 @@ import logging
 import time
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-import aiohttp
+
+from ....utils.http_client import build_timeout, http_get, http_post
 import json
 import base64
 
@@ -99,26 +100,25 @@ class GeminiImageProvider(ImageGenerationProvider):
             # 调用Gemini API
             url = f"{self.api_base}/models/{self.model}:generateContent?key={self.api_key}"
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    headers={
-                        "Content-Type": "application/json"
-                    },
-                    json=api_request,
-                    timeout=aiohttp.ClientTimeout(total=180)  # 3分钟超时
-                ) as response:
+            async with http_post(
+                url,
+                headers={
+                    "Content-Type": "application/json"
+                },
+                json=api_request,
+                timeout=build_timeout(180.0),  # 3分钟超时
+            ) as response:
 
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Gemini API error {response.status}: {error_text}")
-                        return ImageOperationResult(
-                            success=False,
-                            message=f"Gemini API error: {response.status}",
-                            error_code="api_error"
-                        )
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(f"Gemini API error {response.status_code}: {error_text}")
+                    return ImageOperationResult(
+                        success=False,
+                        message=f"Gemini API error: {response.status_code}",
+                        error_code="api_error"
+                    )
 
-                    result_data = await response.json()
+                result_data = await response.json()  # type: ignore[json-data]
 
             # 处理API响应
             return await self._process_api_response(result_data, request)
@@ -348,26 +348,22 @@ class GeminiImageProvider(ImageGenerationProvider):
         try:
             # 简单的API连通性检查
             url = f"{self.api_base}/models?key={self.api_key}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url,
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
+            async with http_get(url, timeout=build_timeout(10.0)) as response:
 
-                    if response.status == 200:
-                        return {
-                            'status': 'healthy',
-                            'message': 'API accessible',
-                            'provider': self.provider.value,
-                            'model': self.model,
-                            'rate_limit_remaining': self.rate_limit_requests - len(self._request_history)
-                        }
-                    else:
-                        return {
-                            'status': 'unhealthy',
-                            'message': f'API error: {response.status}',
-                            'provider': self.provider.value
-                        }
+                if response.status_code == 200:
+                    return {
+                        'status': 'healthy',
+                        'message': 'API accessible',
+                        'provider': self.provider.value,
+                        'model': self.model,
+                        'rate_limit_remaining': self.rate_limit_requests - len(self._request_history)
+                    }
+                else:
+                    return {
+                        'status': 'unhealthy',
+                        'message': f'API error: {response.status_code}',
+                        'provider': self.provider.value
+                    }
 
         except Exception as e:
             return {

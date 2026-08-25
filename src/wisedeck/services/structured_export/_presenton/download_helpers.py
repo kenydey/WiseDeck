@@ -4,9 +4,9 @@ import mimetypes
 from typing import List, Optional
 from urllib.parse import urlparse
 
-import aiohttp
-
 import uuid
+
+from ....utils.http_client import get_async_client
 
 
 async def download_file(
@@ -18,40 +18,39 @@ async def download_file(
         parsed_url = urlparse(url)
         filename = os.path.basename(parsed_url.path)
 
+        client = get_async_client()
         if not filename or "." not in filename:
-            async with aiohttp.ClientSession(trust_env=True) as session:
-                async with session.head(url, headers=headers) as response:
-                    if response.status == 200:
-                        content_disposition = response.headers.get(
-                            "Content-Disposition", ""
+            async with client.stream("HEAD", url, headers=headers) as response:
+                if response.status_code == 200:
+                    content_disposition = response.headers.get(
+                        "Content-Disposition", ""
+                    )
+                    if "filename=" in content_disposition:
+                        filename = content_disposition.split("filename=")[1].strip(
+                            "\"'"
                         )
-                        if "filename=" in content_disposition:
-                            filename = content_disposition.split("filename=")[1].strip(
-                                "\"'"
+                    else:
+                        content_type = response.headers.get("Content-Type", "")
+                        if content_type:
+                            extension = mimetypes.guess_extension(
+                                content_type.split(";")[0]
                             )
-                        else:
-                            content_type = response.headers.get("Content-Type", "")
-                            if content_type:
-                                extension = mimetypes.guess_extension(
-                                    content_type.split(";")[0]
-                                )
-                                if extension:
-                                    filename = f"{uuid.uuid4()}{extension}"
+                            if extension:
+                                filename = f"{uuid.uuid4()}{extension}"
 
         filename = filename or str(uuid.uuid4())
         save_path = os.path.join(save_directory, filename)
 
-        async with aiohttp.ClientSession(trust_env=True) as session:
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    with open(save_path, "wb") as file:
-                        async for chunk in response.content.iter_chunked(8192):
-                            file.write(chunk)
-                    print(f"File downloaded successfully: {save_path}")
-                    return save_path
-                else:
-                    print(f"Failed to download file. HTTP status: {response.status}")
-                    return None
+        async with client.stream("GET", url, headers=headers) as response:
+            if response.status_code == 200:
+                with open(save_path, "wb") as file:
+                    async for chunk in response.aiter_bytes(8192):
+                        file.write(chunk)
+                print(f"File downloaded successfully: {save_path}")
+                return save_path
+            else:
+                print(f"Failed to download file. HTTP status: {response.status_code}")
+                return None
 
     except Exception as e:
         print(f"Error downloading file from {url}: {e}")

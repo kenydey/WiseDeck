@@ -6,7 +6,9 @@ PPT图片处理器
 
 import logging
 from typing import Dict, Any, Optional, List
-import aiohttp
+import httpx
+
+from ..utils.http_client import http_get
 import json
 import asyncio
 from pathlib import Path
@@ -923,65 +925,64 @@ class PPTImageProcessor:
                 return None
 
             # 下载图片数据
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url) as response:
-                    if response.status == 200:
-                        image_data_bytes = await response.read()
+            async with http_get(image_url) as response:
+                if response.status_code == 200:
+                    image_data_bytes = response.content
 
-                        # 获取文件扩展名
-                        content_type = response.headers.get('content-type', 'image/jpeg')
-                        if 'jpeg' in content_type or 'jpg' in content_type:
-                            file_extension = 'jpg'
-                        elif 'png' in content_type:
-                            file_extension = 'png'
-                        elif 'webp' in content_type:
-                            file_extension = 'webp'
-                        else:
-                            file_extension = 'jpg'  # 默认
+                    # 获取文件扩展名
+                    content_type = response.headers.get('content-type', 'image/jpeg')
+                    if 'jpeg' in content_type or 'jpg' in content_type:
+                        file_extension = 'jpg'
+                    elif 'png' in content_type:
+                        file_extension = 'png'
+                    elif 'webp' in content_type:
+                        file_extension = 'webp'
+                    else:
+                        file_extension = 'jpg'  # 默认
 
-                        # 创建上传请求
-                        from .image.models import ImageUploadRequest
+                    # 创建上传请求
+                    from .image.models import ImageUploadRequest
 
-                        # 生成更好的描述和标签
-                        description, tags = self._generate_image_metadata(image_data, title)
+                    # 生成更好的描述和标签
+                    description, tags = self._generate_image_metadata(image_data, title)
 
-                        upload_request = ImageUploadRequest(
-                            filename=f"{title}.{file_extension}",
-                            content_type=content_type,
-                            file_size=len(image_data_bytes),
-                            title=title,
-                            description=description,
-                            tags=tags,
-                            category="network_search",
-                            source_type=ImageSourceType.WEB_SEARCH,
-                            original_url=image_url
+                    upload_request = ImageUploadRequest(
+                        filename=f"{title}.{file_extension}",
+                        content_type=content_type,
+                        file_size=len(image_data_bytes),
+                        title=title,
+                        description=description,
+                        tags=tags,
+                        category="network_search",
+                        source_type=ImageSourceType.WEB_SEARCH,
+                        original_url=image_url
+                    )
+
+                    # 上传到图床系统
+                    result = await self.image_service.upload_image(upload_request, image_data_bytes)
+
+                    if result.success and result.image_info:
+                        # 构建图床API的绝对URL
+                        from .url_service import build_image_url
+                        absolute_url = build_image_url(
+                            result.image_info.image_id,
+                            width=result.image_info.metadata.width,
+                            height=result.image_info.metadata.height,
                         )
 
-                        # 上传到图床系统
-                        result = await self.image_service.upload_image(upload_request, image_data_bytes)
-
-                        if result.success and result.image_info:
-                            # 构建图床API的绝对URL
-                            from .url_service import build_image_url
-                            absolute_url = build_image_url(
-                                result.image_info.image_id,
-                                width=result.image_info.metadata.width,
-                                height=result.image_info.metadata.height,
-                            )
-
-                            return {
-                                'image_id': result.image_info.image_id,
-                                'absolute_url': absolute_url,
-                                'format': result.image_info.metadata.format.value,
-                                'width': result.image_info.metadata.width,
-                                'height': result.image_info.metadata.height
-                            }
-                        else:
-                            logger.error(f"上传网络图片到图床失败: {result.message}")
-                            return None
+                        return {
+                            'image_id': result.image_info.image_id,
+                            'absolute_url': absolute_url,
+                            'format': result.image_info.metadata.format.value,
+                            'width': result.image_info.metadata.width,
+                            'height': result.image_info.metadata.height
+                        }
                     else:
-                        logger.error(f"下载网络图片失败，状态码: {response.status}")
+                        logger.error(f"上传网络图片到图床失败: {result.message}")
                         return None
+                else:
+                    logger.error(f"下载网络图片失败，状态码: {response.status_code}")
+                    return None
 
         except Exception as e:
             logger.error(f"下载网络图片到图床失败: {e}")

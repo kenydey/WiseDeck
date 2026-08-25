@@ -5,7 +5,8 @@ SearXNG图片搜索提供者
 import asyncio
 import logging
 import time
-import aiohttp
+
+from ....utils.http_client import build_timeout, http_get
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import hashlib
@@ -79,19 +80,18 @@ class SearXNGSearchProvider(ImageSearchProvider):
             self._request_times.append(time.time())
             
             # 发送请求
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.get(search_url, params=params) as response:
-                    if response.status != 200:
-                        error_msg = f"SearXNG API returned status {response.status}"
-                        logger.error(error_msg)
-                        return ImageSearchResult(
-                            images=[], total_count=0, page=request.page,
-                            per_page=request.per_page, has_next=False, has_prev=False,
-                            search_time=time.time() - start_time, provider=self.provider,
-                            error=error_msg
-                        )
-                    
-                    data = await response.json()
+            async with http_get(search_url, params=params, timeout=build_timeout(self.timeout)) as response:
+                if response.status_code != 200:
+                    error_msg = f"SearXNG API returned status {response.status_code}"
+                    logger.error(error_msg)
+                    return ImageSearchResult(
+                        images=[], total_count=0, page=request.page,
+                        per_page=request.per_page, has_next=False, has_prev=False,
+                        search_time=time.time() - start_time, provider=self.provider,
+                        error=error_msg
+                    )
+
+                data = await response.json()  # type: ignore[json-data]
             
             # 解析搜索结果
             images = []
@@ -263,30 +263,29 @@ class SearXNGSearchProvider(ImageSearchProvider):
                     message="No original URL available for download"
                 )
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout)) as session:
-                async with session.get(image_info.original_url) as response:
-                    if response.status != 200:
-                        return ImageOperationResult(
-                            success=False,
-                            message=f"Failed to download image: HTTP {response.status}"
-                        )
-                    
-                    # 确保目录存在
-                    save_path.parent.mkdir(parents=True, exist_ok=True)
-                    
-                    # 保存文件
-                    with open(save_path, 'wb') as f:
-                        async for chunk in response.content.iter_chunked(8192):
-                            f.write(chunk)
-                    
-                    # 更新本地路径
-                    image_info.local_path = str(save_path)
-                    
+            async with http_get(image_info.original_url, timeout=build_timeout(self.timeout)) as response:
+                if response.status_code != 200:
                     return ImageOperationResult(
-                        success=True,
-                        message="Image downloaded successfully",
-                        image_info=image_info
+                        success=False,
+                        message=f"Failed to download image: HTTP {response.status_code}"
                     )
+
+                # 确保目录存在
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # 保存文件
+                with open(save_path, 'wb') as f:
+                    async for chunk in response.aiter_bytes(8192):
+                        f.write(chunk)
+
+                # 更新本地路径
+                image_info.local_path = str(save_path)
+
+                return ImageOperationResult(
+                    success=True,
+                    message="Image downloaded successfully",
+                    image_info=image_info
+                )
                     
         except Exception as e:
             error_msg = f"Failed to download image from SearXNG: {str(e)}"
