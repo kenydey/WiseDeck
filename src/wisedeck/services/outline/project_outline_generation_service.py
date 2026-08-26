@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ...api.models import (
+from ...schemas.models import (
     PPTGenerationRequest,
     PPTOutline,
     EnhancedPPTOutline,

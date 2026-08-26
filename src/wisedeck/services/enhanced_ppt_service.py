@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from ..api.models import (
+from ..schemas.models import (
     PPTGenerationRequest, PPTOutline, EnhancedPPTOutline,
     SlideContent, PPTProject, TodoBoard, FileOutlineGenerationResponse
 )

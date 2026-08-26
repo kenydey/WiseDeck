@@ -13,7 +13,7 @@ from enum import Enum
 from ..ai.base import AIMessage, MessageRole
 from ..ai.providers import get_ai_provider, get_role_provider
 from ..core.config import ai_config
-from ..api.models import PPTProject
+from ..schemas.models import PPTProject
 from .progress_tracker import progress_tracker
 
 logger = logging.getLogger(__name__)

@@ -3,7 +3,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ...api.models import PPTProject
+from ...schemas.models import PPTProject
 
 
 logger = logging.getLogger(__name__)

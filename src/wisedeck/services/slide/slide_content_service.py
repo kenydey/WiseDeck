@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ...api.models import (
+from ...schemas.models import (
     PPTGenerationRequest,
     PPTOutline,
     EnhancedPPTOutline,
@@ -192,7 +192,7 @@ class SlideContentService:
             for i, slide in enumerate(slides):
                 slide_dict = {'id': i + 1, 'type': slide.type, 'title': slide.title, 'subtitle': slide.subtitle or '', 'content': slide.content or '', 'bullet_points': slide.bullet_points or [], 'table_config': slide.table_data or {}, 'layout': slide.layout}
                 slides_dict.append(slide_dict)
-            from ...api.models import PPTOutline
+            from ...schemas.models import PPTOutline
             temp_outline = PPTOutline(title='Generated PPT', slides=slides_dict, metadata={'theme_config': theme_config})
             html_content = await self.generate_slides_from_outline(temp_outline, 'general')
             return html_content

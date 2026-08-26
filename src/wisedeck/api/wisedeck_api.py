@@ -21,10 +21,8 @@ from .models import (
 )
 from ..services.service_instances import ppt_service, get_ppt_service_for_user
 from ..services.file_processor import FileProcessor
-from ..services.deep_research_service import DEEPResearchService
-from ..services.research_report_generator import ResearchReportGenerator
 from ..core.config import ai_config, resolve_timeout_seconds
-from ..services.outline.page_count_limits import validate_custom_range_pages
+from ..schemas.page_count_limits import validate_custom_range_pages
 
 
 def filter_think_tags(content: str) -> str:
@@ -70,56 +68,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 file_processor = FileProcessor()
 
-# Research services (lazy initialization)
-_research_service = None
-_report_generator = None
-_enhanced_research_service = None
-_enhanced_report_generator = None
-
-def get_research_service():
-    """Get research service instance (lazy initialization)"""
-    global _research_service
-    if _research_service is None:
-        try:
-            _research_service = DEEPResearchService()
-            logger.info("Research service initialized successfully")
-        except Exception as e:
-            logger.warning(f"Failed to initialize research service: {e}")
-    return _research_service
-
-def reload_research_service():
-    """Reload research service to pick up new configuration"""
-    global _research_service
-    logger.info("Reloading research service...")
-
-    if _research_service is not None:
-        try:
-            _research_service.reload_config()
-            logger.info("Research service configuration reloaded successfully")
-
-            # Verify the service is still available after reload
-            if not _research_service.is_available():
-                logger.warning("Research service is not available after reload, will recreate on next access")
-                _research_service = None
-
-        except Exception as e:
-            logger.warning(f"Failed to reload research service config: {e}")
-            # If reload fails, recreate the service
-            _research_service = None
-    else:
-        # If service doesn't exist, force recreation on next access
-        logger.info("Research service will be recreated on next access with new configuration")
-
-def get_report_generator():
-    """Get report generator instance (lazy initialization)"""
-    global _report_generator
-    if _report_generator is None:
-        try:
-            _report_generator = ResearchReportGenerator()
-            logger.info("Report generator initialized successfully")
-        except Exception as e:
-            logger.warning(f"Failed to initialize report generator: {e}")
-    return _report_generator
+# Research services live in the services layer (no api back-edge from services).
+from ..services.research.service_registry import (  # noqa: E402
+    get_research_service,
+    get_report_generator,
+    reload_research_service,
+)
 
 
 @router.post("/template/extract", response_model=TemplateStyleExtractResponse)

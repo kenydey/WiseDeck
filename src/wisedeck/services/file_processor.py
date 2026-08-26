@@ -32,7 +32,7 @@ try:
 except ImportError:
     OCR_AVAILABLE = False
 
-from ..api.models import FileUploadResponse
+from ..schemas.models import FileUploadResponse
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ...api.models import (
+from ...schemas.models import (
     PPTGenerationRequest,
     PPTOutline,
     EnhancedPPTOutline,
@@ -246,7 +246,7 @@ class ProjectOutlineStreamingService:
 
         yield await self._build_streaming_research_status_event('file_process', '正在基于研究成果生成大纲...', 0.0)
         try:
-            from ...api.models import FileOutlineGenerationRequest
+            from ...schemas.models import FileOutlineGenerationRequest
             language = 'zh'
             if project.project_metadata and isinstance(project.project_metadata, dict):
                 language = project.project_metadata.get('language', 'zh')

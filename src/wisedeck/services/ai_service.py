@@ -6,7 +6,7 @@ import re
 import json
 import logging
 from typing import Dict, Any, List, Optional
-from ..api.models import ChatCompletionRequest, CompletionRequest, PPTGenerationRequest
+from ..schemas.models import ChatCompletionRequest, CompletionRequest, PPTGenerationRequest
 from ..ai import get_ai_provider, AIMessage, MessageRole
 from ..core.config import ai_config
 

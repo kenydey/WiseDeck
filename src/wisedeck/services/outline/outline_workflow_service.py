@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from ...api.models import FileOutlineGenerationResponse
+from ...schemas.models import FileOutlineGenerationResponse
 from ...utils.thread_pool import run_blocking_io
 from .outline_workflow_support import (
     build_file_info,

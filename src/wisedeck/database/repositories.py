@@ -11,7 +11,7 @@ from sqlalchemy import select, update, delete, and_, func, or_, inspect, text
 from sqlalchemy.orm import selectinload
 
 from .models import Project, TodoBoard, TodoStage, ProjectVersion, SlideData, PPTTemplate, GlobalMasterTemplate, CreditTransaction, RedemptionCode, User, UserConfig, UserMetrics
-from ..api.models import PPTProject, TodoBoard as TodoBoardModel, TodoStage as TodoStageModel
+from ..schemas.models import PPTProject, TodoBoard as TodoBoardModel, TodoStage as TodoStageModel
 
 logger = logging.getLogger(__name__)
 

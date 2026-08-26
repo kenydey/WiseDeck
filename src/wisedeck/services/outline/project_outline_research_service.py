@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ...api.models import (
+from ...schemas.models import (
     PPTGenerationRequest,
     PPTOutline,
     EnhancedPPTOutline,
@@ -134,7 +134,7 @@ class ProjectOutlineResearchService:
         if report_path and Path(report_path).exists():
             logger.info('Using %s research report file for outline generation: %s', provider, report_path)
             try:
-                from ...api.models import FileOutlineGenerationRequest
+                from ...schemas.models import FileOutlineGenerationRequest
                 file_request = FileOutlineGenerationRequest(file_path=report_path, filename=Path(report_path).name, topic=request.topic, scenario=request.scenario, requirements=request.requirements, target_audience=getattr(request, 'target_audience', '普通大众'), ppt_style=getattr(request, 'ppt_style', 'general'), custom_style_prompt=getattr(request, 'custom_style_prompt', ''), page_count_mode=page_count_settings.get('mode', 'ai_decide') if page_count_settings else 'ai_decide', min_pages=page_count_settings.get('min_pages') if page_count_settings else None, max_pages=page_count_settings.get('max_pages') if page_count_settings else None, fixed_pages=page_count_settings.get('fixed_pages') if page_count_settings else None, language=request.language)
                 file_outline_result = await self.generate_outline_from_file(file_request)
                 if file_outline_result.success and file_outline_result.outline:

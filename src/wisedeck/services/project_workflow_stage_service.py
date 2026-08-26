@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ..api.models import (
+from ..schemas.models import (
     PPTGenerationRequest,
     PPTOutline,
     EnhancedPPTOutline,
@@ -480,7 +480,7 @@ class ProjectWorkflowStageService:
                                            confirmed_requirements: Dict[str, Any]):
             """Update project TODO board with custom stages (including requirements confirmation)"""
             try:
-                from ..api.models import TodoStage, TodoBoard
+                from ..schemas.models import TodoStage, TodoBoard
                 import time
 
                 # Create complete stages including requirements confirmation

@@ -53,7 +53,7 @@ def reload_services():
 
     # Also reload research service if it exists
     try:
-        from ..api.wisedeck_api import reload_research_service
+        from .research.service_registry import reload_research_service
         reload_research_service()
     except ImportError:
         pass  # Research service may not be available

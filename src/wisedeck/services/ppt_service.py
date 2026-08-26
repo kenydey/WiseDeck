@@ -5,7 +5,7 @@ PPT Service for generating presentations
 import json
 import re
 from typing import Dict, Any, List, Optional
-from ..api.models import PPTGenerationRequest, PPTOutline
+from ..schemas.models import PPTGenerationRequest, PPTOutline
 import docx
 import PyPDF2
 import io
