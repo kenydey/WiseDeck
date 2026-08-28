@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "layouts": {
+    "cover": {
+      "regions": {
+        "title": {"left": 72, "top": 168, "width": 856, "height": 96, "fontSize": 36, "fontWeight": "bold", "textAlign": "center", "defaultColor": "#ffffff"},
+        "subtitle": {"left": 72, "top": 276, "width": 856, "height": 72, "fontSize": 20, "textAlign": "center", "defaultColor": "#f0f0f0"},
+        "confidential": {"left": 700, "top": 28, "width": 252, "height": 28, "fontSize": 11, "fontWeight": "bold", "textAlign": "right", "defaultColor": "#cccccc"},
+        "date": {"left": 720, "top": 520, "width": 240, "height": 32, "fontSize": 13, "textAlign": "right", "defaultColor": "#dddddd"},
+        "logo": {"left": 40, "top": 32, "width": 160, "height": 56}
+      }
+    },
+    "content_bullets": {
+      "regions": {
+        "title": {"left": 44, "top": 36, "width": 912, "height": 56, "fontSize": 28, "fontWeight": "bold", "textAlign": "left", "defaultColor": "#222222"},
+        "bullet_list": {"left": 56, "top": 112, "width": 888, "height": 420, "fontSize": 18, "textAlign": "left", "defaultColor": "#333333"}
+      }
+    },
+    "content_chart": {
+      "regions": {
+        "title": {"left": 44, "top": 28, "width": 912, "height": 52, "fontSize": 26, "fontWeight": "bold", "textAlign": "left", "defaultColor": "#222222"},
+        "chart": {"left": 44, "top": 92, "width": 580, "height": 430},
+        "sidebar": {"left": 640, "top": 108, "width": 316, "height": 410, "fontSize": 16, "textAlign": "left", "defaultColor": "#444444"}
+      }
+    }
+  }
+}

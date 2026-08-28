@@ -109,6 +109,11 @@ function updateMainPreviewArea() {
                     <iframe class="slide-frame" id="slideFrame"
                             title="Slide Preview"></iframe>
 
+                    <iframe class="slide-frame" id="pptistPreviewFrame"
+                            src="/static/pptist_dist/index.html?mode=audience"
+                            style="display:none;"
+                            title="PPTist Preview"></iframe>
+
                     <button class="preview-nav-btn right" id="previewNextBtn" onclick="navigatePreviewSlide(1)" title="&#19979;&#19968;&#39029; (&#8594;)">
                         <i class="fas fa-chevron-right"></i>
                     </button>
@@ -121,7 +126,7 @@ function updateMainPreviewArea() {
         // 设置第一张幻灯片的内容
         const slideFrame = document.getElementById('slideFrame');
         if (slideFrame && slidesData[0]) {
-            setSafeIframeContent(slideFrame, slidesData[0].html_content);
+            setSafeIframeContent(slideFrame, slidePreviewHtml(slidesData[0]));
 
             // 初始化iframe和重新初始化JavaScript
             setTimeout(() => {
@@ -129,6 +134,12 @@ function updateMainPreviewArea() {
                 applyMainFrameScale();
                 forceReinitializeIframeJS(slideFrame);
                 updatePreviewNavButtons();
+                // Switch to PPTist SSOT preview when available.
+                try {
+                    initMainEditorPreview();
+                } catch (e) {
+                    // ignore
+                }
             }, 100);
         }
     } else {
@@ -170,6 +181,11 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => {
         initializeMainFrame();
         applyMainFrameScale();
+        try {
+            initMainEditorPreview();
+        } catch (e) {
+            // ignore
+        }
     }, 100);
 
     // 初始化缩略图事件监听器

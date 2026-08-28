@@ -15,6 +15,30 @@ from ..core.config import app_config
 
 logger = logging.getLogger(__name__)
 
+# aiosqlite 0.22+ creates a non-daemon worker thread per connection which
+# blocks interpreter exit until the async engine is disposed. In the test
+# suite many tests touch AsyncSessionLocal without explicit dispose, so
+# make the worker thread daemonic to match historical behaviour and avoid
+# pytest hanging after a passing test.
+try:
+    import aiosqlite.core as _aiosqlite_core
+    import threading as _threading
+
+    _orig_conn_init = _aiosqlite_core.Connection.__init__
+
+    def _patched_conn_init(self, *args, **kwargs):
+        _orig_conn_init(self, *args, **kwargs)
+        try:
+            t = getattr(self, "_thread", None)
+            if isinstance(t, _threading.Thread):
+                t.daemon = True
+        except Exception:
+            pass
+
+    _aiosqlite_core.Connection.__init__ = _patched_conn_init
+except Exception:
+    pass
+
 DEFAULT_DATABASE_URL = "sqlite:///./wisedeck.db"
 SQLITE_FALLBACK_URL = DEFAULT_DATABASE_URL
 LEGACY_DOCKER_POSTGRES_URL = "postgresql://landppt:landppt@postgres:5432/landppt"

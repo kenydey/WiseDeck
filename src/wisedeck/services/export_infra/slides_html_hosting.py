@@ -3,6 +3,20 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional
 
 
+def effective_slide_preview_html(slide: Any) -> str:
+    """
+    Match StrictPixel `slidePreviewHtml()` in projectSlidesEditor.core.js:
+    prefer non-empty `pptist_aligned_preview_html`, else `html_content`.
+    Used so `/internal/preview/slides-html` DOM matches the main editor HTML preview.
+    """
+    if not isinstance(slide, dict):
+        return ""
+    aligned = slide.get("pptist_aligned_preview_html")
+    if isinstance(aligned, str) and aligned.strip():
+        return aligned
+    return str(slide.get("html_content") or "")
+
+
 def build_hosted_slides_html_document(
     *,
     slides_data: List[Any],
@@ -11,7 +25,11 @@ def build_hosted_slides_html_document(
     page: Optional[int] = None,
 ) -> str:
     """
-    Build a same-origin HTML document that hosts editor `slides_data[].html_content`.
+    Build a same-origin HTML document that hosts each slide body from `slides_data[].html_content`.
+
+    Callers that need parity with the main StrictPixel preview should set each row's
+    `html_content` to `effective_slide_preview_html(row)` (after export base-URL prep),
+    e.g. ``internal_preview_slides_html`` in ``export_routes``.
 
     `page` is 1-based. When provided, only that slide is rendered.
     """

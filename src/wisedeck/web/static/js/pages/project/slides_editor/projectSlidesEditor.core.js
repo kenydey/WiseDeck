@@ -243,6 +243,26 @@ function createDataUrl(html) {
     }
 }
 
+const WISEDECK_VENDOR_ECHARTS = '/static/vendor/echarts.min.js';
+const WISEDECK_VENDOR_CHART_UMD = '/static/vendor/chart.umd.min.js';
+
+/** Rewrite external chart CDNs (bootcdn / jsdelivr / cdnjs) to same-origin vendor bundles. */
+function rewriteChartLibraryCdns(html) {
+    if (typeof html !== 'string') {
+        return html;
+    }
+    let out = html;
+    out = out.replace(
+        /<script\b[^>]*\bsrc\s*=\s*["']https?:\/\/[^"']*\/echarts[^"']*\.min\.js["'][^>]*>\s*<\/script>/gi,
+        '<script src="' + WISEDECK_VENDOR_ECHARTS + '"></script>'
+    );
+    out = out.replace(
+        /<script\b[^>]*\bsrc\s*=\s*["']https?:\/\/[^"']*\/chart\.umd(?:\.min)?\.js["'][^>]*>\s*<\/script>/gi,
+        '<script src="' + WISEDECK_VENDOR_CHART_UMD + '"></script>'
+    );
+    return out;
+}
+
 // 优化的iframe内容设置函数，减少卡顿
 function prepareHtmlForPreview(html) {
     if (typeof html !== 'string') {
@@ -256,6 +276,8 @@ function prepareHtmlForPreview(html) {
         /<script\s+src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/d3\/[\d\.]+\/d3\.min\.js"[^>]*><\/script>/gi,
         '<' + 'script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></' + 'script>'
     );
+
+    prepared = rewriteChartLibraryCdns(prepared);
 
     return prepared;
 }
@@ -278,6 +300,134 @@ function htmlUsesTailwindUtilities(html) {
 
     return false;
 }
+
+/**
+ * Heuristic: wireframe HTML from pptist_slide_to_preview_html (chart placeholder, dashed boxes).
+ * @param {string} html
+ * @returns {boolean}
+ */
+function isDegradedPptistAlignedPreview(html) {
+    if (!html || typeof html !== 'string') return true;
+    const t = html.trim();
+    if (!t) return true;
+    if (t.includes('[chart]')) return true;
+    if (t.includes('border:1px dashed #ccc') && t.length < 12000) return true;
+    if (/background\s*:\s*#222/i.test(t)) return true;
+    return false;
+}
+
+/**
+ * StrictPixel：主预览优先大纲 html_content；矢量 aligned/resolved 仅作兜底且须非 degraded。
+ */
+function slidePreviewHtml(slide) {
+    if (!slide) return '';
+    const htmlContent = typeof slide.html_content === 'string' ? slide.html_content : '';
+    if (htmlContent.trim()) {
+        return htmlContent;
+    }
+    const aligned =
+        slide.pptist_aligned_preview_html &&
+        typeof slide.pptist_aligned_preview_html === 'string' &&
+        slide.pptist_aligned_preview_html.trim().length > 0;
+    if (aligned && !isDegradedPptistAlignedPreview(slide.pptist_aligned_preview_html)) {
+        return slide.pptist_aligned_preview_html;
+    }
+    const resolved = slide.resolved_preview_html;
+    if (typeof resolved === 'string' && resolved.trim() && !isDegradedPptistAlignedPreview(resolved)) {
+        return resolved;
+    }
+    return htmlContent;
+}
+
+window.isDegradedPptistAlignedPreview = isDegradedPptistAlignedPreview;
+
+/** Structural SSOT: every slide has a PPTist ``elements`` array (may still be low-fidelity slide_document). */
+function isPptistSsotSlides(slides) {
+    if (!Array.isArray(slides) || slides.length === 0) return false;
+    return slides.every(s => s && Array.isArray(s.elements));
+}
+
+const WDS_HIGH_FIDELITY_ELEMENTS_SOURCES = new Set([
+    'playwright_raster',
+    'pptx_bridge',
+    'aippt_template',
+    'user_edit',
+]);
+
+/** True when every slide is backed by a parity-preserving pipeline (not bare slide_document). */
+function isHighFidelityPptistSlides(slides) {
+    if (!isPptistSsotSlides(slides)) return false;
+    return slides.every((s) => {
+        const src = s && s.elements_source;
+        return WDS_HIGH_FIDELITY_ELEMENTS_SOURCES.has(src);
+    });
+}
+
+function hasStructuredWdsAippt(slides) {
+    return Array.isArray(slides) && slides.some((s) => s && s.wds_aippt_v1 && typeof s.wds_aippt_v1 === 'object');
+}
+
+/** 完整编辑浮层：需每页具备 elements 数组（矢量 JSON） */
+function canOpenEmbeddedFullEditor(slides) {
+    return isPptistSsotSlides(slides);
+}
+
+function getPptistPreviewFrame() {
+    return document.getElementById('pptistPreviewFrame');
+}
+
+function syncSlidesToPptistPreview(targetIndex = 0) {
+    const pptistFrame = getPptistPreviewFrame();
+    if (!pptistFrame || !pptistFrame.contentWindow) return;
+    if (!Array.isArray(slidesData)) return;
+    pptistFrame.contentWindow.postMessage({
+        type: 'SYNC_SLIDES_TO_PPTIST',
+        slides: slidesData,
+        projectId: (window.wisedeckEditorConfig && window.wisedeckEditorConfig.projectId) || null,
+        slideIndex: targetIndex || 0
+    }, '*');
+}
+
+/** StrictPixel：主预览仅 #slideFrame + slidePreviewHtml，不挂载 pptistPreviewFrame */
+function refreshMainEditorStrictPixelPreview() {
+    window.__pptistPreviewEnabled = false;
+    const pptistFrame = getPptistPreviewFrame();
+    if (pptistFrame) {
+        pptistFrame.style.display = 'none';
+    }
+    const htmlFrame = document.getElementById('slideFrame');
+    if (htmlFrame) {
+        htmlFrame.style.display = '';
+        if (slidesData && slidesData[currentSlideIndex]) {
+            setSafeIframeContent(htmlFrame, slidePreviewHtml(slidesData[currentSlideIndex]));
+        }
+    }
+    requestMainFrameScaleRefresh();
+}
+
+function initMainEditorPreview() {
+    refreshMainEditorStrictPixelPreview();
+}
+
+/** @deprecated 旧入口；请用 initMainEditorPreview */
+function initPptistPreviewIfNeeded() {
+    initMainEditorPreview();
+}
+
+/** @deprecated 请用 refreshMainEditorStrictPixelPreview */
+function refreshMainPreviewTrackAvailability() {
+    refreshMainEditorStrictPixelPreview();
+}
+
+window.initPptistPreviewIfNeeded = initPptistPreviewIfNeeded;
+window.initMainEditorPreview = initMainEditorPreview;
+window.refreshMainEditorStrictPixelPreview = refreshMainEditorStrictPixelPreview;
+window.refreshMainPreviewTrackAvailability = refreshMainPreviewTrackAvailability;
+window.isPptistSsotSlides = isPptistSsotSlides;
+window.isHighFidelityPptistSlides = isHighFidelityPptistSlides;
+window.syncSlidesToPptistPreview = syncSlidesToPptistPreview;
+window.slidePreviewHtml = slidePreviewHtml;
+window.canOpenEmbeddedFullEditor = canOpenEmbeddedFullEditor;
 
 function stripUnusedTailwindCdn(html) {
     if (typeof html !== 'string' || !/cdn\.tailwindcss\.com/i.test(html)) {
@@ -419,7 +569,7 @@ function refreshSlidePreview(index, options = {}) {
         return;
     }
 
-    const slideContent = slidesData[targetIndex]?.html_content;
+    const slideContent = slidePreviewHtml(slidesData[targetIndex]);
     if (!slideContent) {
         return;
     }
@@ -636,8 +786,10 @@ function applyMainFrameScale() {
     cachedScale = scale;
     lastContainerSize = currentSize;
 
-    // 应用缩放
-    iframe.style.transform = `translate(-50%, -50%) scale(${scale})`;
+    // StrictPixel：主预览仅缩放 slideFrame（pptistPreviewFrame 不再用于主预览）
+    if (iframe) {
+        iframe.style.transform = `translate(-50%, -50%) scale(${scale})`;
+    }
 }
 
 // Preview navigation
@@ -674,7 +826,7 @@ function navigatePreviewSlide(direction) {
             if (slideFrame) {
                 slideFrame.style.opacity = '0.8';
                 slideFrame.style.transition = 'opacity 0.2s ease';
-                setSafeIframeContent(slideFrame, slidesData[newIndex].html_content);
+                setSafeIframeContent(slideFrame, slidePreviewHtml(slidesData[newIndex]));
                 setTimeout(() => {
                     slideFrame.style.opacity = '1';
                     forceReinitializeIframeJS(slideFrame);
@@ -682,11 +834,9 @@ function navigatePreviewSlide(direction) {
             }
 
             if (codeEditor) {
-                if (codeMirrorEditor && isCodeMirrorInitialized) {
-                    codeMirrorEditor.setValue(slidesData[newIndex].html_content);
-                } else {
-                    codeEditor.value = slidesData[newIndex].html_content;
-                }
+                const content = slidesData[newIndex].html_content || '';
+                if (codeMirrorEditor && isCodeMirrorInitialized) codeMirrorEditor.setValue(content);
+                else codeEditor.value = content;
             }
         }
 
@@ -713,15 +863,17 @@ function initializeMainFrame() {
     if (!iframe) return;
 
     // 设置固定尺寸和居中定位
-    iframe.style.position = 'absolute';
-    iframe.style.top = '50%';
-    iframe.style.left = '50%';
-    iframe.style.width = '1280px';
-    iframe.style.height = '720px';
-    iframe.style.border = 'none';
-    iframe.style.background = 'white';
-    iframe.style.borderRadius = '8px';
-    iframe.style.transformOrigin = 'center center';
+    if (iframe) {
+        iframe.style.position = 'absolute';
+        iframe.style.top = '50%';
+        iframe.style.left = '50%';
+        iframe.style.width = '1280px';
+        iframe.style.height = '720px';
+        iframe.style.border = 'none';
+        iframe.style.background = 'white';
+        iframe.style.borderRadius = '8px';
+        iframe.style.transformOrigin = 'center center';
+    }
 
     // 应用缩放
     applyMainFrameScale();
@@ -778,7 +930,7 @@ function selectSlide(index) {
                 slideFrame.style.transition = 'opacity 0.2s ease';
 
                 try {
-                    setSafeIframeContent(slideFrame, slidesData[index].html_content);
+                    setSafeIframeContent(slideFrame, slidePreviewHtml(slidesData[index]));
                 } catch (error) {
                     // Error setting iframe content
                 }
@@ -805,13 +957,10 @@ function selectSlide(index) {
             }
 
             if (codeEditor) {
-                if (codeMirrorEditor && isCodeMirrorInitialized) {
-                    codeMirrorEditor.setValue(slidesData[index].html_content);
-                } else {
-                    codeEditor.value = slidesData[index].html_content;
-                }
+                const content = slidesData[index].html_content || '';
+                if (codeMirrorEditor && isCodeMirrorInitialized) codeMirrorEditor.setValue(content);
+                else codeEditor.value = content;
             }
         }
     });
 }
-

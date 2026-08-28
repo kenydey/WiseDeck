@@ -444,7 +444,7 @@ function refreshSidebar() {
         const iframe = thumbnailDiv.querySelector('iframe');
         if (iframe) {
             // 安全设置iframe内容
-            setSafeIframeContent(iframe, slide.html_content);
+            setSafeIframeContent(iframe, slidePreviewHtml(slide));
 
             iframe.onload = function () {
                 requestAnimationFrame(() => applyThumbnailPreviewScale(this));

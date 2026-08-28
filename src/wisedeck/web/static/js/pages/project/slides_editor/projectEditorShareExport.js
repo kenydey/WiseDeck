@@ -193,6 +193,19 @@ async function exportToStructuredPPTX(options = {}) {
             ? rawMode
             : '';
 
+        // “高质量布局” is delivered by in-browser dom-to-pptx (server-side Playwright is removed).
+        // This is the same high-fidelity exporter the server once ran, now executed client-side,
+        // then native editable charts are merged via /export/pptx-merge-native-charts.
+        if (rawMode === 'client_dom') {
+            if (typeof exportSlidesToPptxClient === 'function') {
+                updateProgressToast(progressToast, '正在使用客户端 dom-to-pptx 高质量导出并合并可编辑图表...', 18);
+                closeProgressToast(progressToast);
+                await exportSlidesToPptxClient({ mergeNativeCharts: true });
+                return;
+            }
+            throw new Error('客户端 dom-to-pptx 导出不可用（exportSlidesToPptxClient 未加载）。');
+        }
+
         // Default behavior (no explicit mode): export with the SAME client PPTX template, then
         // merge native editable charts on the server (python-pptx) via /export/pptx-merge-native-charts.
         // This path is the only one that guarantees “client template + editable charts”.
@@ -298,37 +311,49 @@ async function exportToPPTX() {
     }
 
     pptxExportInProgress = true;
-    const progressToast = showProgressToast('正在准备PPTX导出任务...');
-    updateProgressToast(progressToast, '正在准备导出文件...', 10);
+    const progressToast = showProgressToast('正在生成可编辑 PPTX…');
+    updateProgressToast(progressToast, '使用统一导出管线…', 20);
 
     try {
-        const response = await fetch(`/api/projects/${window.wisedeckEditorConfig.projectId}/export/pptx`);
+        const response = await fetch(
+            `/api/projects/${window.wisedeckEditorConfig.projectId}/export/pptx-direct`,
+            { credentials: 'include' }
+        );
         if (!response.ok) {
-            throw new Error(`服务返回异常(${response.status})`);
+            const detail = await response.text().catch(() => '');
+            throw new Error(detail || `服务返回异常(${response.status})`);
         }
 
         const contentType = response.headers.get('content-type') || '';
-        let data = {};
-        if (contentType.includes('application/json')) {
-            data = await response.json();
-        } else {
-            throw new Error('服务器返回了未知的响应格式。');
+        if (
+            !contentType.includes('application/vnd.openxmlformats-officedocument') &&
+            !contentType.includes('octet-stream')
+        ) {
+            throw new Error('服务器返回了非 PPTX 的响应格式。');
         }
 
-        if (data.status === 'processing' && data.task_id) {
-            updateProgressToast(progressToast, 'PPTX转换任务已启动，正在后台处理...', 20);
-            await trackPptxExportTask(data.task_id, progressToast);
-        } else if (data.download_url) {
-            updateProgressToast(progressToast, '转换完成，正在下载...', 100);
-            triggerFileDownload(data.download_url);
-            closeProgressToast(progressToast);
-            showNotification('PPTX转换完成，正在下载...', 'success');
-        } else {
-            throw new Error(data.error || data.message || 'PPTX导出请求未能启动。');
-        }
+        const blob = await response.blob();
+        const fromHeader = parseAttachmentFilename(response.headers.get('Content-Disposition'));
+        const fallbackTitle =
+            (window.wisedeckEditorConfig && window.wisedeckEditorConfig.exportTitle) ||
+            'presentation';
+        const filename = fromHeader || `${fallbackTitle}_PPT.pptx`;
+
+        updateProgressToast(progressToast, '生成完成，正在下载...', 100);
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(objectUrl);
+
+        closeProgressToast(progressToast);
+        showNotification('PPTX（统一导出）下载已开始', 'success');
     } catch (error) {
         console.error('PPTX export error:', error);
-        clearPptxExportPolling();
         closeProgressToast(progressToast);
         showNotification(`PPTX导出失败: ${error.message || error}`, 'error');
     } finally {
@@ -524,6 +549,48 @@ function downloadHTML() {
     setTimeout(() => {
         showNotification('HTML文件包下载已开始', 'success');
     }, 1000);
+}
+
+async function downloadSlidesJSON() {
+    const pid = window.wisedeckEditorConfig && window.wisedeckEditorConfig.projectId;
+    if (!pid) {
+        showNotification('无法获取项目ID', 'error');
+        return;
+    }
+    showNotification('正在准备 JSON 导出…', 'info');
+    try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(pid)}/export/slides-json`, {
+            credentials: 'include',
+        });
+        if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            throw new Error(detail || `服务返回异常(${response.status})`);
+        }
+        const ct = response.headers.get('content-type') || '';
+        if (!ct.includes('json') && !ct.includes('octet-stream')) {
+            throw new Error('服务器返回了非 JSON 的响应格式');
+        }
+        const blob = await response.blob();
+        const fromHeader = parseAttachmentFilename(response.headers.get('Content-Disposition'));
+        const fallbackTitle =
+            (window.wisedeckEditorConfig && window.wisedeckEditorConfig.exportTitle) || 'presentation';
+        const filename = fromHeader || `${fallbackTitle}_PPT.json`;
+
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(objectUrl);
+
+        showNotification('JSON 下载已开始', 'success');
+    } catch (e) {
+        console.error('downloadSlidesJSON:', e);
+        showNotification(`JSON 导出失败: ${e.message || e}`, 'error');
+    }
 }
 
 function showNotification(message, type = 'info') {

@@ -1188,3 +1188,161 @@ body::before {
     }
 }
 
+/* ---------- Embedded full editor (PPTist iframe overlay) ---------- */
+body.embedded-full-editor-open {
+    overflow: hidden;
+}
+
+.embedded-full-editor-overlay {
+    display: none;
+    box-sizing: border-box;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
+    z-index: 2147483000;
+    background: rgba(15, 15, 18, 0.72);
+    padding: 0;
+}
+
+.embedded-full-editor-overlay.is-visible {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+}
+
+.embedded-full-editor-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    background: #1a1a1a;
+    box-shadow: none;
+}
+
+.embedded-full-editor-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 16px;
+    height: 52px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+.embedded-full-editor-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.embedded-full-editor-subtitle {
+    font-size: 12px;
+    font-weight: 500;
+    color: #888;
+    background: #3a3a3a;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.embedded-full-editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.embedded-full-editor-btn {
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.embedded-full-editor-btn--ghost {
+    background: #3a3a3a;
+    color: #ddd;
+}
+
+.embedded-full-editor-btn--ghost:hover {
+    background: #4a4a4a;
+    color: #fff;
+}
+
+.embedded-full-editor-btn--primary {
+    background: #4a90e2;
+    color: #fff;
+}
+
+.embedded-full-editor-btn--primary:hover {
+    background: #5a9ef2;
+}
+
+.embedded-full-editor-body {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    background: #111;
+}
+
+.embedded-full-editor-iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #fff;
+}
+
+.embedded-full-editor-close-dialog {
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    max-width: 420px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.embedded-full-editor-close-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.embedded-full-editor-close-dialog__panel {
+    margin: 0;
+    padding: 24px;
+}
+
+.embedded-full-editor-close-dialog__title {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.embedded-full-editor-close-dialog__hint {
+    margin: 0 0 20px;
+    font-size: 14px;
+    color: #555;
+    line-height: 1.5;
+}
+
+.embedded-full-editor-close-dialog__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+}
+

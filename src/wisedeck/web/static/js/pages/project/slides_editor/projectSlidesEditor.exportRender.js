@@ -416,6 +416,9 @@
         }
 
         const DOM_TO_PPTX_BUNDLE_VERSION = '20260405-font-resolve-v3';
+        if (typeof window !== 'undefined') {
+            window.__WISEDECK_DOM_TO_PPTX_BUNDLE_VERSION__ = DOM_TO_PPTX_BUNDLE_VERSION;
+        }
         const DOM_TO_PPTX_EXPECTED_PATCH_VERSION = '2026-04-05-font-resolve-v3';
         let domToPptxReloadPromise = null;
 

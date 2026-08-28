@@ -437,6 +437,10 @@ def test_project_slides_editor_template_uses_extracted_assets():
     assert '/static/js/pages/project/slides_editor/projectSlidesEditor.core.js' in template_text
     assert '/static/js/pages/project/slides_editor/projectSlidesEditor.tools.js' in template_text
     assert '/static/js/pages/project/slides_editor/projectEditorNarration.js' in template_text
+    assert 'previewTrackHtmlBtn' not in template_text
+    assert 'setMainPreviewTrack' not in template_text
+    assert 'onclick="downloadHTML()"' in template_text
+    assert 'onclick="downloadSlidesJSON()"' in template_text
 
     assert "<style>" not in template_text
 
@@ -462,6 +466,9 @@ def test_editor_page_modules_own_their_responsibilities():
     tools_text = _read("src/wisedeck/web/static/js/pages/project/slides_editor/projectSlidesEditor.tools.js")
     share_text = _read("src/wisedeck/web/static/js/pages/project/slides_editor/projectEditorShareExport.js")
     narration_text = _read("src/wisedeck/web/static/js/pages/project/slides_editor/projectEditorNarration.js")
+
+    assert 'function refreshMainEditorStrictPixelPreview()' in core_text
+    assert 'function setMainPreviewTrack(' not in core_text
 
     for marker in [
         "function downloadHTML()",

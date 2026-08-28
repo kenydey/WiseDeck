@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if chrome == 'minimal' %}PPTist — {{ project.title }}{% else %}完整编辑 - {{ project.title }}{% endif %}</title>
+    <link href="/static/css/pages/project/full_editor_iframe.css" rel="stylesheet">
+</head>
+<body class="{% if chrome == 'minimal' %}wds-fe-minimal{% endif %}">
+{% if chrome == 'minimal' %}
+    <div class="wds-shell-bar">
+        <span title="{{ project.title }}">{{ project.title }} · PPTist</span>
+        <button type="button" id="shellSaveBtn">保存</button>
+        <button type="button" id="shellCloseBtn" class="secondary">返回经典编辑器</button>
+    </div>
+    <div class="wds-minimal-iframe-wrap">
+        <iframe id="pptist-iframe"
+            src="/static/pptist_dist/index.html?v={{ cache_bust }}"
+            class="pptist-iframe"
+            allow="fullscreen"></iframe>
+    </div>
+{% else %}
+    <div id="pptist-modal" class="pptist-modal">
+        <div class="pptist-modal-header">
+            <div class="modal-title">
+                <span>完整编辑</span>
+                <span class="modal-subtitle">基于 PPTist 引擎</span>
+            </div>
+            <div class="modal-actions">
+                <button id="closeModalBtn" class="modal-btn modal-btn-close">
+                    <span>关闭</span>
+                </button>
+                <button id="saveAndReturnBtn" class="modal-btn modal-btn-primary">
+                    <span>保存并返回</span>
+                </button>
+            </div>
+        </div>
+        <div class="pptist-modal-body">
+            <iframe id="pptist-iframe"
+                src="/static/pptist_dist/index.html?v={{ cache_bust }}"
+                class="pptist-iframe"
+                allow="fullscreen"></iframe>
+        </div>
+    </div>
+{% endif %}
+
+    <script id="wdsFullEditorChrome" type="application/json">{{ {'chrome': chrome}|tojson|safe }}</script>
+    <script id="projectDataScript" type="application/json">{{ {'projectId': project.project_id}|tojson|safe }}</script>
+    <script id="projectSlidesScript" type="application/json">{{ {'slides': project.slides_data or []}|tojson|safe }}</script>
+    <script id="projectMetaScript" type="application/json">{{ {'title': project.title}|tojson|safe }}</script>
+
+    <script src="/static/js/pages/project/full_editor_iframe/main.js?v=20260516-flash-crash-fix"></script>
+    <script>
+        const EditorCls = window.PPTistIFrameEditor;
+        if (typeof EditorCls === 'function') {
+            window.pptistEditor = new EditorCls();
+            console.log('[WiseDeck] PPTistIFrameEditor initialized');
+        } else {
+            console.error('[WiseDeck] PPTistIFrameEditor class not found');
+        }
+    </script>
+</body>
+</html>

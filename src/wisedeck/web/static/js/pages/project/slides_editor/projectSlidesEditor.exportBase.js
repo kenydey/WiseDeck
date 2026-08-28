@@ -451,6 +451,17 @@
                         continue;
                     }
 
+                    const iframeWinEarly = tempIframe.contentWindow;
+                    const needsEcharts =
+                        iframeDoc.querySelector('canvas') || /echarts/i.test(iframeDoc.documentElement.innerHTML || '');
+                    const needsChartJs = /new\s+Chart\b|chart\.umd/i.test(iframeDoc.documentElement.innerHTML || '');
+                    if (needsEcharts && iframeWinEarly && !iframeWinEarly.echarts) {
+                        await _sleep(180);
+                    }
+                    if (needsChartJs && iframeWinEarly && !iframeWinEarly.Chart) {
+                        await _sleep(180);
+                    }
+
                     // Try forcing ECharts to flush layout before capture.
                     try {
                         const iframeWin = tempIframe.contentWindow;

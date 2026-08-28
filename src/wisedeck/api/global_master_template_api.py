@@ -75,16 +75,24 @@ _DOCLING_IMPORT_ENABLED = os.getenv("WISEDECK_ENABLE_DOCLING_IMPORT", "").strip(
     "yes",
 )
 
-_LO_SVG_SUPPLEMENT_ENABLED = os.getenv("WISEDECK_ENABLE_LO_SVG_SUPPLEMENT", "").strip().lower() in (
-    "1",
-    "true",
-    "yes",
-)
-_LO_SVG_SUPPLEMENT_DISABLED = os.getenv("WISEDECK_DISABLE_LO_SVG_SUPPLEMENT", "").strip().lower() in (
-    "1",
-    "true",
-    "yes",
-)
+def _is_lo_svg_supplement_enabled() -> bool:
+    return os.getenv("WISEDECK_ENABLE_LO_SVG_SUPPLEMENT", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _is_lo_svg_supplement_disabled() -> bool:
+    return os.getenv("WISEDECK_DISABLE_LO_SVG_SUPPLEMENT", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+_LO_SVG_SUPPLEMENT_ENABLED = _is_lo_svg_supplement_enabled()
+_LO_SVG_SUPPLEMENT_DISABLED = _is_lo_svg_supplement_disabled()
 
 
 # Create router
@@ -501,8 +509,8 @@ def _supplement_visual_previews_from_pptx(
         logger.warning("png preview supplement failed (non-fatal): %s", e)
         warnings.append(f"逐页 PNG 预览兜底生成失败：{e}")
 
-    if _LO_SVG_SUPPLEMENT_DISABLED:
-        warnings.append("已跳过逐页 SVG 预览：设置了 WISEDECK_DISABLE_LO_SVG_SUPPLEMENT=1")
+    if _is_lo_svg_supplement_disabled() or not _is_lo_svg_supplement_enabled():
+        warnings.append("已跳过 SVG 补充：未启用逐页 SVG 预览（WISEDECK_ENABLE_LO_SVG_SUPPLEMENT 未设置或 WISEDECK_DISABLE_LO_SVG_SUPPLEMENT=1）")
         return out, warnings
 
     try:

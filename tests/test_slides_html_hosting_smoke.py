@@ -1,4 +1,7 @@
-from wisedeck.services.export_infra.slides_html_hosting import build_hosted_slides_html_document
+from wisedeck.services.export_infra.slides_html_hosting import (
+    build_hosted_slides_html_document,
+    effective_slide_preview_html,
+)
 
 
 def test_build_hosted_slides_html_document_includes_contract_meta_and_pages():
@@ -14,6 +17,44 @@ def test_build_hosted_slides_html_document_includes_contract_meta_and_pages():
     assert 'content="2026.04"' in html
     assert 'data-page="1"' in html
     assert 'data-page="2"' in html
+
+
+def test_effective_slide_preview_html_prefers_aligned_snapshot():
+    raw = effective_slide_preview_html(
+        {
+            "html_content": "<div>raw</div>",
+            "pptist_aligned_preview_html": "<p>aligned</p>",
+        }
+    )
+    assert raw == "<p>aligned</p>"
+
+
+def test_effective_slide_preview_html_whitespace_aligned_falls_back():
+    raw = effective_slide_preview_html(
+        {
+            "html_content": "<div>raw</div>",
+            "pptist_aligned_preview_html": "  \n\t ",
+        }
+    )
+    assert raw == "<div>raw</div>"
+
+
+def test_build_hosted_after_effective_preview_matches_main_strict_pixel():
+    """Simulates internal_preview_slides_html row prep (without URL rewriting)."""
+    row = {
+        "title": "T",
+        "html_content": "<span>RAW</span>",
+        "pptist_aligned_preview_html": "<span>ALIGNED</span>",
+    }
+    prepared = dict(row)
+    prepared["html_content"] = effective_slide_preview_html(prepared)
+    html = build_hosted_slides_html_document(
+        slides_data=[prepared],
+        base_url="http://127.0.0.1:8000",
+        contract_version="2026.04",
+    )
+    assert "ALIGNED" in html
+    assert "RAW" not in html
 
 
 def test_build_hosted_slides_html_document_page_filter():

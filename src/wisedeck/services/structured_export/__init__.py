@@ -1,4 +1,4 @@
-"""WiseDeck structured export (python-pptx + Playwright homomorphic HTML)."""
+"""WiseDeck structured export (python-pptx; server-side Playwright paths removed)."""
 
 from wisedeck.services.structured_export.schemas import (
     ChartConfigModel,

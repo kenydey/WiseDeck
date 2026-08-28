@@ -1,52 +1,145 @@
-# 完整编辑器修复计划
+# 完整编辑器数据传递问题修复计划
 
-## 问题分析
+## 问题总结
 
-### 1. 按钮无响应问题
-**原因**：HTML 中部分按钮使用了内联 `onclick="editor.addTextElement()"` 事件，但 `editor` 变量在 DOMContentLoaded 之后才初始化。
+完整编辑页面一直显示"正在加载中"（数据初始化中），无法加载幻灯片内容。用户已确认手动导入PPTX可以正常工作，说明PPTist核心功能正常。
 
-### 2. 幻灯片缩略图显示问题
-**原因**：`renderThumbnails()` 在初始化时调用，但 `slidesData` 可能未完全加载。
+## 当前状态分析
 
-### 3. 预览页面过大问题
-**原因**：`.slide-frame-wrapper` 使用固定尺寸 1280x720，未自适应容器。
+### 数据流程
+1. 后端 `project_workspace_routes.py` → 获取 `project.slides_data`（WiseDeck格式）
+2. 模板 `project_full_editor_iframe.html` → 嵌入到 `<script id="projectSlidesScript">`
+3. main.js → 读取脚本内容，存入 `this.slidesData`
+4. iframe加载后 → 存入 `localStorage` → PPTist轮询读取
 
-### 4. 功能按钮未响应
-**原因**：`sendToIframe()` 在 iframe 未就绪时发送消息失败。
+### 问题定位
+1. **localStorage跨域问题**：iframe和父页面虽然是同源，但存在时序问题
+2. **数据格式转换**：WiseDeck格式需要转换为PPTist格式
+3. **postMessage未被使用**：当前依赖localStorage，但localStorage可能未正确工作
+
+### 关键文件
+- `c:\dev\WiseDeck\src\wisedeck\web\static\js\pages\project\full_editor_iframe\main.js` - iframe通信
+- `c:\dev\WiseDeck\src\PPTist\src\App.vue` - PPTist入口
+- `c:\dev\WiseDeck\src\PPTist\src\utils\wiseDeckToPPTist.ts` - 格式转换
+- `c:\dev\WiseDeck\src\wisedeck\web\templates\pages\project\project_full_editor_iframe.html` - iframe模板
 
 ## 修复方案
 
-### 任务 1：修复按钮事件绑定
-- 移除 HTML 中的内联 onclick 事件
-- 在 JS 中统一绑定所有按钮事件
+采用**直接postMessage发送数据**方案，替代localStorage传递。
 
-### 任务 2：修复幻灯片数据加载
-- 确保 `slidesData` 在渲染缩略图前已加载完成
-- 添加数据加载状态检查
+### 修改1: main.js - 改用postMessage直接发送数据
 
-### 任务 3：修复预览页面布局
-- 修改 CSS，使预览区域自适应容器大小
-- 添加滚动条支持
+**文件**: `c:\dev\WiseDeck\src\wisedeck\web\static\js\pages\project\full_editor_iframe\main.js`
 
-### 任务 4：修复 iframe 通信
-- 添加 iframe 就绪状态检查
-- 改进消息队列机制
+**修改内容**:
+1. 在iframe load事件中，**直接发送slides数据**而不是只发localStorage
+2. 数据格式包含完整的slides数组
+3. 移除对localStorage的依赖
 
-### 任务 5：测试验证所有功能
+### 修改2: App.vue - 接收postMessage数据并处理
 
-## 文件修改
+**文件**: `c:\dev\WiseDeck\src\PPTist\src\App.vue`
 
-### 修改文件列表
-1. `src/wisedeck/web/templates/pages/project/project_full_editor.html`
-2. `src/wisedeck/web/static/js/pages/project/full_editor/main.js`
-3. `src/wisedeck/web/static/css/pages/project/full_editor.css`
+**修改内容**:
+1. 监听 `SYNC_SLIDES_TO_PPTIST` 消息类型
+2. 直接使用传入的slides数据
+3. 调用格式转换函数（如果需要）
+4. 移除localStorage轮询逻辑（作为备用）
 
-## 实施步骤
+### 修改3: 数据格式确保一致性
 
-1. **修改 HTML**：移除内联 onclick 事件
-2. **修改 JS**：
-   - 修复事件绑定逻辑
-   - 添加数据加载检查
-   - 改进 iframe 通信机制
-3. **修改 CSS**：调整预览区域布局
-4. **测试验证**：确保所有功能正常工作
+确保发送的数据格式正确：
+```javascript
+{
+  type: 'SYNC_SLIDES_TO_PPTIST',
+  slides: slidesArray,  // WiseDeck格式
+  projectId: projectId,
+  slideIndex: 0
+}
+```
+
+## 具体修改步骤
+
+### 步骤1: 修改 main.js
+
+将storeDataToLocalStorage方法改为直接postMessage：
+
+```javascript
+// iframe load事件处理
+iframe.addEventListener('load', () => {
+    console.log('[PPTistIFrameEditor] IFrame loaded');
+
+    if (this.slidesData && this.slidesData.length > 0) {
+        console.log('[PPTistIFrameEditor] Sending slides via postMessage:', this.slidesData.length);
+
+        // 直接发送数据
+        iframe.contentWindow.postMessage({
+            type: 'SYNC_SLIDES_TO_PPTIST',
+            slides: this.slidesData,
+            projectId: this.projectId,
+            slideIndex: 0
+        }, '*');
+    } else {
+        console.warn('[PPTistIFrameEditor] No slides data to send');
+    }
+});
+```
+
+### 步骤2: 修改 App.vue
+
+确保消息处理正确：
+
+```javascript
+window.addEventListener('message', (event: MessageEvent) => {
+    if (!event.data || typeof event.data !== 'object') return;
+
+    if (event.data.type === 'SYNC_SLIDES_TO_PPTIST') {
+        console.log('[PPTist] Received SYNC_SLIDES_TO_PPTIST');
+
+        if (event.data.slides && Array.isArray(event.data.slides)) {
+            const format = detectSlideFormat(event.data.slides);
+
+            if (format === 'wisedeck') {
+                const convertedSlides = convertWiseDeckSlidesToPPTist(event.data.slides);
+                slidesStore.setSlides(convertedSlides);
+            } else {
+                slidesStore.setSlides(event.data.slides);
+            }
+
+            initialized.value = true;
+            deleteDiscardedDB();
+            snapshotStore.initSnapshotDatabase();
+        }
+    }
+});
+```
+
+### 步骤3: 简化App.vue初始化逻辑
+
+由于使用postMessage，可以简化初始化：
+- 不再需要轮询localStorage
+- iframe准备好后直接接收数据
+- 保留localStorage作为fallback备用
+
+### 步骤4: 重新构建PPTist
+
+```bash
+cd c:\dev\WiseDeck\src\PPTist
+npm run build
+```
+
+## 验证步骤
+
+1. 打开完整编辑页面 `/projects/{projectId}/full-editor`
+2. 检查浏览器控制台日志：
+   - `[PPTistIFrameEditor] IFrame loaded`
+   - `[PPTistIFrameEditor] Sending slides via postMessage: X`
+   - `[PPTist] Received SYNC_SLIDES_TO_PPTIST`
+   - `[PPTist] Slides synced: X`
+3. 确认幻灯片正确显示
+
+## 预期结果
+
+- 完整编辑页面打开后，幻灯片立即加载
+- 不再显示"数据初始化中"
+- 数据通过postMessage直接传递，无需等待localStorage

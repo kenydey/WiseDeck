@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..api.models import (
+from ..schemas.models import (
     PPTProject, TodoBoard, TodoStage, ProjectListResponse,
     PPTGenerationRequest, PPTOutline, EnhancedPPTOutline
 )
@@ -423,6 +423,29 @@ class DatabaseProjectManager:
         result = {"error": error_message, "timestamp": time.time()}
         return await self.update_stage_status(project_id, stage_id, "failed", 0.0, result)
     
+    async def save_project(self, project) -> bool:
+        """Save a complete project object to database"""
+        db_service = await self._get_db_service()
+        try:
+            update_data = {
+                "title": project.title,
+                "slides_html": project.slides_html,
+                "slides_data": project.slides_data,
+                "outline": project.outline,
+                "confirmed_requirements": project.confirmed_requirements,
+                "project_metadata": project.project_metadata,
+                "updated_at": project.updated_at,
+            }
+            
+            success = await db_service.project_repo.update(project.project_id, update_data)
+            
+            if success:
+                logger.info(f"Saved project {project.project_id}")
+            
+            return success
+        finally:
+            await db_service.session.close()
+
     async def close(self):
         """Close database connections - no longer needed as we use per-request sessions"""
         pass

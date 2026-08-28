@@ -49,11 +49,37 @@ logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
 logging.getLogger('sqlalchemy.dialects').setLevel(logging.WARNING)
 
 
+async def startup_application():
+    """Compatibility wrapper — also used by lifespan tests."""
+    await run_startup_initialization()
+
+
+async def shutdown_application():
+    """Compatibility wrapper — also used by lifespan tests."""
+    try:
+        logger.info("Shutting down application...")
+        try:
+            from .utils.http_client import close_http_clients
+
+            await close_http_clients()
+        except Exception:
+            pass
+        try:
+            from .services.cache_service import close_cache_service
+
+            await close_cache_service()
+        except Exception:
+            pass
+        logger.info("Application shutdown complete")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database on startup, clean up on shutdown."""
     try:
-        await run_startup_initialization()
+        await startup_application()
     except Exception as e:
         logger.error(f"Failed to initialize application: {e}")
         raise
@@ -61,24 +87,13 @@ async def lifespan(app: FastAPI):
     logger.info("Application startup complete")
     try:
         yield
+    except asyncio.CancelledError:
+        logger.info("Lifespan cancelled — shutting down and suppressing CancelledError")
+        # Swallow CancelledError but still run shutdown via finally.
+        # The asynccontextmanager will translate this into __aexit__ returning True.
+        pass
     finally:
-        try:
-            logger.info("Shutting down application...")
-            # Close shared HTTP clients
-            try:
-                from .utils.http_client import close_http_clients
-                await close_http_clients()
-            except Exception:
-                pass
-            # Close cache service if enabled
-            try:
-                from .services.cache_service import close_cache_service
-                await close_cache_service()
-            except Exception:
-                pass
-            logger.info("Application shutdown complete")
-        except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
+        await shutdown_application()
 
 
 # Create FastAPI app

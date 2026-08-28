@@ -359,8 +359,14 @@ function updateThumbnailDisplay(slideIndex, slideData) {
 
         // 更新缩略图中的iframe内容
         const iframe = thumbnail.querySelector('iframe');
-        if (iframe && slideData.html_content) {
-            setSafeIframeContent(iframe, slideData.html_content);
+        if (iframe && slideData) {
+            const ph =
+                typeof slidePreviewHtml === 'function'
+                    ? slidePreviewHtml(slideData)
+                    : slideData.html_content || '';
+            if (ph) {
+                setSafeIframeContent(iframe, ph);
+            }
         }
 
         // 更新标题
@@ -373,9 +379,18 @@ function updateThumbnailDisplay(slideIndex, slideData) {
 
 // 更新主预览区域
 function updateMainPreview(slideData) {
+    if (typeof refreshMainEditorStrictPixelPreview === 'function') {
+        refreshMainEditorStrictPixelPreview();
+    }
     const slideFrame = document.getElementById('slideFrame');
-    if (slideFrame && slideData.html_content) {
-        setSafeIframeContent(slideFrame, slideData.html_content);
+    if (slideFrame && slideData) {
+        const ph =
+            typeof slidePreviewHtml === 'function'
+                ? slidePreviewHtml(slideData)
+                : slideData.html_content || '';
+        if (ph) {
+            setSafeIframeContent(slideFrame, ph);
+        }
     }
 }
 

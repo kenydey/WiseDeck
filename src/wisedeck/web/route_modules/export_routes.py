@@ -1,14 +1,20 @@
 """
 Export routes extracted from the legacy web router.
+
+Authoritative editable PPTX from WiseDeck slide elements uses UnifiedExportService
+(`GET /api/projects/{project_id}/export/pptx-direct`). The legacy async PDF→Apryse
+`/export/pptx` route remains available where administrators enable it.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
 import time
 import urllib.parse
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
@@ -137,7 +143,7 @@ async def export_project_pdf(
     individual: bool = False,
     user: User = Depends(get_current_user_required)
 ):
-    """Export project as PDF using Pyppeteer"""
+    """Export project as PDF via legacy headless HTML renderer (disabled; Playwright removed)."""
     try:
         project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
         if not project:
@@ -147,12 +153,11 @@ async def export_project_pdf(
         if not project.slides_data or len(project.slides_data) == 0:
             raise HTTPException(status_code=400, detail="PPT not generated yet")
 
-        # Check if Pyppeteer is available
         pdf_converter = get_pdf_converter()
         if not pdf_converter.is_available():
             raise HTTPException(
                 status_code=503,
-                detail="PDF generation service unavailable. Please ensure Pyppeteer is installed: pip install pyppeteer"
+                detail="PDF generation from HTML is unavailable: server-side Playwright/Chromium has been removed.",
             )
 
         # Create temp file in thread pool to avoid blocking
@@ -304,8 +309,6 @@ async def export_project_structured_pptx(
     from wisedeck.services.structured_export.service import (
         build_pptx_bytes_from_deck,
         export_structured_pptx_auto,
-        export_structured_pptx_via_homomorphic_html,
-        export_structured_pptx_via_homomorphic_dom_to_pptx,
         export_structured_pptx_via_svg_native,
     )
     from wisedeck.svg_export.errors import (
@@ -388,33 +391,25 @@ async def export_project_structured_pptx(
                 else:
                     raise
         elif m == "homomorphic":
-            export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
-            pptx_bytes = await export_structured_pptx_via_homomorphic_html(
+            # Server-side Playwright is removed; homomorphic now degrades to the
+            # python-only deck export via auto (which logs a warning).
+            pptx_bytes = await export_structured_pptx_auto(
                 deck,
                 slides_for_same_html=project.slides_data if isinstance(project.slides_data, list) else None,
-                export_base_url=export_base_url,
+                export_base_url=_resolve_export_base_url(http_request) if http_request is not None else "",
             )
-            export_method = "WiseDeck-Structured-Homomorphic"
+            export_method = "WiseDeck-Structured-Homomorphic-Python-Fallback"
         elif m == "homomorphic_editable":
-            export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
-            try:
-                pptx_bytes = await export_structured_pptx_via_homomorphic_dom_to_pptx(
-                    deck,
-                    project_id=project_id,
-                    export_base_url=export_base_url,
-                )
-                export_method = "WiseDeck-Structured-Homomorphic-Editable"
-            except Exception as dom_exc:
-                logging.getLogger(__name__).warning(
-                    "homomorphic_editable dom-to-pptx failed, falling back to screenshot-based homomorphic: %s",
-                    dom_exc,
-                )
-                pptx_bytes = await export_structured_pptx_via_homomorphic_html(
-                    deck,
-                    slides_for_same_html=project.slides_data if isinstance(project.slides_data, list) else None,
-                    export_base_url=export_base_url,
-                )
-                export_method = "WiseDeck-Structured-Homomorphic-Editable-Fallback-Images"
+            # Server-side Playwright (and the dom-to-pptx screenshot chain) is
+            # removed; high-fidelity export now lives in the editor client
+            # (browser dom-to-pptx + native chart merge). Server-side this
+            # degrades to the python-only deck export.
+            pptx_bytes = await export_structured_pptx_auto(
+                deck,
+                slides_for_same_html=project.slides_data if isinstance(project.slides_data, list) else None,
+                export_base_url=_resolve_export_base_url(http_request) if http_request is not None else "",
+            )
+            export_method = "WiseDeck-Structured-Homomorphic-Editable-Python-Fallback"
         elif m == "svg_native":
             # Native editable pipeline via SVG->DrawingML conversion (ppt-master style).
             from wisedeck.services.template.global_master_template_service import (
@@ -460,31 +455,21 @@ async def export_project_structured_pptx(
                 if getattr(svg_exc, "details", None):
                     extra += f" details={svg_exc.details!s}"[:500]
                 log.warning(
-                    "svg_native export failed (svg_native_fallback_reason=%s%s), falling back to homomorphic_editable: %s",
+                    "svg_native export failed (svg_native_fallback_reason=%s%s), falling back to python-only: %s",
                     type(svg_exc).__name__,
                     extra,
                     svg_exc,
                 )
-                export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
-                pptx_bytes = await export_structured_pptx_via_homomorphic_dom_to_pptx(
-                    deck,
-                    project_id=project_id,
-                    export_base_url=export_base_url,
-                )
-                export_method = "WiseDeck-Structured-SVG-Native-Fallback-DOM"
+                pptx_bytes = await build_pptx_bytes_from_deck(deck)
+                export_method = "WiseDeck-Structured-SVG-Native-Fallback-Python"
             except Exception as svg_exc:
                 logging.getLogger(__name__).warning(
-                    "svg_native export failed (svg_native_fallback_reason=%s), falling back to homomorphic_editable: %s",
+                    "svg_native export failed (svg_native_fallback_reason=%s), falling back to python-only: %s",
                     type(svg_exc).__name__,
                     svg_exc,
                 )
-                export_base_url = _resolve_export_base_url(http_request) if http_request is not None else ""
-                pptx_bytes = await export_structured_pptx_via_homomorphic_dom_to_pptx(
-                    deck,
-                    project_id=project_id,
-                    export_base_url=export_base_url,
-                )
-                export_method = "WiseDeck-Structured-SVG-Native-Fallback-DOM"
+                pptx_bytes = await build_pptx_bytes_from_deck(deck)
+                export_method = "WiseDeck-Structured-SVG-Native-Fallback-Python"
         elif m == "python":
             pptx_bytes = await build_pptx_bytes_from_deck(deck)
             export_method = "WiseDeck-Structured-Python"
@@ -634,7 +619,10 @@ async def internal_preview_slides_html(
     Query:
     - page: 1-based page number; when omitted, renders all slides.
     """
-    from wisedeck.services.export_infra.slides_html_hosting import build_hosted_slides_html_document
+    from wisedeck.services.export_infra.slides_html_hosting import (
+        build_hosted_slides_html_document,
+        effective_slide_preview_html,
+    )
     from .slide_routes import SLIDE_HTML_CONTRACT_VERSION
 
     project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
@@ -651,7 +639,8 @@ async def internal_preview_slides_html(
             prepared_rows.append(row)
             continue
         r = dict(row)
-        r["html_content"] = _prepare_html_for_file_based_export(str(r.get("html_content") or ""), base_url)
+        raw_body = effective_slide_preview_html(r)
+        r["html_content"] = _prepare_html_for_file_based_export(raw_body, base_url)
         prepared_rows.append(r)
 
     try:
@@ -695,12 +684,11 @@ async def export_project_pdf_async(
         if not project.slides_data or len(project.slides_data) == 0:
             raise HTTPException(status_code=400, detail="PPT not generated yet")
 
-        # Check if Pyppeteer/Playwright is available
         pdf_converter = get_pdf_converter()
         if not pdf_converter.is_available():
             raise HTTPException(
                 status_code=503,
-                detail="PDF generation service unavailable. Please ensure Playwright is installed."
+                detail="PDF generation from HTML is unavailable: server-side Playwright/Chromium has been removed.",
             )
 
         from ...services.background_tasks import get_task_manager, TaskStatus
@@ -898,7 +886,7 @@ async def export_project_pptx(
                 if not pdf_converter.is_available():
                     return {
                         "success": False,
-                        "error": "PDF generation service unavailable. Please ensure Playwright is installed."
+                        "error": "PDF generation from HTML is unavailable: server-side Playwright/Chromium has been removed.",
                     }
                 
                 # Check PPTX converter availability (may trigger SDK download)
@@ -1065,7 +1053,7 @@ async def export_project_pptx_from_images(
     http_request: Request,
     user: User = Depends(get_current_user_required)
 ):
-    """Export project as PPTX using high-quality Playwright screenshots"""
+    """Export project as PPTX from rendered slide images (headless Chromium removed; endpoint disabled)."""
     try:
         from io import BytesIO
         from pptx import Presentation
@@ -1082,12 +1070,11 @@ async def export_project_pptx_from_images(
 
         export_base_url = _resolve_export_base_url(http_request)
 
-        # 检查Playwright是否可用
         pdf_converter = get_pdf_converter()
         if not pdf_converter.is_available():
             raise HTTPException(
                 status_code=503,
-                detail="Screenshot service unavailable. Please ensure Playwright is installed."
+                detail="Screenshot-based PPTX export is unavailable: server-side Playwright/Chromium has been removed.",
             )
 
         # 创建后台任务
@@ -1588,4 +1575,141 @@ async def export_project_html(
         )
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/projects/{project_id}/export/slides-json")
+async def export_project_slides_json(
+    project_id: str,
+    user: User = Depends(get_current_user_required),
+):
+    """只读导出持久化 slides_data 为 JSON 文件（与编辑器客户端下载文件名规则对齐）。"""
+    try:
+        project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        if not project.slides_data or len(project.slides_data) == 0:
+            raise HTTPException(status_code=400, detail="PPT not generated yet")
+
+        title_part = (project.title or "").strip()
+        topic_part = (project.topic or "").strip()
+        base = title_part or topic_part or "presentation"
+        raw_filename = f"{base}_PPT.json"
+        safe_filename = urllib.parse.quote(raw_filename, safe="")
+
+        payload = {
+            "project_id": project.project_id,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "slides_data": project.slides_data,
+        }
+        body = json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode("utf-8")
+
+        return Response(
+            content=body,
+            media_type="application/json; charset=utf-8",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Slides JSON export error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/projects/{project_id}/export/pptx-direct")
+async def export_project_pptx_direct(
+    project_id: str,
+    user: User = Depends(get_current_user_required)
+):
+    """
+    统一导出API：从PPTist格式数据直接导出PPTX
+    
+    支持从项目的slides_data直接导出PPTX，无论数据是PPTist格式还是旧格式。
+    优先使用PPTist格式（elements字段），如果不存在则回退到HTML渲染方式。
+    
+    此API确保PPT编辑器和完整编辑器的导出功能统一。
+    """
+    try:
+        project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        if not project.slides_data or len(project.slides_data) == 0:
+            raise HTTPException(status_code=400, detail="PPT not generated yet")
+
+        # 使用统一导出服务
+        from ...services.export.unified_export_service import UnifiedExportService
+        
+        export_service = UnifiedExportService()
+        pptx_bytes = export_service.export_project_slides_to_pptx(project.slides_data)
+
+        safe_filename = urllib.parse.quote(f"{project.topic}_PPT.pptx", safe='')
+
+        return Response(
+            content=pptx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
+                "X-Export-Method": "PPTX-Direct-Unified",
+                "X-Source-Format": "PPTist" if any(s.get('elements') for s in project.slides_data) else "HTML",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Direct PPTX export error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/projects/{project_id}/export/pptx-from-pptist")
+async def export_pptx_from_pptist(
+    project_id: str,
+    slides_data: List[Dict[str, Any]],
+    user: User = Depends(get_current_user_required)
+):
+    """
+    从PPTist格式数据直接导出PPTX（接受POST传入的幻灯片数据）
+    
+    Args:
+        project_id: 项目ID
+        slides_data: PPTist格式的幻灯片数据列表
+        
+    Returns:
+        PPTX文件
+    """
+    try:
+        project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        if not slides_data or len(slides_data) == 0:
+            raise HTTPException(status_code=400, detail="No slides data provided")
+
+        # 使用统一导出服务
+        from ...services.export.unified_export_service import UnifiedExportService
+        
+        export_service = UnifiedExportService()
+        pptx_bytes = export_service.export_pptist_to_pptx(slides_data)
+
+        safe_filename = urllib.parse.quote(f"{project.topic}_PPT.pptx", safe='')
+
+        return Response(
+            content=pptx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
+                "X-Export-Method": "PPTX-Direct-PPTist",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"PPTist to PPTX export error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

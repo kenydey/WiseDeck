@@ -72,6 +72,12 @@ def iter_ui_lines(files: Iterable[Path]) -> list[tuple[str, int, str]]:
             continue
         rel = fp.relative_to(_REPO_ROOT).as_posix()
         for i, line in enumerate(text.splitlines(), start=1):
+            # Minified bundles (pptist_dist assets, dom-to-pptx bundle) pack
+            # megabytes into a single line; substring-matching every route
+            # against them is effectively quadratic. Hand-written fetch calls
+            # never approach this length.
+            if len(line) > 5000:
+                continue
             rows.append((rel, i, line))
     return rows
 
@@ -135,15 +141,52 @@ def _line_matches_literal_api_path(route_path: str, line: str) -> bool:
     return False
 
 
-def match_route_in_ui(route_path: str, ui_lines: list[tuple[str, int, str]]) -> tuple[str, list[dict[str, Any]]]:
+def build_route_candidate_index(
+    route_paths: list[str], ui_lines: list[tuple[str, int, str]]
+) -> dict[str, list[tuple[str, int, str]]]:
+    """One combined-regex pass over the corpus; returns literal-path -> candidate lines.
+
+    Reduces matching from O(routes x corpus) to ~O(corpus). Dynamic (param)
+    routes are not indexed here and keep scanning the full corpus.
+    """
+    literal_paths = [p for p in route_paths if "{" not in p]
+    if not literal_paths:
+        return {}
+    combined = re.compile("|".join(re.escape(p) for p in literal_paths))
+    index: dict[str, list[tuple[str, int, str]]] = {p: [] for p in literal_paths}
+    for row in ui_lines:
+        line = row[2]
+        seen: set[str] = set()
+        for m in combined.finditer(line):
+            path = m.group(0)
+            if path not in seen:
+                seen.add(path)
+                index[path].append(row)
+    return index
+
+
+def match_route_in_ui(
+    route_path: str,
+    ui_lines: list[tuple[str, int, str]],
+    candidates_by_path: dict[str, list[tuple[str, int, str]]] | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
     """
     Returns hit_kind and evidence list (file, line, snippet).
     hit_kind: explicit_static | templated_dynamic | none
+
+    `candidates_by_path` optionally supplies pre-indexed candidate lines for
+    literal routes (see build_route_candidate_index); when absent the full
+    corpus is scanned.
     """
     evidence: list[dict[str, Any]] = []
 
     if "{" not in route_path:
-        for rel, lineno, line in ui_lines:
+        candidates = (
+            candidates_by_path.get(route_path, [])
+            if candidates_by_path is not None
+            else ui_lines
+        )
+        for rel, lineno, line in candidates:
             if _line_matches_literal_api_path(route_path, line):
                 evidence.append({"file": rel, "line": lineno, "snippet": line.strip()[:240]})
         kind = "explicit_static" if evidence else "none"
@@ -180,11 +223,20 @@ def suggest_disposition(method: str, path: str, hit_kind: str) -> str:
 def build_matrix(app: Any) -> list[dict[str, Any]]:
     ui_lines = iter_ui_lines(collect_ui_files())
     routes = collect_http_routes(app)
+    candidates_by_path = build_route_candidate_index(
+        [row["path"] for row in routes], ui_lines
+    )
+    dynamic_lines = [row for row in ui_lines if "/api/" in row[2] or "fetch(" in row[2]]
     matrix: list[dict[str, Any]] = []
     for row in routes:
         path = row["path"]
         method = row["method"]
-        hit_kind, evidence = match_route_in_ui(path, ui_lines)
+        if "{" in path:
+            hit_kind, evidence = match_route_in_ui(path, dynamic_lines)
+        else:
+            hit_kind, evidence = match_route_in_ui(
+                path, ui_lines, candidates_by_path=candidates_by_path
+            )
         matrix.append(
             {
                 **row,

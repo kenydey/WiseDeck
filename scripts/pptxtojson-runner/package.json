@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild forked_pptxtojson/pptxtojson.js --bundle --format=esm --platform=node --outfile=bundle/wisedeck-pptx-parse.mjs"
+    "build": "esbuild forked_pptxtojson/pptxtojson.js --bundle --format=esm --platform=node --outfile=bundle/wisedeck-pptx-parse.mjs",
+    "build:browser": "esbuild forked_pptxtojson/pptxtojson.js --bundle --format=esm --platform=browser --outfile=bundle/wisedeck-pptx-parse.browser.mjs"
   },
   "dependencies": {
     "pptxtojson": "2.0.2"

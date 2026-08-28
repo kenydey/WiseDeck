@@ -1,5 +1,5 @@
 """
-Thin wrapper around the Playwright-based HTML renderer.
+Thin wrapper around the legacy HTML renderer bridge (headless Chromium disabled).
 """
 
 from __future__ import annotations

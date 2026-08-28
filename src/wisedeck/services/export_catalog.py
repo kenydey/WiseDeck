@@ -106,13 +106,13 @@ def export_modes_catalog() -> Dict[str, Any]:
             "id": "structured_homomorphic_editable",
             "label_zh": "结构化导出（高质量布局）",
             "summary_zh": (
-                "服务端 Playwright 运行 dom-to-pptx / 同构 HTML，尽量保留可编辑形状，并合并原生图表。"
+                "历史上依赖服务端 Chromium 的同构 HTML 导出；Playwright 已移除，调用将失败或路由到其他结构化 mode。"
             ),
             "editable_text_shapes": "high",
             "editable_vector": "high",
             "editable_native_charts": True,
-            "api_hint": "GET …/export/structured-pptx?mode=homomorphic_editable",
-            "risk_zh": "服务端 Chromium 与路径长度敏感；失败时可自动降级。",
+            "api_hint": "GET …/export/structured-pptx?mode=homomorphic_editable（多数环境下不可用）",
+            "risk_zh": "已无服务端截图管线；请使用客户端 dom-to-pptx / merge-native-charts 或 python-only structured export。",
         },
         {
             "id": "structured_python_native",

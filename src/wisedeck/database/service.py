@@ -15,7 +15,7 @@ from .repositories import (
     ProjectVersionRepository, SlideDataRepository, PPTTemplateRepository, GlobalMasterTemplateRepository
 )
 from .models import Project as DBProject, TodoBoard as DBTodoBoard, TodoStage as DBTodoStage, PPTTemplate as DBPPTTemplate, GlobalMasterTemplate as DBGlobalMasterTemplate
-from ..api.models import (
+from ..schemas.models import (
     PPTProject, TodoBoard, TodoStage, ProjectListResponse,
     PPTGenerationRequest
 )
@@ -53,7 +53,89 @@ class DatabaseService:
             return 0
         slides = outline.get("slides")
         return len(slides) if isinstance(slides, list) else 0
-    
+
+    @staticmethod
+    def _coerce_page_number(value: Any) -> Optional[int]:
+        if isinstance(value, int) and value >= 1:
+            return value
+        if isinstance(value, str) and value.strip().isdigit():
+            n = int(value.strip())
+            return n if n >= 1 else None
+        return None
+
+    @staticmethod
+    def _overlay_slide_data_rows_with_project_slides_json(
+        slides_from_rows: List[Dict[str, Any]],
+        project_slides_data: Any,
+    ) -> List[Dict[str, Any]]:
+        """Merge PPTist / SSOT vector keys from projects.slides_data onto slide_data-row payloads.
+
+        slide_data rows are authoritative for html_content and core row fields; seed-from-client-pptx
+        persists vectors on projects.slides_data JSON — without this overlay, GET slides-data drops elements.
+
+        Matching uses slide_id and page_number first so slide_index gaps / reordering do not mis-pair blobs
+        (which would show empty text/images in PPTist).
+        """
+        if not slides_from_rows or not isinstance(project_slides_data, list):
+            return slides_from_rows
+        vector_keys = (
+            "elements",
+            "elements_source",
+            "schema_version",
+            "background",
+            "animations",
+            "notes",
+            "remark",
+            "pptist_aligned_preview_html",
+            "slide_contract_version",
+            "wds_aippt_v1",
+        )
+        by_page: Dict[int, Dict[str, Any]] = {}
+        by_slide_id: Dict[str, Dict[str, Any]] = {}
+        for blob in project_slides_data:
+            if not isinstance(blob, dict):
+                continue
+            pn = DatabaseService._coerce_page_number(blob.get("page_number"))
+            if pn is not None:
+                by_page.setdefault(pn, blob)
+            sid = blob.get("slide_id")
+            if isinstance(sid, str) and sid.strip():
+                by_slide_id.setdefault(sid.strip(), blob)
+
+        out: List[Dict[str, Any]] = []
+        for i, row_slide in enumerate(slides_from_rows):
+            merged = dict(row_slide) if isinstance(row_slide, dict) else {}
+            blob: Optional[Dict[str, Any]] = None
+
+            rid = merged.get("slide_id")
+            if isinstance(rid, str) and rid.strip():
+                blob = by_slide_id.get(rid.strip())
+
+            if blob is None:
+                pn = DatabaseService._coerce_page_number(merged.get("page_number"))
+                if pn is not None:
+                    blob = by_page.get(pn)
+
+            if blob is None and i < len(project_slides_data):
+                candidate = project_slides_data[i]
+                if isinstance(candidate, dict):
+                    blob = candidate
+
+            if blob is not None:
+                for key in vector_keys:
+                    if key not in blob:
+                        continue
+                    val = blob[key]
+                    if key == "elements":
+                        merged["elements"] = val if isinstance(val, list) else []
+                    else:
+                        merged[key] = val
+            el = merged.get("elements")
+            if el is not None and not isinstance(el, list):
+                merged["elements"] = []
+            out.append(merged)
+        return out
+
     def _convert_db_project_to_api(self, db_project: DBProject) -> PPTProject:
         """Convert database project to API model"""
         # Convert todo board if exists
@@ -105,6 +187,10 @@ class DatabaseService:
                 }
                 slides_data.append(slide_dict)
             logger.debug(f"Loaded {len(slides_data)} slides from slide_data table for project {db_project.project_id}")
+            slides_data = self._overlay_slide_data_rows_with_project_slides_json(
+                slides_data,
+                db_project.slides_data,
+            )
         elif db_project.slides_data:
             # 如果slide_data表中没有数据，回退到使用projects表中的slides_data字段
             slides_data = db_project.slides_data

@@ -19,7 +19,6 @@ from fastapi import Request
 from pydantic import BaseModel
 
 from ...core.config import ai_config
-from ...services.pyppeteer_pdf_converter import PlaywrightPDFConverter, get_pdf_converter
 from ...utils.thread_pool import run_blocking_io
 from .support import logger
 
@@ -1148,45 +1147,11 @@ async def _convert_multiple_html_to_pdf_via_playwright_thread(
     output_dir: str,
     merged_pdf_path: Optional[str] = None,
 ) -> Tuple[List[str], Optional[str]]:
-    """
-    Run Playwright batch PDF conversion in a dedicated worker thread.
-
-    On Windows, this guarantees a Proactor-compatible event loop for subprocess creation.
-    """
-
-    def _run() -> List[str]:
-        import asyncio
-
-        if sys.platform == "win32":
-            proactor = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
-            if proactor is not None:
-                try:
-                    asyncio.set_event_loop_policy(proactor())
-                except Exception:
-                    pass
-
-        async def _async_run() -> List[str]:
-            converter = PlaywrightPDFConverter()
-            try:
-                return await converter.convert_multiple_html_to_pdf(
-                    html_files,
-                    output_dir,
-                    merged_pdf_path,
-                )
-            finally:
-                try:
-                    await converter.close()
-                except Exception:
-                    pass
-
-        return asyncio.run(_async_run())
-
-    try:
-        pdf_files = await run_blocking_io(_run)
-        return pdf_files, None
-    except Exception as exc:
-        logging.exception("Threaded Playwright PDF conversion failed")
-        return [], str(exc)
+    """Playwright batch PDF conversion removed."""
+    _ = html_files
+    _ = output_dir
+    _ = merged_pdf_path
+    return [], "Playwright/Chromium PDF export has been removed from WiseDeck."
 
 
 async def _generate_pdf_with_pyppeteer(project, output_path: str, individual: bool = False) -> Tuple[bool, Optional[str]]:

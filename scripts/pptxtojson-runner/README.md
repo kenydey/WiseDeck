@@ -27,6 +27,19 @@ npm run build
 
 产物：`bundle/wisedeck-pptx-parse.mjs`（路径避开仓库根 `.gitignore` 的 `dist/`；提交到仓库便于部署）。
 
+### 浏览器捆绑包（完整编辑 iframe）
+
+用于 **同源 iframe** 内解析 PPTX（与 Node 版同一 fork 入口），构建：
+
+```bash
+npm run build:browser
+```
+
+产物：`bundle/wisedeck-pptx-parse.browser.mjs`。发布到 Web 静态目录时请 **复制到**  
+`src/wisedeck/web/static/pptist_dist/vendor/wisedeck-pptx-parse.browser.mjs`（与  
+[`wisedeck_pptist_import_bridge.js`](../../src/wisedeck/web/static/pptist_dist/wisedeck_pptist_import_bridge.js)  
+中的动态 `import` 路径一致）。详见 `pptist_dist/vendor/PPTIST_BUILD.md`。
+
 ## 运行时
 
 WiseDeck Python 调用：`scripts/pptxtojson-runner/run.mjs`，传入 pptx 绝对路径。

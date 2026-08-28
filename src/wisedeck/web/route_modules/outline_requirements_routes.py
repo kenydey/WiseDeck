@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from ...auth.middleware import get_current_user_required
-from ...services.outline.page_count_limits import validate_custom_range_pages
+from ...schemas.page_count_limits import validate_custom_range_pages
 from ...database.models import User
 from .outline_support import (
     _is_billable_provider,

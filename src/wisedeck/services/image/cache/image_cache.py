@@ -373,7 +373,40 @@ class ImageCacheManager:
         except Exception as e:
             logger.warning(f"Failed to discover cache entry for {cache_key}: {e}")
             return None
-    
+
+    async def discover_cache_key_by_content_hash(self, content_hash: str) -> Optional[str]:
+        """Find any scoped cache file ``{scope}_{content_hash}.ext`` when exact key misses."""
+        if not content_hash or not isinstance(content_hash, str):
+            return None
+        cache_dirs = [self.ai_generated_dir, self.web_search_dir, self.local_storage_dir]
+        exts = [".webp", ".jpg", ".jpeg", ".png", ".gif"]
+        pattern_suffix = f"_{content_hash}"
+
+        def _find_key() -> Optional[str]:
+            for base_dir in cache_dirs:
+                if not base_dir.exists():
+                    continue
+                for ext in exts:
+                    matches = list(base_dir.glob(f"**/*{pattern_suffix}{ext}"))
+                    if not matches:
+                        continue
+                    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    stem = matches[0].stem
+                    if stem.endswith(content_hash) and "_" in stem:
+                        return stem
+            return None
+
+        try:
+            found_key = await asyncio.get_event_loop().run_in_executor(None, _find_key)
+            if not found_key:
+                return None
+            await self._discover_cache_info(found_key)
+            logger.debug("Discovered cache key by content hash: %s -> %s", content_hash, found_key)
+            return found_key
+        except Exception as e:
+            logger.warning("Failed hash-scoped cache discovery for %s: %s", content_hash, e)
+            return None
+
     async def is_cached(self, image_info: ImageInfo, image_data: bytes = None) -> Optional[str]:
         """检查图片是否已缓存"""
         # 如果 image_id 本身就是缓存键，直接校验

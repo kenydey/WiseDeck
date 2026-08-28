@@ -429,7 +429,14 @@ async function applyAIChanges(newHtmlContent) {
         // 获取当前正在编辑的幻灯片索引，确保索引正确
         const targetSlideIndex = currentSlideIndex;
 
-
+        // SSOT mode: this path edits html_content only and will not affect PPTist preview.
+        if (window.__pptistPreviewEnabled) {
+            showNotification('当前项目已启用 PPTist 同源预览：AI 应输出 PPTist patch（尚未迁移）。请在「完整编辑」中使用 AI/编辑。', 'warning');
+            if (typeof openFullEditor === 'function') {
+                openFullEditor();
+            }
+            return;
+        }
 
         // 双重验证索引有效性
         if (targetSlideIndex < 0 || targetSlideIndex >= slidesData.length) {

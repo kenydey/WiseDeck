@@ -3,7 +3,7 @@ Narration video export service (MP4 + subtitles).
 
 Pipeline (MVP):
 1) Ensure per-slide audio exists (Edge-TTS).
-2) Render each slide HTML to 1920x1080 PNG using Playwright screenshot.
+2) Render each slide HTML to 1920x1080 PNG (legacy path relied on headless Chromium; disabled — see HtmlRenderService).
 3) Build per-slide MP4 clips (still image + audio).
 4) Concatenate clips into final MP4.
 5) Generate SRT subtitles from speech scripts and burn-in / embed as soft subtitles.
@@ -353,7 +353,10 @@ class NarrationVideoExportService:
 
         render_service = self._get_html_render_service()
         if not render_service.is_available():
-            return {"success": False, "error": "Playwright is not available for slide rendering"}
+            return {
+                "success": False,
+                "error": "Slide screenshot/video rendering is unavailable: server-side Playwright/Chromium has been removed.",
+            }
 
         if render_mode not in {"live", "static"}:
             render_mode = "live"
@@ -420,7 +423,10 @@ class NarrationVideoExportService:
         """
         render_service = self._get_html_render_service()
         if not render_service.is_available():
-            return {"success": False, "error": "Playwright is not available for live rendering"}
+            return {
+                "success": False,
+                "error": "Live slideshow recording is unavailable: server-side Playwright/Chromium has been removed.",
+            }
 
         from .narration_service import NarrationService
         from .narration_audio_repository import NarrationAudioRepository

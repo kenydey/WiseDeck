@@ -6,10 +6,11 @@ from __future__ import annotations
 
 import mimetypes
 import tempfile
+import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from ...auth.middleware import get_current_user_required
 from ...core.config import ai_config, app_config
@@ -188,13 +189,14 @@ async def edit_project_ppt(
         return templates.TemplateResponse("error.html", {"request": request, "error": str(exc)})
 
 
-@router.get("/project/{project_id}/full-editor", response_class=HTMLResponse)
+@router.get("/projects/{project_id}/full-editor", response_class=HTMLResponse)
 async def web_project_full_editor(
     request: Request,
     project_id: str,
+    chrome: str = Query("modal"),
     user: User = Depends(get_current_user_required),
 ):
-    """完整编辑器页面（新窗口）。"""
+    """PPTist IFrame 完整编辑器页面。chrome=modal（默认）带保存并返回；chrome=minimal 薄顶栏全屏壳。"""
     try:
         project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
         if not project:
@@ -203,17 +205,35 @@ async def web_project_full_editor(
         if not project.slides_data:
             project.slides_data = []
 
+        chrome_norm = (chrome or "modal").strip().lower()
+        if chrome_norm not in ("modal", "minimal"):
+            chrome_norm = "modal"
+
         response = templates.TemplateResponse(
-            "pages/project/project_full_editor.html",
+            "pages/project/project_full_editor_iframe.html",
             {
                 "request": request,
                 "project": project,
+                "cache_bust": int(time.time() * 1000),
+                "chrome": chrome_norm,
             },
         )
         return _apply_no_store_headers(response)
     except Exception as exc:
-        logger.error("Error loading full editor for %s: %s", project_id, exc)
+        logger.error("Error loading PPTist iframe editor for %s: %s", project_id, exc)
         return templates.TemplateResponse("error.html", {"request": request, "error": str(exc)})
+
+
+@router.get("/projects/{project_id}/pptist-shell")
+async def web_project_pptist_shell_redirect(
+    project_id: str,
+    user: User = Depends(get_current_user_required),
+):
+    """旧「PPTist 壳」路径：合并为完整编辑 minimal chrome。"""
+    project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return RedirectResponse(url=f"/projects/{project_id}/full-editor?chrome=minimal", status_code=302)
 
 
 @router.get("/projects/{project_id}/fullscreen", response_class=HTMLResponse)
@@ -254,6 +274,7 @@ async def web_project_fullscreen(
 
 @router.get("/api/projects/{project_id}/slides-data")
 async def get_project_slides_data(
+    request: Request,
     project_id: str,
     user: User = Depends(get_current_user_required),
 ):
@@ -269,12 +290,26 @@ async def get_project_slides_data(
                 "total_slides": 0,
             }
 
+        from ...services.slide.slide_visual_sync import pptist_seed_fields_from_row
+
+        slides_data = [
+            pptist_seed_fields_from_row(s) if isinstance(s, dict) else s
+            for s in (project.slides_data or [])
+        ]
+        # True when elements missing or wrong type (cannot open PPTist). Empty list still counts as SSOT-shaped.
+        needs_elements_backfill = any(
+            not isinstance(s.get("elements"), list)
+            for s in slides_data
+            if isinstance(s, dict)
+        )
+
         return {
             "status": "success",
-            "slides_data": project.slides_data,
-            "total_slides": len(project.slides_data),
+            "slides_data": slides_data,
+            "total_slides": len(slides_data),
             "project_title": project.title,
             "updated_at": project.updated_at,
+            "needs_elements_backfill": needs_elements_backfill,
         }
     except HTTPException:
         raise

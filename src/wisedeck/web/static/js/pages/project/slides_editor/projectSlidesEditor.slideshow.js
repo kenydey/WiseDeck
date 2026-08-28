@@ -98,6 +98,7 @@ function startSlideshow() {
         return;
     }
 
+    // StrictPixel：放映与主预览同源 —— slidePreviewHtml 快照/html_content，不再新开 PPTist audience 矢量窗以免与主预览漂移。
     isSlideshow = true;
     slideshowIndex = currentSlideIndex;
 
@@ -123,7 +124,7 @@ function startSlideshow() {
         preloadSlideshowSlides();
 
         // 在第一个iframe中加载当前幻灯片
-        const content = slideshowCache.get(slideshowIndex) || slidesData[slideshowIndex].html_content;
+        const content = slideshowCache.get(slideshowIndex) || slidePreviewHtml(slidesData[slideshowIndex]);
         setSafeIframeContentNoFlash(frame1, content, () => {
             // 更新幻灯片信息
             const info = document.getElementById('slideshowInfo');
@@ -152,7 +153,7 @@ function preloadSlideshowSlides() {
 
     indicesToPreload.forEach(index => {
         if (!slideshowCache.has(index)) {
-            const content = slidesData[index].html_content;
+            const content = slidePreviewHtml(slidesData[index]);
             slideshowCache.set(index, content);
         }
     });
@@ -208,7 +209,7 @@ function updateSlideshowSlide() {
     const nextFrame = document.getElementById(`slideshowFrame${nextFrameIndex}`);
 
     // 在后台iframe中预加载新内容
-    const content = slideshowCache.get(slideshowIndex) || slidesData[slideshowIndex].html_content;
+    const content = slideshowCache.get(slideshowIndex) || slidePreviewHtml(slidesData[slideshowIndex]);
 
     // 使用优化的内容设置方法
     setSafeIframeContentNoFlash(nextFrame, content, () => {

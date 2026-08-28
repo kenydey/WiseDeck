@@ -1,11 +1,37 @@
+        async function __wisedeckSha256HexOfBlob(blob) {
+            if (!blob || typeof blob.arrayBuffer !== 'function' || !crypto || !crypto.subtle) return null;
+            const buf = await blob.arrayBuffer();
+            const digest = await crypto.subtle.digest('SHA-256', buf);
+            return Array.from(new Uint8Array(digest))
+                .map((b) => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        async function __wisedeckDiagMergedPptxBlob(blob, label) {
+            try {
+                if (typeof localStorage === 'undefined' || localStorage.getItem('WISEDECK_PPTX_BRIDGE_DIAG') !== '1') {
+                    return;
+                }
+                if (!(blob instanceof Blob)) return;
+                const sha256 = await __wisedeckSha256HexOfBlob(blob);
+                console.info('[WiseDeck pptx_bridge diag]', label, { sha256, bytes: blob.size });
+            } catch (_) {
+                /* ignore */
+            }
+        }
+
         async function exportSlidesToPptxClient(options = {}) {
-            if (isClientExporting) return;
+            const normalizedOptions = (options && typeof options === 'object') ? options : {};
+            const vectorSeedSync = !!normalizedOptions.vectorSeedSync;
+            const prepareFullEditor = !!normalizedOptions.prepareFullEditor;
+
+            if (isClientExporting) {
+                return vectorSeedSync ? null : undefined;
+            }
             if (!slidesData || slidesData.length === 0) {
                 showNotification('没有可导出的幻灯片', 'warning');
-                return;
+                return vectorSeedSync ? null : undefined;
             }
-
-            const normalizedOptions = (options && typeof options === 'object') ? options : {};
             const parsedSlideIndices = Array.isArray(normalizedOptions.slideIndices)
                 ? normalizedOptions.slideIndices
                     .map(idx => Number.parseInt(idx, 10))
@@ -15,7 +41,9 @@
                 ? parsedSlideIndices
                 : null;
             const singleSlideMode = requestedSlideIndices && requestedSlideIndices.length === 1;
+            /** vectorSeedSync（pptx_bridge）强制合并图表；显式 mergeNativeCharts:true 由调用方钉死 SSOT。 */
             const resolveMergeNativeChartsPreference = () => {
+                if (vectorSeedSync) return true;
                 if (typeof normalizedOptions.mergeNativeCharts === 'boolean') return normalizedOptions.mergeNativeCharts;
                 try {
                     const v = localStorage.getItem('wisedeck_client_pptx_merge_native_charts');
@@ -30,12 +58,12 @@
                 exporter = await ensureDomToPptxReadyForExport();
             } catch (e) {
                 showNotification((e && e.message) || 'PPTX 导出库未加载，请检查网络连接后刷新页面重试。', 'error');
-                return;
+                return vectorSeedSync ? null : undefined;
             }
 
             if (!exporter || typeof exporter.exportToPptx !== 'function') {
                 showNotification('PPTX 导出库未加载，请检查网络连接后刷新页面重试。', 'error');
-                return;
+                return vectorSeedSync ? null : undefined;
             }
 
             isClientExporting = true;
@@ -43,16 +71,29 @@
             clientExportAbortController = createClientExportAbortController();
             const exportSignal = clientExportAbortController.signal;
 
-            updateExportUI(
-                'cog',
-                'spinning',
-                singleSlideMode ? '正在导出单页 PPTX' : '正在导出 PPTX',
-                singleSlideMode ? '请稍候，正在将当前页转换为 PowerPoint 文件...' : '请稍候，正在将幻灯片转换为 PowerPoint 文件...',
-                0,
-                '准备中...'
-            );
+            if (vectorSeedSync) {
+                updateExportUI(
+                    'cog',
+                    'spinning',
+                    prepareFullEditor ? '正在准备完整编辑' : '正在同步矢量',
+                    prepareFullEditor
+                        ? '在本机生成 PPTX，合并可编辑图表后写入矢量数据…'
+                        : '在本机生成 PPTX，合并可编辑图表后写入完整编辑数据…',
+                    0,
+                    '准备中...'
+                );
+            } else {
+                updateExportUI(
+                    'cog',
+                    'spinning',
+                    singleSlideMode ? '正在导出单页 PPTX' : '正在导出 PPTX',
+                    singleSlideMode ? '请稍候，正在将当前页转换为 PowerPoint 文件...' : '请稍候，正在将幻灯片转换为 PowerPoint 文件...',
+                    0,
+                    '准备中...'
+                );
+            }
             showExportOverlay();
-            updateExportCancelButton(true, false, '取消导出');
+            updateExportCancelButton(true, false, vectorSeedSync ? '取消同步' : '取消导出');
 
             const filteredSlides = slidesData
                 .map((slide, originalIndex) => ({ slide, originalIndex }))
@@ -60,13 +101,29 @@
                 .filter(item => item.slide && item.slide.html_content)
                 .sort((a, b) => (a.slide.page_number || 0) - (b.slide.page_number || 0));
 
+            if (
+                vectorSeedSync &&
+                slidesData.length > 0 &&
+                filteredSlides.length !== slidesData.length
+            ) {
+                hideExportOverlay();
+                updateExportCancelButton(false);
+                isClientExporting = false;
+                clientExportCancelRequested = false;
+                clientExportAbortController = null;
+                const msg =
+                    '矢量管线要求每一页都有可导出的 HTML。请补全空白页内容后再同步矢量或打开完整编辑。';
+                showNotification(msg, 'error');
+                return null;
+            }
+
             if (filteredSlides.length === 0) {
                 hideExportOverlay();
                 updateExportCancelButton(false);
                 showNotification(singleSlideMode ? '当前页内容为空，无法导出' : '幻灯片内容为空，无法导出', 'warning');
                 isClientExporting = false;
                 clientExportAbortController = null;
-                return;
+                return vectorSeedSync ? null : undefined;
             }
 
             const sortedSlides = filteredSlides;
@@ -287,6 +344,15 @@
                         }
 
                         const mergedBlob = await resp.blob();
+                        await __wisedeckDiagMergedPptxBlob(
+                            mergedBlob,
+                            vectorSeedSync ? 'merged-return-to-vector-seed' : 'merged-download-export'
+                        );
+                        if (vectorSeedSync) {
+                            hideExportOverlay();
+                            updateExportCancelButton(false);
+                            return mergedBlob;
+                        }
                         const mergedName = fileName.replace(/\.pptx$/i, '') + '_merged_native_charts.pptx';
                         const a = document.createElement('a');
                         a.href = URL.createObjectURL(mergedBlob);
@@ -296,6 +362,20 @@
                         a.remove();
                         setTimeout(() => URL.revokeObjectURL(a.href), 15000);
                     } catch (mergeErr) {
+                        if (vectorSeedSync) {
+                            console.warn('Native chart merge failed during vector sync:', mergeErr);
+                            hideExportOverlay();
+                            updateExportCancelButton(false);
+                            if (typeof showNotification === 'function') {
+                                const hint =
+                                    (mergeErr && mergeErr.message) || String(mergeErr || '');
+                                showNotification(
+                                    `合并可编辑图表失败，矢量同步已取消${hint ? '：' + hint : ''}`,
+                                    'error'
+                                );
+                            }
+                            return null;
+                        }
                         console.warn('Native chart merge failed, falling back to base PPTX download:', mergeErr);
                         const a = document.createElement('a');
                         a.href = URL.createObjectURL(basePptxBlob);
@@ -313,12 +393,19 @@
                 if (isClientExportAbortError(err)) {
                     hideExportOverlay();
                     updateExportCancelButton(false);
-                    showNotification('已取消客户端导出', 'info');
-                    return;
+                    showNotification(vectorSeedSync ? '已取消矢量同步' : '已取消客户端导出', 'info');
+                    return vectorSeedSync ? null : undefined;
                 }
                 console.error('PPTX client export failed:', err);
                 updateExportCancelButton(false);
-                updateExportUI('exclamation-circle', 'error', '导出失败', err.message || '未知错误，请重试', 0, '请关闭此窗口后重试');
+                updateExportUI(
+                    'exclamation-circle',
+                    'error',
+                    vectorSeedSync ? '矢量同步失败' : '导出失败',
+                    err.message || '未知错误，请重试',
+                    0,
+                    '请关闭此窗口后重试'
+                );
 
                 const overlay = document.getElementById('exportOverlay');
                 if (overlay) {
@@ -329,6 +416,9 @@
                         }
                     });
                 }
+                if (vectorSeedSync) {
+                    return null;
+                }
             } finally {
                 if (renderHost.parentNode) {
                     renderHost.parentNode.removeChild(renderHost);
@@ -338,6 +428,9 @@
                 clientExportAbortController = null;
             }
         }
+
+        window.exportSlidesToPptxClient = exportSlidesToPptxClient;
+        window.__wisedeckDiagMergedPptxBlob = __wisedeckDiagMergedPptxBlob;
 
         async function exportSingleSlidePptxClient() {
             hideContextMenu();

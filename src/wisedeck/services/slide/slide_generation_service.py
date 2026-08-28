@@ -1,11 +1,82 @@
 import asyncio
+import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+import re
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from ...core.config import app_config
 
+from .pptist_generation_service import PPTistGenerationService
+from .slide_document_builder import assemble_generated_slide_outputs
 
 logger = logging.getLogger(__name__)
+
+_WDS_AIPPT_FENCE = re.compile(
+    r"```(?:wds_aippt(?:_v1)?|json)\s*\n([\s\S]*?)```",
+    re.IGNORECASE,
+)
+
+
+def _extract_html_and_optional_wds_aippt(raw: Optional[str]) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Remove fenced ``wds_aippt`` / JSON slide payloads from LLM output; validate via ``parse_wds_aippt_slide``."""
+    if not raw or not isinstance(raw, str):
+        return raw or "", None
+
+    from .schema.wds_aippt_v1 import parse_wds_aippt_slide
+
+    chosen: Optional[Dict[str, Any]] = None
+    out = raw
+    for m in _WDS_AIPPT_FENCE.finditer(raw):
+        inner = (m.group(1) or "").strip()
+        if not inner.startswith("{"):
+            continue
+        try:
+            obj = json.loads(inner)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        nested = obj.get("wds_aippt_v1")
+        candidate = nested if isinstance(nested, dict) else obj
+        if not isinstance(candidate, dict) or not str(candidate.get("type") or "").strip():
+            continue
+        try:
+            parse_wds_aippt_slide(candidate)
+        except Exception:
+            continue
+        chosen = candidate
+        out = out.replace(m.group(0), "\n", 1)
+
+    return out.strip(), chosen
+
+
+def extract_wds_aippt_json_only(raw: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Parse a JSON-only (or fenced) LLM response into one validated wds_aippt slide dict."""
+    if not raw or not isinstance(raw, str):
+        return None
+    from .schema.wds_aippt_v1 import parse_wds_aippt_slide
+
+    _, from_fence = _extract_html_and_optional_wds_aippt(raw)
+    if from_fence:
+        return from_fence
+    stripped = raw.strip()
+    if not stripped.startswith("{"):
+        return None
+    try:
+        obj = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    nested = obj.get("wds_aippt_v1")
+    candidate = nested if isinstance(nested, dict) else obj
+    if not isinstance(candidate, dict) or not str(candidate.get("type") or "").strip():
+        return None
+    try:
+        parse_wds_aippt_slide(candidate)
+    except Exception:
+        return None
+    return candidate
 
 
 if TYPE_CHECKING:
@@ -17,9 +88,57 @@ class SlideGenerationService:
 
     def __init__(self, service: "EnhancedPPTService"):
         self._service = service
+        self._pptist_generator = PPTistGenerationService()
 
     def __getattr__(self, name: str):
         return getattr(self._service, name)
+
+    async def _generate_single_slide_wds_aippt_json(
+        self,
+        slide_outline: Dict[str, Any],
+        confirmed_requirements: Dict[str, Any],
+        page_number: int,
+        total_pages: int,
+        all_slides: List[Dict[str, Any]],
+        project_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Train 风格：大纲骨架 → LLM 扩写为单页 wds_aippt_v1（与 HTML 生成并行/独立）。"""
+        from ...core.config import ai_config
+        from ..prompts.wds_aippt_slide_prompts import (
+            build_wds_aippt_json_system_prompt,
+            build_wds_aippt_json_user_prompt,
+        )
+        from .wds_aippt_outline_skeleton import outline_slide_to_aippt_skeleton
+
+        _ = project_id  # reserved for future retrieval / logging
+        skeleton = outline_slide_to_aippt_skeleton(slide_outline, page_number - 1, total_pages)
+        sys_p = build_wds_aippt_json_system_prompt()
+        usr_p = build_wds_aippt_json_user_prompt(
+            skeleton,
+            slide_outline,
+            confirmed_requirements,
+            page_number,
+            total_pages,
+            all_slides,
+        )
+        max_retries = 2
+        for attempt in range(max_retries):
+            retry_user = usr_p
+            if attempt > 0:
+                retry_user += (
+                    "\n\n上次输出无法解析。请仅输出一页合法 JSON 对象（根级含 type 与 data），"
+                    "可用 ```json 代码块包裹。"
+                )
+            response = await self._text_completion_for_role(
+                "slide_generation",
+                prompt=retry_user,
+                system_prompt=sys_p,
+                temperature=max(0.1, min(float(ai_config.temperature), 0.45)),
+            )
+            payload = extract_wds_aippt_json_only(response.content)
+            if payload:
+                return payload
+        return None
 
     async def _generate_slides_streaming_impl(self, project_id: str):
             """Internal implementation of slide generation streaming"""
@@ -294,6 +413,14 @@ class SlideGenerationService:
                 parallel_count = user_gen_config["parallel_slides_count"] if parallel_enabled else 1
                 design_context_prepared = False
 
+                proj_meta = getattr(project, "project_metadata", None) or {}
+                if not isinstance(proj_meta, dict):
+                    proj_meta = {}
+                _wds_assembly_prefs = (
+                    proj_meta.get("assembly_prefs") if isinstance(proj_meta.get("assembly_prefs"), dict) else None
+                )
+                _wds_pack_id = proj_meta.get("wds_template_pack_id")
+
                 if parallel_enabled:
                     logger.info(f"🚀 并行生成已启用，每批生成 {parallel_count} 页")
                 else:
@@ -346,7 +473,7 @@ class SlideGenerationService:
                             from ..db_project_manager import DatabaseProjectManager
                             db_manager = DatabaseProjectManager()
                             db_slide = await db_manager.get_single_slide(project_id, idx)
-                            if db_slide and db_slide.get('html_content'):
+                            if db_slide and (db_slide.get('html_content') or db_slide.get('elements')):
                                 existing_slide = db_slide
                                 logger.debug(f"从数据库获取到第{page_number}页的幻灯片数据")
                         except Exception as db_error:
@@ -359,7 +486,7 @@ class SlideGenerationService:
                                     existing_slide = s
                                     break
 
-                        if existing_slide and existing_slide.get('html_content'):
+                        if existing_slide and (existing_slide.get('html_content') or existing_slide.get('elements')):
                             # 幻灯片已存在，跳过
                             if existing_slide.get('is_user_edited', False):
                                 skip_message = f'第{idx+1}页已被用户编辑，跳过重新生成'
@@ -391,9 +518,6 @@ class SlideGenerationService:
 
                     if slides_to_generate:
                         if not design_context_prepared:
-                            # logger.info(
-                            #     "仅预热共享创意缓存后立即开始PPT生成，剩余单页创意指导转后台异步预热"
-                            # )
                             await self._prepare_project_creative_guidance(
                                 project_id=project_id,
                                 slide_data=slides[0],
@@ -419,23 +543,55 @@ class SlideGenerationService:
                                 }
                                 yield f"data: {json.dumps(progress_data)}\n\n"
 
-                            # 创建包装协程，返回结果和元数据
+                            # 创建包装协程：双轨并行（wds_aippt JSON + HTML）
                             async def generate_with_metadata(idx, slide):
-                                try:
-                                    html_content = await self._generate_single_slide_html_with_prompts(
-                                        slide, confirmed_requirements, system_prompt,
-                                        idx + 1, len(slides), slides, project.slides_data, project_id
+                                async def safe_wds():
+                                    try:
+                                        return await self._generate_single_slide_wds_aippt_json(
+                                            slide,
+                                            confirmed_requirements,
+                                            idx + 1,
+                                            len(slides),
+                                            slides,
+                                            project_id,
+                                        )
+                                    except Exception as ex:
+                                        logger.warning(
+                                            "wds_aippt JSON 生成失败（第%s页）: %s", idx + 1, ex
+                                        )
+                                        return None
+
+                                wds_task = asyncio.create_task(safe_wds())
+                                html_task = asyncio.create_task(
+                                    self._generate_single_slide_html_with_prompts(
+                                        slide,
+                                        confirmed_requirements,
+                                        system_prompt,
+                                        idx + 1,
+                                        len(slides),
+                                        slides,
+                                        project.slides_data,
+                                        project_id,
                                     )
-                                    return idx, slide, html_content, None
-                                except Exception as e:
-                                    return idx, slide, None, e
+                                )
+                                wds_from_llm, html_result = await asyncio.gather(
+                                    wds_task, html_task, return_exceptions=True
+                                )
+                                if isinstance(wds_from_llm, Exception):
+                                    logger.warning(
+                                        "wds_aippt 任务异常（第%s页）: %s", idx + 1, wds_from_llm
+                                    )
+                                    wds_from_llm = None
+                                if isinstance(html_result, Exception):
+                                    return idx, slide, None, html_result, wds_from_llm
+                                return idx, slide, html_result, None, wds_from_llm
 
                             # 创建所有并行任务
                             tasks = [generate_with_metadata(idx, slide) for idx, slide in slides_to_generate]
 
                             # 流式处理完成的任务 - 一旦某页生成完成，立即展示和添加
                             for coro in asyncio.as_completed(tasks):
-                                idx, slide, html_content, error = await coro
+                                idx, slide, html_content, error, wds_from_llm = await coro
                                 try:
                                     if error:
                                         raise error
@@ -444,13 +600,39 @@ class SlideGenerationService:
                                     logger.error(f"❌ 流式生成第{idx+1}页失败: {e}")
                                     html_content = f"<div style='padding: 50px; text-align: center; color: red;'>生成失败：{str(e)}</div>"
 
-                                # 创建幻灯片数据
+                                html_content = html_content or ""
+                                html_content, wds_from_html = _extract_html_and_optional_wds_aippt(html_content)
+                                wds_payload = wds_from_llm if wds_from_llm is not None else wds_from_html
+                                slide_for_assemble = dict(slide)
+                                if wds_payload:
+                                    slide_for_assemble["wds_aippt_v1"] = wds_payload
+
+                                doc, pptist_slide, preview_html = await assemble_generated_slide_outputs(
+                                    slide_for_assemble,
+                                    html_content,
+                                    idx + 1,
+                                    len(slides),
+                                    project_assembly_prefs=_wds_assembly_prefs,
+                                    template_pack_id=str(_wds_pack_id) if _wds_pack_id else None,
+                                )
+
+                                # 创建幻灯片数据（HTML + SlideDocument + PPTist 同源 elements）
                                 slide_data = {
                                     "page_number": idx + 1,
                                     "title": slide.get('title', f'第{idx+1}页'),
                                     "html_content": html_content,
-                                    "is_user_edited": False
+                                    "is_user_edited": False,
+                                    "slide_document": doc.model_dump(mode="json"),
+                                    "pptist_aligned_preview_html": preview_html,
+                                    "schema_version": 1,
+                                    "elements_source": pptist_slide.get("elements_source", "slide_document"),
+                                    "elements": pptist_slide['elements'],
+                                    "background": pptist_slide['background']
                                 }
+                                if wds_payload is not None:
+                                    slide_data["wds_aippt_v1"] = wds_payload
+                                elif slide.get("wds_aippt_v1") is not None:
+                                    slide_data["wds_aippt_v1"] = slide.get("wds_aippt_v1")
 
                                 # 更新项目数据
                                 while len(project.slides_data) <= idx:
@@ -488,19 +670,78 @@ class SlideGenerationService:
                                     yield f"data: {json.dumps(progress_data)}\n\n"
                                     logger.info(f"Generating slide {idx+1}/{len(slides)}: {slide_title}")
 
-                                    # 生成HTML
-                                    html_content = await self._generate_single_slide_html_with_prompts(
-                                        slide, confirmed_requirements, system_prompt,
-                                        idx + 1, len(slides), slides, project.slides_data, project_id
+                                    async def safe_wds_seq():
+                                        try:
+                                            return await self._generate_single_slide_wds_aippt_json(
+                                                slide,
+                                                confirmed_requirements,
+                                                idx + 1,
+                                                len(slides),
+                                                slides,
+                                                project_id,
+                                            )
+                                        except Exception as ex:
+                                            logger.warning(
+                                                "wds_aippt JSON 生成失败（第%s页）: %s", idx + 1, ex
+                                            )
+                                            return None
+
+                                    wds_t = asyncio.create_task(safe_wds_seq())
+                                    html_t = asyncio.create_task(
+                                        self._generate_single_slide_html_with_prompts(
+                                            slide,
+                                            confirmed_requirements,
+                                            system_prompt,
+                                            idx + 1,
+                                            len(slides),
+                                            slides,
+                                            project.slides_data,
+                                            project_id,
+                                        )
+                                    )
+                                    wds_from_llm, html_result = await asyncio.gather(
+                                        wds_t, html_t, return_exceptions=True
+                                    )
+                                    if isinstance(wds_from_llm, Exception):
+                                        wds_from_llm = None
+                                    if isinstance(html_result, Exception):
+                                        raise html_result
+                                    html_content = html_result
+
+                                    html_content, wds_from_html = _extract_html_and_optional_wds_aippt(html_content)
+                                    wds_payload = (
+                                        wds_from_llm if wds_from_llm is not None else wds_from_html
+                                    )
+                                    slide_for_assemble = dict(slide)
+                                    if wds_payload:
+                                        slide_for_assemble["wds_aippt_v1"] = wds_payload
+
+                                    doc, pptist_slide, preview_html = await assemble_generated_slide_outputs(
+                                        slide_for_assemble,
+                                        html_content,
+                                        idx + 1,
+                                        len(slides),
+                                        project_assembly_prefs=_wds_assembly_prefs,
+                                        template_pack_id=str(_wds_pack_id) if _wds_pack_id else None,
                                     )
 
-                                    # 创建幻灯片数据
+                                    # 创建幻灯片数据（HTML + SlideDocument + PPTist 同源 elements）
                                     slide_data = {
                                         "page_number": idx + 1,
                                         "title": slide.get('title', f'第{idx+1}页'),
                                         "html_content": html_content,
-                                        "is_user_edited": False
+                                        "is_user_edited": False,
+                                        "slide_document": doc.model_dump(mode="json"),
+                                        "pptist_aligned_preview_html": preview_html,
+                                        "schema_version": 1,
+                                        "elements_source": pptist_slide.get("elements_source", "slide_document"),
+                                        "elements": pptist_slide['elements'],
+                                        "background": pptist_slide['background']
                                     }
+                                    if wds_payload is not None:
+                                        slide_data["wds_aippt_v1"] = wds_payload
+                                    elif slide.get("wds_aippt_v1") is not None:
+                                        slide_data["wds_aippt_v1"] = slide.get("wds_aippt_v1")
 
                                     # 更新项目数据
                                     while len(project.slides_data) <= idx:
@@ -530,7 +771,9 @@ class SlideGenerationService:
                                     error_slide = {
                                         "page_number": idx + 1,
                                         "title": slide.get('title', f'第{idx+1}页'),
-                                        "html_content": f"<div style='padding: 50px; text-align: center; color: red;'>生成失败：{str(e)}</div>"
+                                        "html_content": f"<div style='padding: 50px; text-align: center; color: red;'>生成失败：{str(e)}</div>",
+                                        "elements": [],
+                                        "background": {"type": "solid", "color": "#ffffff"}
                                     }
 
                                     while len(project.slides_data) <= idx:
@@ -575,6 +818,14 @@ class SlideGenerationService:
                         "updated_at": time.time()
                     })
                     logger.info(f"Successfully updated project data for project {project_id}")
+
+                    try:
+                        meta_pm = dict(project.project_metadata or {})
+                        meta_pm["slide_pipeline_version"] = 2
+                        project.project_metadata = meta_pm
+                        await db_manager.update_project_metadata(project_id, meta_pm)
+                    except Exception as meta_err:
+                        logger.warning("更新 slide_pipeline_version 失败: %s", meta_err)
 
                     # Update PPT creation stage status to completed
                     await db_manager.update_stage_status(

@@ -9,17 +9,18 @@ import json
 import logging
 import os
 import re
+import secrets
 import tempfile
+import threading
 import time
 import uuid
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-import aiohttp
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from ...ai import AIMessage, MessageRole, get_ai_provider, get_role_provider
@@ -47,6 +48,74 @@ router = APIRouter()
 # Bump when iframe HTML / merged slides_html semantics change for server-side parity work.
 SLIDE_HTML_CONTRACT_VERSION = "2026.04"
 
+# One-time PPTX bytes for iframe direct-import fetch (in-process; multi-worker deployments may miss hits).
+_pptx_import_staging: Dict[str, Tuple[float, str, bytes]] = {}
+_pptx_import_staging_lock = threading.Lock()
+_PPTX_IMPORT_STAGING_TTL_SEC = 900
+_PPTX_IMPORT_STAGING_MAX_BYTES = 80 * 1024 * 1024
+
+
+def _pptx_import_staging_gc() -> None:
+    now = time.time()
+    with _pptx_import_staging_lock:
+        dead = [k for k, (exp, _, _) in _pptx_import_staging.items() if exp < now]
+        for k in dead:
+            _pptx_import_staging.pop(k, None)
+
+
+class NormalizePptxtojsonBody(BaseModel):
+    raw: Dict[str, Any]
+
+
+def _merge_pptx_bytes_into_slides_data(
+    slides_data: List[Any],
+    pptx_bytes: bytes,
+) -> Tuple[List[Any], Dict[str, Any], int]:
+    """Parse PPTX via pptxtojson and merge PPTist-shaped fields into slides_data by index."""
+    from ...services.slide.pptist_background_utils import normalize_slide_background
+    from ...services.slide.pptx_roundtrip_bridge import pptx_bytes_to_pptist_slides
+
+    pptist_slides, meta = pptx_bytes_to_pptist_slides(pptx_bytes, fixed_viewport=True)
+    if len(pptist_slides) != len(slides_data):
+        raise ValueError(
+            f"PPTX has {len(pptist_slides)} slide(s) but project has {len(slides_data)}; "
+            "every slide must have exportable html_content and counts must match."
+        )
+    merged = list(slides_data)
+    for i, slide in enumerate(pptist_slides):
+        if i >= len(merged):
+            break
+        cur = merged[i] if isinstance(merged[i], dict) else {}
+        cur["schema_version"] = 1
+        cur["elements_source"] = "pptx_bridge"
+        cur["elements"] = slide.get("elements", [])
+        cur["background"] = normalize_slide_background(slide.get("background"))
+        cur["animations"] = slide.get("animations", [])
+        cur["notes"] = slide.get("notes", [])
+        cur["remark"] = slide.get("remark", "")
+        merged[i] = cur
+    seeded_slides = len(pptist_slides)
+    # Ensure every row has a list elements (embedded editor gate uses Array.isArray).
+    for idx in range(len(merged)):
+        row = merged[idx]
+        if not isinstance(row, dict):
+            merged[idx] = {
+                "schema_version": 1,
+                "elements": [],
+                "elements_source": "pptx_bridge",
+                "background": {"type": "solid", "color": "#fff"},
+                "animations": [],
+                "notes": [],
+                "remark": "",
+            }
+            continue
+        els = row.get("elements")
+        if not isinstance(els, list):
+            fixed = dict(row)
+            fixed["elements"] = []
+            merged[idx] = fixed
+    return merged, meta, seeded_slides
+
 
 def _ensure_slide_contract_version_on_rows(slides_data: List[Any]) -> List[Any]:
     """Attach slide_contract_version for future same-HTML export parity (optional field)."""
@@ -60,6 +129,110 @@ def _ensure_slide_contract_version_on_rows(slides_data: List[Any]) -> List[Any]:
             r["slide_contract_version"] = SLIDE_HTML_CONTRACT_VERSION
         out.append(r)
     return out
+
+
+def _index_existing_slides_by_position(
+    slides_data: List[Any],
+) -> Tuple[Dict[int, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+    """Map slide index and optional id to existing DB row."""
+    by_index: Dict[int, Dict[str, Any]] = {}
+    by_id: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(slides_data, list):
+        return by_index, by_id
+    for i, row in enumerate(slides_data):
+        if not isinstance(row, dict):
+            continue
+        by_index[i] = row
+        sid = row.get("id")
+        if sid is not None and str(sid).strip():
+            by_id[str(sid)] = row
+    return by_index, by_id
+
+
+def _resolve_existing_slide_row(
+    index: int,
+    incoming: Dict[str, Any],
+    by_index: Dict[int, Dict[str, Any]],
+    by_id: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    existing = by_index.get(index)
+    if existing:
+        return existing
+    sid = incoming.get("id")
+    if sid is not None and str(sid).strip():
+        return by_id.get(str(sid), {})
+    return {}
+
+
+def _merge_pptist_save_with_existing_visual_ssot(
+    existing_row: Dict[str, Any],
+    incoming: Dict[str, Any],
+    index: int,
+) -> Dict[str, Any]:
+    """Merge PPTist vector save with existing row; preserve visual SSOT when incoming has no HTML."""
+    from ...services.slide.pptist_background_utils import normalize_slide_background
+    from ...services.slide.pptist_preview_html import pptist_slide_to_preview_html
+
+    existing_row = existing_row if isinstance(existing_row, dict) else {}
+    incoming = incoming if isinstance(incoming, dict) else {}
+
+    slide_data: Dict[str, Any] = dict(existing_row)
+    background = normalize_slide_background(incoming.get("background"))
+
+    slide_data.update(
+        {
+            "page_number": index + 1,
+            "title": incoming.get("title", existing_row.get("title", f"Slide {index + 1}")),
+            "is_user_edited": True,
+            "schema_version": incoming.get("schema_version", existing_row.get("schema_version", 1)),
+            "elements_source": "user_edit",
+            "id": incoming.get("id") or existing_row.get("id"),
+            "elements": incoming.get("elements", [])
+            if isinstance(incoming.get("elements"), list)
+            else [],
+            "notes": incoming.get("notes", existing_row.get("notes", [])),
+            "remark": incoming.get("remark", existing_row.get("remark", "")),
+            "animations": incoming.get("animations", existing_row.get("animations", [])),
+            "turningMode": incoming.get("turningMode", existing_row.get("turningMode")),
+            "sectionTag": incoming.get("sectionTag", existing_row.get("sectionTag")),
+            "type": incoming.get("type", existing_row.get("type")),
+            "background": background,
+        }
+    )
+
+    incoming_html = incoming.get("html_content")
+    has_incoming_html = isinstance(incoming_html, str) and bool(incoming_html.strip())
+
+    if has_incoming_html:
+        slide_data["html_content"] = incoming_html
+        try:
+            slide_data["pptist_aligned_preview_html"] = pptist_slide_to_preview_html(slide_data)
+        except Exception:
+            slide_data["pptist_aligned_preview_html"] = (
+                existing_row.get("pptist_aligned_preview_html")
+                or slide_data.get("pptist_aligned_preview_html")
+                or ""
+            )
+    else:
+        slide_data["html_content"] = (
+            existing_row.get("html_content") or slide_data.get("html_content") or ""
+        )
+        prior_aligned = existing_row.get("pptist_aligned_preview_html") or ""
+        if isinstance(prior_aligned, str) and prior_aligned.strip():
+            slide_data["pptist_aligned_preview_html"] = prior_aligned
+        else:
+            try:
+                slide_data["pptist_aligned_preview_html"] = pptist_slide_to_preview_html(slide_data)
+            except Exception:
+                slide_data["pptist_aligned_preview_html"] = ""
+        if not (slide_data.get("html_content") or "").strip():
+            aligned = slide_data.get("pptist_aligned_preview_html") or ""
+            if aligned:
+                slide_data["html_content"] = aligned
+
+    from ...services.slide.slide_visual_sync import touch_slide_document_from_elements
+
+    return touch_slide_document_from_elements(slide_data)
 
 
 class SlideBatchRegenerateRequest(BaseModel):
@@ -750,13 +923,18 @@ async def save_all_slides(
     request: Request,
     user: User = Depends(get_current_user_required)
 ):
-    """批量保存所有幻灯片数据（完整编辑器专用）"""
+    """批量保存所有幻灯片数据（完整编辑器专用）。
+
+    SSOT: prefer PPTist Slide JSON (`elements/background/animations/...`) as source of truth.
+    """
     try:
         logger.info(f"🔄 开始批量保存项目 {project_id} 的所有幻灯片")
 
         data = await request.json()
-        slides = data.get('slides', [])
-
+        slides = data.get("slides")
+        if slides is None:
+            slides = data.get("slides_data", [])
+        sync_visual = bool(data.get("sync_visual_from_elements"))
         if not isinstance(slides, list):
             logger.error("❌ 幻灯片数据格式错误")
             raise HTTPException(status_code=400, detail="Slides must be a list")
@@ -767,35 +945,67 @@ async def save_all_slides(
             raise HTTPException(status_code=404, detail="Project not found")
 
         from ...services.db_project_manager import DatabaseProjectManager
+
         db_manager = DatabaseProjectManager()
 
-        saved_count = 0
-        for index, slide in enumerate(slides):
-            try:
-                slide_data = {
-                    "page_number": index + 1,
-                    "title": slide.get('title', f"Slide {index + 1}"),
-                    "html_content": slide.get('html_content', ''),
-                    "is_user_edited": True,
-                    "elements": slide.get('elements', []),
-                    "width": slide.get('width', 1280),
-                    "height": slide.get('height', 720),
-                    "background": slide.get('background', {}),
-                }
-                
-                success = await db_manager.save_single_slide(project_id, index, slide_data)
-                if success:
-                    saved_count += 1
-            except Exception as e:
-                logger.error(f"❌ 保存第 {index + 1} 页失败: {e}")
+        existing_rows = project.slides_data if isinstance(project.slides_data, list) else []
+        by_index, by_id = _index_existing_slides_by_position(existing_rows)
 
-        logger.info(f"✅ 批量保存完成，成功保存 {saved_count}/{len(slides)} 页")
+        normalized_slides: List[Dict[str, Any]] = []
+        for index, slide in enumerate(slides):
+            slide = slide if isinstance(slide, dict) else {}
+            existing_row = _resolve_existing_slide_row(index, slide, by_index, by_id)
+            slide_data = _merge_pptist_save_with_existing_visual_ssot(existing_row, slide, index)
+            normalized_slides.append(slide_data)
+
+        if sync_visual:
+            from ...services.slide.slide_visual_sync import sync_visual_ssot_on_slides
+
+            normalized_slides, n_synced = sync_visual_ssot_on_slides(
+                normalized_slides,
+                sync_html_content=False,
+                only_user_edit=True,
+            )
+            if n_synced:
+                logger.info("save_all_slides: synced aligned preview for %s slide(s)", n_synced)
+
+        try:
+            from ...services.slide.seed_image_src_inline import inline_wisedeck_api_image_urls_in_slides_data
+
+            n_inlined = await inline_wisedeck_api_image_urls_in_slides_data(normalized_slides)
+            if n_inlined:
+                logger.info("save_all_slides: inlined %s image element(s)", n_inlined)
+        except Exception as exc:
+            logger.warning("save_all_slides image URL inline skipped: %s", exc)
+
+        prior_count = len(project.slides_data) if isinstance(project.slides_data, list) else 0
+        slides_html = getattr(project, "slides_html", None) or ""
+
+        ok = await db_manager.save_project_slides(project_id, slides_html, normalized_slides)
+        if not ok:
+            logger.error("❌ save_project_slides failed for project %s", project_id)
+            raise HTTPException(status_code=500, detail="Failed to persist slides")
+
+        new_count = len(normalized_slides)
+        if prior_count > new_count:
+            await db_manager.cleanup_excess_slides(project_id, new_count, user_id=user.id)
+
+        logger.info("✅ 批量保存完成，写入 projects.slides_data：%s 页", new_count)
+
+        from ...services.slide.slide_visual_sync import enrich_slides_data_for_editor
+
+        response_slides = enrich_slides_data_for_editor(
+            normalized_slides,
+            attach_resolved_preview_html=sync_visual,
+        )
 
         return {
             "success": True,
-            "message": f"Successfully saved {saved_count} slides",
-            "saved_count": saved_count,
-            "total_slides": len(slides)
+            "message": f"Successfully saved {new_count} slides",
+            "saved_count": new_count,
+            "total_slides": new_count,
+            "slides_data": response_slides,
+            "sync_visual_from_elements": sync_visual,
         }
 
     except HTTPException:
@@ -805,6 +1015,191 @@ async def save_all_slides(
         import traceback
         traceback.print_exc()
         return {"success": False, "error": str(e)}
+
+
+@router.post("/api/projects/{project_id}/slides/sync-visual-from-elements")
+async def sync_slides_visual_from_elements(
+    project_id: str,
+    request: Request,
+    user: User = Depends(get_current_user_required),
+):
+    """Regenerate pptist_aligned_preview_html from elements (optional html_content overwrite)."""
+    project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    body: Dict[str, Any] = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    sync_html = bool(body.get("sync_html_content"))
+    only_user_edit = body.get("only_user_edit", True) is not False
+
+    from ...services.db_project_manager import DatabaseProjectManager
+    from ...services.slide.slide_visual_sync import enrich_slides_data_for_editor, sync_visual_ssot_on_slides
+
+    rows = project.slides_data if isinstance(project.slides_data, list) else []
+    synced, n = sync_visual_ssot_on_slides(
+        rows,
+        sync_html_content=sync_html,
+        only_user_edit=only_user_edit,
+    )
+
+    db = DatabaseProjectManager()
+    slides_html = getattr(project, "slides_html", None) or ""
+    ok = await db.save_project_slides(project_id, slides_html, synced)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to persist slides")
+
+    enriched = enrich_slides_data_for_editor(synced, attach_resolved_preview_html=True)
+    return {
+        "success": True,
+        "synced_slides": n,
+        "slides_data": enriched,
+        "sync_html_content": sync_html,
+    }
+
+
+@router.post("/api/projects/{project_id}/ssot/normalize-pptxtojson-body")
+async def normalize_pptxtojson_body(
+    project_id: str,
+    body: NormalizePptxtojsonBody,
+    user: User = Depends(get_current_user_required),
+):
+    """Normalize browser ``pptxtojson.parse`` JSON to PPTist slide rows (no DB write)."""
+    project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    from ...services.slide.pptx_roundtrip_bridge import pptxtojson_raw_dict_to_pptist_slides
+    from ...services.slide.seed_image_src_inline import inline_wisedeck_api_image_urls_in_slides_data
+
+    try:
+        slides, meta = pptxtojson_raw_dict_to_pptist_slides(body.raw, fixed_viewport=True)
+    except Exception as exc:
+        logger.warning("normalize-pptxtojson-body failed: %s", exc)
+        raise HTTPException(status_code=400, detail=f"normalize failed: {exc}") from exc
+
+    try:
+        await inline_wisedeck_api_image_urls_in_slides_data(slides)
+    except Exception as exc:
+        logger.warning("normalize-pptxtojson-body image inline skipped: %s", exc)
+
+    return JSONResponse({"success": True, "slides": slides, "meta": meta})
+
+
+@router.post("/api/projects/{project_id}/full-editor/pptx-import-staging")
+async def stage_pptx_import_blob(
+    project_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user_required),
+):
+    """Stage merged PPTX for iframe fetch (large files; token one-time use)."""
+    project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    raw = await file.read()
+    if not raw or len(raw) < 64:
+        raise HTTPException(status_code=400, detail="Empty or invalid PPTX upload")
+    if len(raw) > _PPTX_IMPORT_STAGING_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="PPTX file too large")
+
+    token = secrets.token_urlsafe(32)
+    expires = time.time() + _PPTX_IMPORT_STAGING_TTL_SEC
+    _pptx_import_staging_gc()
+    with _pptx_import_staging_lock:
+        _pptx_import_staging[token] = (expires, project_id, raw)
+
+    return JSONResponse(
+        {
+            "success": True,
+            "token": token,
+            "expires_in": _PPTX_IMPORT_STAGING_TTL_SEC,
+        }
+    )
+
+
+@router.get("/api/projects/{project_id}/full-editor/pptx-import-staging/{token}")
+async def get_staged_pptx_import_blob(
+    project_id: str,
+    token: str,
+    user: User = Depends(get_current_user_required),
+):
+    _pptx_import_staging_gc()
+    with _pptx_import_staging_lock:
+        entry = _pptx_import_staging.pop(token, None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Staging token invalid or expired")
+    expires, staged_pid, raw = entry
+    if time.time() > expires or staged_pid != project_id:
+        raise HTTPException(status_code=404, detail="Staging token invalid or expired")
+
+    project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return Response(
+        content=raw,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    )
+
+
+@router.post("/api/projects/{project_id}/ssot/seed-from-client-pptx")
+async def seed_ssot_from_client_pptx(
+    project_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user_required),
+):
+    """
+    Seed PPTist elements from a client-generated PPTX (recommended: dom-to-pptx + merge-native-charts).
+
+    Parses uploaded bytes via pptxtojson and merges vector fields into slides_data by slide index.
+    """
+    project = await ppt_service.project_manager.get_project(project_id, user_id=user.id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.slides_data:
+        raise HTTPException(status_code=400, detail="Project has no slides_data")
+
+    raw = await file.read()
+    if not raw or len(raw) < 64:
+        raise HTTPException(status_code=400, detail="Empty or invalid PPTX upload")
+    max_bytes = 80 * 1024 * 1024
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=400, detail="PPTX file too large")
+
+    from ...services.db_project_manager import DatabaseProjectManager
+
+    try:
+        merged, meta, seeded = _merge_pptx_bytes_into_slides_data(project.slides_data, raw)
+    except Exception as exc:
+        logger.warning("seed-from-client-pptx parse failed: %s", exc)
+        raise HTTPException(status_code=400, detail=f"PPTX parse failed: {exc}") from exc
+
+    try:
+        from ...services.slide.seed_image_src_inline import inline_wisedeck_api_image_urls_in_slides_data
+
+        n_inlined = await inline_wisedeck_api_image_urls_in_slides_data(merged)
+        if n_inlined:
+            logger.info("seed-from-client-pptx: inlined %s image element(s)", n_inlined)
+    except Exception as exc:
+        logger.warning("seed-from-client-pptx image URL inline skipped: %s", exc)
+
+    project.slides_data = merged
+    project.updated_at = time.time()
+    await DatabaseProjectManager().save_project(project)
+
+    return JSONResponse(
+        {
+            "success": True,
+            "total_slides": len(merged),
+            "seeded_slides": seeded,
+            "meta": meta,
+        }
+    )
 
 
 class SlideInpaintRegionRequest(BaseModel):

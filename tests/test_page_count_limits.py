@@ -1,6 +1,6 @@
 import pytest
 
-from wisedeck.services.outline.page_count_limits import validate_custom_range_pages
+from wisedeck.schemas.page_count_limits import validate_custom_range_pages
 
 
 def test_custom_range_accepts_two_to_fifty():

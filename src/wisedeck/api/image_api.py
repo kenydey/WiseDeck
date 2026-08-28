@@ -18,7 +18,8 @@ import zipfile
 import io
 import time
 from pathlib import Path
-import aiohttp
+
+from ..utils.http_client import build_timeout, http_get
 
 from ..services.image.image_service import get_image_service
 from ..services.image.config.image_config import get_image_config, ImageServiceConfig
@@ -161,12 +162,11 @@ async def get_pollinations_image_models(
             raise HTTPException(status_code=400, detail="Pollinations API key not configured")
 
         url = f"{api_base}/image/models"
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get(url, headers={'Authorization': f'Bearer {api_key}'}) as response:
-                if response.status != 200:
-                    body = await response.text()
-                    raise HTTPException(status_code=502, detail=f"Pollinations API error: HTTP {response.status}: {body}")
-                models = await response.json()
+        async with http_get(url, headers={'Authorization': f'Bearer {api_key}'}, timeout=build_timeout(10.0)) as response:
+            if response.status_code != 200:
+                body = response.text
+                raise HTTPException(status_code=502, detail=f"Pollinations API error: HTTP {response.status_code}: {body}")
+            models = await response.json()  # type: ignore[json-data]
 
         return {
             "success": True,
@@ -638,10 +638,16 @@ async def view_image(
         image_info = await image_service.get_image(image_id)
 
         if not image_info or not image_info.local_path:
+            logger.warning("view_image 404: image not resolved image_id=%s", image_id)
             raise HTTPException(status_code=404, detail="Image not found")
 
         image_path = Path(image_info.local_path)
         if not image_path.exists():
+            logger.warning(
+                "view_image 404: file missing image_id=%s path=%s",
+                image_id,
+                image_info.local_path,
+            )
             raise HTTPException(status_code=404, detail="Image file not found")
 
         return FileResponse(

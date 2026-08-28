@@ -29,6 +29,8 @@ def _project_root() -> Path:
 
 class ProjectContextSettingsPayload(BaseModel):
     reference_context_enabled: Optional[bool] = None
+    ssot_embed_preview: Optional[bool] = None
+    ssot_preview_policy: Optional[str] = None
 
 
 @router.get("/api/projects/{project_id}/context-settings")
@@ -59,6 +61,10 @@ async def patch_project_context_settings(
     meta = dict(project.project_metadata or {})
     if body.reference_context_enabled is not None:
         meta["reference_context_enabled"] = bool(body.reference_context_enabled)
+    if body.ssot_embed_preview is not None:
+        meta["ssot_embed_preview"] = bool(body.ssot_embed_preview)
+    if body.ssot_preview_policy is not None:
+        meta["ssot_preview_policy"] = str(body.ssot_preview_policy).strip() or "html_default"
     ok = await mgr.update_project_metadata(project_id, meta, user_id=user.id)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update metadata")

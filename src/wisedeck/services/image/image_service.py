@@ -26,6 +26,24 @@ logger = logging.getLogger(__name__)
 from ...core.request_context import current_user_id, USER_SCOPE_ALL
 
 
+def _cache_image_entry_readable_by_requester(
+    lookup_image_id: str,
+    image_info: ImageInfo,
+    effective_user_id: Optional[int],
+) -> bool:
+    """Whether a cached image entry may be returned to the current requester.
+
+    ``public_<sha256>`` keys are content-addressed shared scope (see ImageCacheManager):
+    they must remain readable even when ``owner_user_id`` is unset and the viewer is logged in.
+    User-scoped keys ``u{user_id}_...`` still require owner match when ``effective_user_id`` is set.
+    """
+    if effective_user_id is None or image_info.owner_user_id == effective_user_id:
+        return True
+    if isinstance(lookup_image_id, str) and lookup_image_id.startswith("public_"):
+        return True
+    return False
+
+
 class ImageService:
     """图片服务主类"""
 
@@ -798,16 +816,31 @@ class ImageService:
             cached_result = await self.cache_manager.get_cached_image(image_id)
             if cached_result:
                 image_info, _ = cached_result
-                if effective_user_id is None or image_info.owner_user_id == effective_user_id:
+                if _cache_image_entry_readable_by_requester(image_id, image_info, effective_user_id):
                     return image_info
                 return None
 
+            # Cross-scope fallback: public_{hash} vs u{n}_{hash} share the same content hash suffix
+            if isinstance(image_id, str) and "_" in image_id:
+                content_hash = image_id.split("_", 1)[1]
+                if content_hash and len(content_hash) >= 32:
+                    alt_key = await self.cache_manager.discover_cache_key_by_content_hash(content_hash)
+                    if alt_key and alt_key != image_id:
+                        alt_cached = await self.cache_manager.get_cached_image(alt_key)
+                        if alt_cached:
+                            alt_info, _ = alt_cached
+                            if _cache_image_entry_readable_by_requester(image_id, alt_info, effective_user_id):
+                                return alt_info
+
             # Legacy path: scan cache for matching image_id
+            cache_entries = list(self.cache_manager._cache_index.items())
             for cache_key, cache_info in cache_entries:
                 cached_result = await self.cache_manager.get_cached_image(cache_key)
                 if cached_result:
                     image_info, _ = cached_result
-                    if image_info.image_id == image_id and (effective_user_id is None or image_info.owner_user_id == effective_user_id):
+                    if image_info.image_id == image_id and _cache_image_entry_readable_by_requester(
+                        image_id, image_info, effective_user_id
+                    ):
                         return image_info
             
             # 如果缓存中没有，尝试从存储提供者获取

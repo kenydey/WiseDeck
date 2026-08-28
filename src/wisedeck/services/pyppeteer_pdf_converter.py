@@ -47,8 +47,8 @@ class PlaywrightPDFConverter:
         self._default_context_scale: float = 2.0
 
     def is_available(self) -> bool:
-        """Check if Playwright is available"""
-        return PLAYWRIGHT_AVAILABLE
+        """Headless Chromium (Playwright) export has been removed from WiseDeck."""
+        return False
 
     @staticmethod
     def install_chromium():
@@ -303,18 +303,11 @@ class PlaywrightPDFConverter:
             raise ImportError(error_msg)
 
     async def _get_or_create_browser(self) -> Browser:
-        """Get existing browser or create a new one (with thread safety)."""
-        async with self._browser_lock:
-            if self.browser is None:
-                self.browser = await self._launch_browser()
-                # Create a browser context for better isolation
-                self.context = await self.browser.new_context(
-                    viewport={'width': 1280, 'height': 720},
-                    device_scale_factor=self._default_context_scale,
-                    ignore_https_errors=True
-                )
-                self._contexts_by_scale = {float(self._default_context_scale): self.context}
-            return self.browser
+        """Playwright export disabled (removed)."""
+        raise RuntimeError(
+            "Playwright/Chromium export has been removed from WiseDeck; "
+            "use client-side export or non-headless pipelines."
+        )
 
     async def _get_or_create_context(
         self,

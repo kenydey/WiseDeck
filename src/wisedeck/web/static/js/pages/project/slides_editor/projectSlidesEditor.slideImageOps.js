@@ -111,6 +111,15 @@ function setMode(mode) {
 }
 
 async function saveSlide() {
+    // SSOT mode: HTML editing is legacy-only and does not affect PPTist preview.
+    if (window.__pptistPreviewEnabled) {
+        showNotification('当前项目已启用 PPTist 同源预览，请使用「完整编辑」进行编辑与保存。', 'warning');
+        if (typeof openFullEditor === 'function') {
+            openFullEditor();
+        }
+        return;
+    }
+
     const codeEditor = document.getElementById('codeEditor');
     let newContent;
 

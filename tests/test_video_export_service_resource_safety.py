@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 from types import ModuleType, SimpleNamespace
@@ -6,14 +7,16 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.asyncio
-async def test_run_subprocess_timeout_returns_124():
+def test_run_subprocess_timeout_returns_124():
     from wisedeck.services.video_export_service import _run_subprocess
 
-    code, out, err = await _run_subprocess(
-        [sys.executable, "-c", "import time; time.sleep(2)"],
-        timeout_ms=50,
-    )
+    async def _run():
+        return await _run_subprocess(
+            [sys.executable, "-c", "import time; time.sleep(2)"],
+            timeout_ms=50,
+        )
+
+    code, out, err = asyncio.run(_run())
     assert code == 124
     assert out == ""
     assert "timed out" in (err or "").lower()
@@ -185,8 +188,7 @@ def test_resolve_background_export_base_url_prefers_internal_port_for_localhost(
     assert preparer.resolve_background_export_base_url() == "http://127.0.0.1:8000"
 
 
-@pytest.mark.asyncio
-async def test_static_export_uses_fixed_stage_wrapper_without_content_crop(tmp_path, monkeypatch):
+def test_static_export_uses_fixed_stage_wrapper_without_content_crop(tmp_path, monkeypatch):
     from wisedeck.services import video_export_service as ves
 
     audio_dir = tmp_path / "audio"
@@ -224,6 +226,9 @@ async def test_static_export_uses_fixed_stage_wrapper_without_content_crop(tmp_p
     class FakeConverter:
         def __init__(self):
             self.calls = []
+
+        def is_available(self) -> bool:
+            return True
 
         async def screenshot_html(self, html_file_path, screenshot_path, **kwargs):
             self.calls.append(
@@ -267,16 +272,19 @@ async def test_static_export_uses_fixed_stage_wrapper_without_content_crop(tmp_p
         ],
     )
 
-    result = await ves.NarrationVideoExportService()._export_project_video_static(
-        project=project,
-        language="zh",
-        fps=30,
-        width=1920,
-        height=1080,
-        embed_subtitles=True,
-        subtitle_style=None,
-        uploads_dir=str(tmp_path / "uploads"),
-    )
+    async def _run_export():
+        return await ves.NarrationVideoExportService()._export_project_video_static(
+            project=project,
+            language="zh",
+            fps=30,
+            width=1920,
+            height=1080,
+            embed_subtitles=True,
+            subtitle_style=None,
+            uploads_dir=str(tmp_path / "uploads"),
+        )
+
+    result = asyncio.run(_run_export())
 
     assert result["success"] is True
     assert len(fake_converter.calls) == 2
